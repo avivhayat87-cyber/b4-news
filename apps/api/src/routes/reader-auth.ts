@@ -3,6 +3,7 @@
 import { ReaderDto, ReaderSession, RequestCodeInput, UpdateReaderInput, VerifyCodeInput } from '@b4/shared';
 import { type Db, and, desc, eq, gt, isNull, loginCodes, readers, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import type { Config } from '../config';
 import { AppError, errors } from '../errors';
 import { keyedHash, newSixDigitCode, safeEqualHex } from '../lib/crypto';
@@ -96,6 +97,13 @@ export const readerAuthRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config; m
       return { reader: dto };
     },
   );
+
+  // For the site: always 200, `reader: null` when signed out (no noisy 401 in the browser console).
+  app.get('/session', { schema: { response: { 200: z.object({ reader: ReaderDto.nullable() }) } } }, async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const r = req.reader;
+    return { reader: r && !r.banned ? { id: r.id, email: r.email, displayName: r.displayName } : null };
+  });
 
   app.get('/me', { schema: { response: { 200: ReaderDto } } }, async (req, reply) => {
     const reader = requireReader(req);

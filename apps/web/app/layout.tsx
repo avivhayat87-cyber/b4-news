@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Heebo, IBM_Plex_Mono, Rubik } from 'next/font/google';
+import { SiteFooter } from '@/components/footer';
 import { SiteHeader } from '@/components/header';
-import { AppCta, SiteFooter } from '@/components/footer';
 import { SITE } from '@/lib/site';
 import './globals.css';
 
@@ -34,7 +34,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <SiteHeader />
         <main id="main">{children}</main>
-        <AppCta />
         <SiteFooter />
       </body>
     </html>

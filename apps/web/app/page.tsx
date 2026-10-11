@@ -1,5 +1,5 @@
 import { Hero } from '@/components/hero';
-import { CapitalGrid, CategoryBlock, ColumnsSection, CompactCategory, PodcastBand } from '@/components/sections';
+import { CapitalGrid, CategoryBlock, ColumnsSection, CompactCategory, PodcastBand, TourismFeature } from '@/components/sections';
 import { Sidebar } from '@/components/sidebar';
 import { TrendingCarousel } from '@/components/trending-carousel';
 import { wrap } from '@/components/ui';
@@ -18,11 +18,12 @@ export default async function HomePage() {
   const economy = pick('israeli-economy', 'global-economy');
   const [capital] = pick('capital-market');
   const trio = pick('real-estate', 'insurance', 'hi-tech');
+  const [tourism] = pick('tourism');
   const quad = pick('health', 'automotive', 'entertainment', 'consumerism');
 
   return (
     <>
-      <Hero articles={home.main} />
+      <Hero articles={home.main} latest={home.latest} />
       <TrendingCarousel articles={home.trending} />
 
       <div className={`${wrap} flex flex-wrap gap-10 pb-3 pt-11`}>
@@ -44,6 +45,8 @@ export default async function HomePage() {
           ))}
         </div>
       ) : null}
+
+      {tourism ? <TourismFeature section={tourism} /> : null}
 
       <ColumnsSection consultants={bySlug.get('the-consultants')} ceo={bySlug.get('the-new-ceo')} />
 

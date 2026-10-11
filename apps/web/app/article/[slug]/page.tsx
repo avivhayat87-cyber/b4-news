@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
 import { AdSlot, ArticleImage, RankBadge, SectionHeader, wrap } from '@/components/ui';
@@ -146,6 +147,8 @@ export default async function ArticlePage({ params }: Props) {
               <ShareBar url={url} title={article.title} />
             </div>
           </footer>
+
+          <Comments articleId={article.id} enabled={article.commentsEnabled} initialCount={article.commentCount ?? 0} />
         </article>
 
         <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-7 lg:sticky lg:top-6 lg:self-start">

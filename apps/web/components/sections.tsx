@@ -1,7 +1,8 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import type { HomeSection, Podcast } from '@/lib/types';
 import { articleHref, categoryHref, toneBackground } from '@/lib/site';
-import { PersonIcon, PlayIcon } from './icons';
+import { PersonIcon, PhotoIcon, PlayIcon } from './icons';
 import { ArticleImage, Byline, CategoryTag, SectionHeader, wrap } from './ui';
 
 /** Lead story with excerpt + three thumbnail rows. Used for the economy pair and the trio. */
@@ -47,6 +48,48 @@ export function CapitalGrid({ section }: { section: HomeSection }) {
             <Byline article={a} />
           </Link>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/** תיירות: a wide travel feature (big lead image) beside a list. */
+export function TourismFeature({ section }: { section: HomeSection }) {
+  const [lead, ...rest] = section.items;
+  if (!lead) return null;
+  return (
+    <section aria-labelledby="tourism-title" className={`${wrap} pb-3 pt-12`}>
+      <SectionHeader id="tourism-title" title={section.category.name} href={categoryHref(section.category.slug)} className="mb-5" />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Link
+          href={articleHref(lead)}
+          className="group relative flex min-h-[340px] flex-col justify-end overflow-hidden rounded-xl p-6 text-white md:min-h-[400px] md:p-8"
+          style={{ background: toneBackground(lead.id) }}
+        >
+          {lead.image ? (
+            <Image src={lead.image.url} alt={lead.image.alt} fill sizes="(min-width: 1280px) 760px, 100vw" className="object-cover" />
+          ) : (
+            <span aria-hidden="true" className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 text-white/30">
+              <PhotoIcon size={48} />
+            </span>
+          )}
+          <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/0 from-25% to-ink/90" />
+          <h3 className="relative max-w-[24ch] text-balance text-[26px] font-extrabold leading-[1.15] md:text-[32px]">{lead.title}</h3>
+          {lead.excerpt ? <p className="relative mt-3 max-w-[56ch] text-base leading-relaxed text-[#E6E6EB]">{lead.excerpt}</p> : null}
+        </Link>
+        <ul className="flex flex-col">
+          {rest.slice(0, 4).map((a) => (
+            <li key={a.id} className="border-b border-line py-3.5 first:pt-0">
+              <Link href={articleHref(a)} className="group flex items-center gap-4">
+                <ArticleImage article={a} sizes="120px" ratio="4 / 3" iconSize={20} className="w-28 shrink-0 rounded-lg" />
+                <div className="flex min-w-0 flex-col gap-1">
+                  <h4 className="text-base font-bold leading-snug transition-colors group-hover:text-brand md:text-[17px]">{a.title}</h4>
+                  <Byline article={a} />
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -99,7 +142,7 @@ export function PodcastBand({ podcasts }: { podcasts: Podcast[] }) {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-5">
           {podcasts.map((p, i) => (
             <a key={p.id} href={p.href} className="group flex items-center gap-4 rounded-lg bg-night p-3.5 hover:bg-[#232328]">
-              <div className="relative h-28 w-28 shrink-0 rounded-[10px]" style={{ background: toneBackground(p.tone, i) }}>
+              <div className="relative h-28 w-28 shrink-0 rounded-[10px]" style={{ background: toneBackground(i + 4) }}>
                 <span className="absolute bottom-2 left-2 flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white">
                   <PlayIcon size={16} />
                 </span>
@@ -109,7 +152,6 @@ export function PodcastBand({ podcasts }: { podcasts: Podcast[] }) {
                 <h3 className="text-[17px] font-bold leading-snug text-white">{p.title}</h3>
                 <span className="text-[13px] text-[#9A9AA3]">{p.meta}</span>
               </div>
-              {/* TODO: podcasts are sample data until the backend adds a podcasts table. */}
             </a>
           ))}
         </div>

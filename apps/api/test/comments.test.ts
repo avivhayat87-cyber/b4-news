@@ -44,6 +44,12 @@ describe('reader sign-in', () => {
     expect(cookie?.sameSite).toBe('Lax');
   });
 
+  it('reports the session without an error when signed out', async () => {
+    const res = await ctx.app.inject({ url: '/api/v1/auth/reader/session' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ reader: null });
+  });
+
   it('locks a code after 5 wrong attempts', async () => {
     const email = 'guesser@example.com';
     await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/reader/request-code', payload: { email } });

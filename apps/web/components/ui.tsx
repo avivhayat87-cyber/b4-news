@@ -115,7 +115,7 @@ export function ArticleImage({
   className = '',
   children,
 }: {
-  article: Pick<ArticleCard, 'id' | 'image' | 'tone'>;
+  article: Pick<ArticleCard, 'id' | 'image'>;
   sizes: string;
   priority?: boolean;
   ratio?: string;
@@ -126,7 +126,7 @@ export function ArticleImage({
   return (
     <div
       className={`relative max-w-full overflow-hidden ${className}`}
-      style={{ aspectRatio: ratio, background: toneBackground(article.tone, article.id) }}
+      style={{ aspectRatio: ratio, background: toneBackground(article.id) }}
     >
       {article.image ? (
         <Image

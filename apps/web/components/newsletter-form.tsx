@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { newsletterApi } from '@/lib/client-api';
 
 type State = 'idle' | 'sending' | 'done' | 'error';
 
@@ -12,12 +13,8 @@ export function NewsletterForm({ id, layout }: { id: string; layout: 'stacked' |
     const email = String(new FormData(event.currentTarget).get('email') ?? '').trim();
     setState('sending');
     try {
-      const res = await fetch('/api/newsletter', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      setState(res.ok ? 'done' : 'error');
+      await newsletterApi.subscribe(email);
+      setState('done');
     } catch {
       setState('error');
     }

@@ -10,5 +10,7 @@ next-env.d.ts
 .env.*.local
 # local PGlite database
 .data/
+# machine-specific preview config
+.claude/launch.json
 coverage/
 .DS_Store

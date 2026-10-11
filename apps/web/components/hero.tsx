@@ -5,20 +5,22 @@ import { articleHref, toneBackground } from '@/lib/site';
 import { ArticleImage, Byline, CategoryTag, PublishedTime, wrap } from './ui';
 import { PhotoIcon } from './icons';
 
-/** The 7 main articles: one lead, two beside it, four in a row below. */
-export function Hero({ articles }: { articles: ArticleCard[] }) {
+/** The 7 main articles (one lead, two beside it, four below), opened by the breaking-news ticker. */
+export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: ArticleCard[] }) {
   const [lead, ...rest] = articles;
   if (!lead) return null;
   const side = rest.slice(0, 2);
   const row = rest.slice(2, 6);
 
   return (
-    <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-7`}>
+    <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-5`}>
+      <BreakingTicker items={latest} />
+
       <div className="flex flex-wrap gap-6">
         <Link
           href={articleHref(lead)}
-          className="group relative flex min-h-[420px] min-w-0 flex-[2_1_560px] flex-col justify-end overflow-hidden rounded-[10px] px-6 pb-7 pt-9 text-white md:min-h-[540px] md:px-8"
-          style={{ background: toneBackground(lead.tone, lead.id) }}
+          className="group relative flex min-h-[420px] min-w-0 flex-[2_1_560px] flex-col justify-end overflow-hidden rounded-xl px-6 pb-7 pt-9 text-white md:min-h-[540px] md:px-8"
+          style={{ background: toneBackground(lead.id) }}
         >
           {lead.image ? (
             <Image
@@ -36,12 +38,10 @@ export function Hero({ articles }: { articles: ArticleCard[] }) {
           )}
           <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/0 from-30% to-ink/90" />
           <CategoryTag name={lead.category.name} className="absolute right-5 top-5 text-[13px]" />
-          <h1 className="relative max-w-[20ch] text-balance font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.01em] md:text-[52px]">
+          <h1 className="relative max-w-[20ch] text-balance text-[34px] font-extrabold leading-[1.08] tracking-[-0.01em] md:text-[52px]">
             {lead.title}
           </h1>
-          {lead.excerpt ? (
-            <p className="relative mt-3.5 max-w-[60ch] text-[17px] leading-relaxed text-[#E6E6EB] md:text-lg">{lead.excerpt}</p>
-          ) : null}
+          {lead.excerpt ? <p className="relative mt-3.5 max-w-[60ch] text-[17px] leading-relaxed text-[#E6E6EB] md:text-lg">{lead.excerpt}</p> : null}
           <span className="relative mt-4 text-[13px] text-[#BEBEC7]">
             {lead.author ? <>מאת {lead.author.name} · </> : null}
             <PublishedTime iso={lead.publishedAt} />
@@ -73,5 +73,38 @@ export function Hero({ articles }: { articles: ArticleCard[] }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function BreakingTicker({ items }: { items: ArticleCard[] }) {
+  if (items.length === 0) return null;
+  const row = (hidden: boolean) =>
+    items.map((a) => (
+      <span
+        key={`${hidden ? 'b' : 'a'}-${a.id}`}
+        aria-hidden={hidden || undefined}
+        className="inline-flex items-baseline gap-2.5 whitespace-nowrap text-sm"
+      >
+        <PublishedTime iso={a.publishedAt} className="text-[13px] text-brand" />
+        <Link href={articleHref(a)} tabIndex={hidden ? -1 : undefined} className="font-semibold hover:text-brand">
+          {a.title}
+        </Link>
+      </span>
+    ));
+
+  return (
+    <div className="mb-5 flex items-center gap-4 border-b border-line pb-3">
+      <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-brand py-[5px] pe-3.5 ps-3 text-[13px] font-extrabold text-white">
+        <span aria-hidden="true" className="h-2 w-2 rounded-full bg-white" />
+        מבזקים
+      </span>
+      <div className="group min-w-0 flex-1 overflow-hidden">
+        {/* Two copies so the loop is seamless; the copy is hidden from screen readers. */}
+        <div className="flex w-max gap-10 animate-ticker group-hover:[animation-play-state:paused] motion-reduce:animate-none">
+          {row(false)}
+          {row(true)}
+        </div>
+      </div>
+    </div>
   );
 }
