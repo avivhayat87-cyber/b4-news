@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* B4 NEW'S brand tokens (see the "לוגו ומיתוג" artboard on the design canvas) */
+@theme {
+  --color-brand: #D9121F;
+  --color-brand-deep: #A80E18;
+  --color-brand-bright: #FF2E3B;
+  --color-brand-soft: #FFE3E5;
+  --color-ink: #121214;
+  --color-ink-2: #4A4A52;
+  --color-muted: #6B6B73;
+  --color-line: #E6E4E1;
+  --color-line-soft: #EFEDEA;
+  --color-stone: #F4F3F1;
+  --color-night: #1C1C20;
+  --color-night-line: #3A3A40;
+  --color-mist: #C9C9D0;
+
+  --animate-ticker: ticker 70s linear infinite;
+
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(50%); }
+  }
+}
+
+/* next/font exposes these variables on <html> */
+@theme inline {
+  --font-sans: var(--font-heebo), "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-rubik), var(--font-heebo), sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: #FFFFFF;
+    color: var(--color-ink);
+  }
+  /* Every heading uses the display face; body copy and UI stay in Heebo. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  .on-dark :focus-visible {
+    outline-color: #FFFFFF;
+  }
+}
+
+/* Article body: rendered from sanitized CMS HTML */
+.article-body {
+  font-size: 1.1875rem;
+  line-height: 1.85;
+  color: var(--color-ink);
+}
+.article-body > * + * {
+  margin-top: 1.25em;
+}
+.article-body h2 {
+  margin-top: 2em;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.article-body h3 {
+  margin-top: 1.6em;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.article-body a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.article-body blockquote {
+  border-inline-start: 4px solid var(--color-brand);
+  padding-inline-start: 1rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.article-body ul,
+.article-body ol {
+  padding-inline-start: 1.25rem;
+}
+.article-body ul {
+  list-style: disc;
+}
+.article-body ol {
+  list-style: decimal;
+}
+.article-body li + li {
+  margin-top: 0.4em;
+}

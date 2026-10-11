@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="B4">
+  <title>B4</title>
+  <rect width="120" height="120" rx="26" fill="#D9121F"/>
+  <g transform="translate(9.6 32) scale(0.7)">
+    <g transform="translate(0 80) skewX(-12) translate(0 -80)" fill="#FFFFFF">
+      <path fill="none" stroke="#FFFFFF" stroke-width="17" d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+      <path fill="none" stroke="#FFFFFF" stroke-width="17" d="M118.5 0V80M68 55.5H134"/>
+      <polygon points="106,0 127,0 89,52 68,52"/>
+    </g>
+  </g>
+</svg>

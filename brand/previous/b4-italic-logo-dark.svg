@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 515 114" width="515" height="114" role="img" aria-label="B4 NEW'S">
+  <title>B4 NEW'S</title>
+  <!-- For dark backgrounds: brighter red, white NEW'S -->
+  <g transform="translate(4 4)">
+    <g transform="translate(0 80) skewX(-12) translate(0 -80)">
+      <g fill="none" stroke="#FF2E3B" stroke-width="17">
+        <path d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+        <path d="M118.5 0V80M68 55.5H134"/>
+      </g>
+      <polygon fill="#FF2E3B" points="106,0 127,0 89,52 68,52"/>
+      <g fill="none" stroke="#FFFFFF" stroke-width="17">
+        <path d="M168.5 0V80M213.5 0V80"/>
+        <path d="M238.5 0V80M238.5 8.5H280M238.5 40H275M238.5 71.5H280"/>
+        <path d="M463 8.5H427.5a12 12 0 0 0-12 12V28a12 12 0 0 0 12 12H442.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H407"/>
+      </g>
+      <g fill="#FFFFFF">
+        <polygon points="160,0 180,0 222,80 202,80"/>
+        <polygon points="285,0 303,0 321,80 303,80"/>
+        <polygon points="303,80 321,80 343,0 325,0"/>
+        <polygon points="325,0 343,0 365,80 347,80"/>
+        <polygon points="347,80 365,80 383,0 365,0"/>
+      </g>
+      <polygon fill="#FF2E3B" points="390,0 404,0 395,30 387,30"/>
+    </g>
+    <path fill="#FF2E3B" d="M2 100C130 112 320 112 505 78C345 94 150 100 2 100Z"/>
+  </g>
+</svg>

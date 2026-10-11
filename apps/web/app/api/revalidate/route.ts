@@ -1,0 +1,28 @@
+// Called by the backend publish job: POST { "tags": ["home", "category:real-estate", "article:123"] }
+// with header x-revalidate-secret: $REVALIDATE_SECRET.
+import { timingSafeEqual } from 'node:crypto';
+import { revalidateTag } from 'next/cache';
+
+function secretMatches(given: string | null): boolean {
+  const expected = process.env.REVALIDATE_SECRET;
+  if (!expected || !given) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export async function POST(request: Request) {
+  if (!secretMatches(request.headers.get('x-revalidate-secret'))) {
+    return Response.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  const body: unknown = await request.json().catch(() => null);
+  const raw = body && typeof body === 'object' && 'tags' in body ? (body as { tags: unknown }).tags : null;
+  const tags = Array.isArray(raw) ? raw.filter((t): t is string => typeof t === 'string' && t.length <= 200).slice(0, 200) : [];
+  if (tags.length === 0) {
+    return Response.json({ error: 'body must be { "tags": string[] }' }, { status: 400 });
+  }
+
+  for (const tag of tags) revalidateTag(tag);
+  return Response.json({ revalidated: tags, at: new Date().toISOString() });
+}

@@ -1,0 +1,27 @@
+{
+  "name": "b4-news",
+  "private": true,
+  "description": "B4 NEW'S: public site, mobile app, API and newsroom CMS",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.18"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c red,blue \"npm run dev -w @b4/api\" \"npm run dev -w @b4/web\"",
+    "dev:api": "npm run dev -w @b4/api",
+    "dev:web": "npm run dev -w @b4/web",
+    "db:generate": "npm run generate -w @b4/db",
+    "db:migrate": "npm run migrate -w @b4/db",
+    "db:seed": "npm run seed -w @b4/db",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.8.0"
+  }
+}

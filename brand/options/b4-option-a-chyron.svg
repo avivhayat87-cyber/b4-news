@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530 116" width="530" height="116" role="img" aria-label="B4 NEW'S">
+  <title>B4 NEW'S · option A: chyron</title>
+  <!-- White B4 knocked out of a slanted red tag, like a TV "breaking" chyron -->
+  <g transform="translate(25 18)">
+    <g transform="translate(0 80) skewX(-12) translate(0 -80)">
+      <rect x="-18" y="-14" width="170" height="108" rx="4" fill="#D9121F"/>
+      <g fill="none" stroke="#FFFFFF" stroke-width="17">
+        <path d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+        <path d="M118.5 0V80M68 55.5H134"/>
+      </g>
+      <polygon fill="#FFFFFF" points="106,0 127,0 89,52 68,52"/>
+      <g fill="none" stroke="#121214" stroke-width="17">
+        <path d="M188.5 0V80M233.5 0V80"/>
+        <path d="M258.5 0V80M258.5 8.5H300M258.5 40H295M258.5 71.5H300"/>
+        <path d="M483 8.5H447.5a12 12 0 0 0-12 12V28a12 12 0 0 0 12 12H462.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H427"/>
+      </g>
+      <g fill="#121214">
+        <polygon points="180,0 200,0 242,80 222,80"/>
+        <polygon points="305,0 323,0 341,80 323,80"/>
+        <polygon points="323,80 341,80 363,0 345,0"/>
+        <polygon points="345,0 363,0 385,80 367,80"/>
+        <polygon points="367,80 385,80 403,0 385,0"/>
+      </g>
+      <polygon fill="#D9121F" points="410,0 424,0 415,30 407,30"/>
+    </g>
+  </g>
+</svg>

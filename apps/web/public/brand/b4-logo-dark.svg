@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 334 124" width="334" height="124" role="img" aria-label="B4 NEW'S">
+  <title>B4 NEW'S</title>
+  <!-- Dark backgrounds: red seal, white NEW'S, bright-red apostrophe -->
+  <g transform="translate(2 2)">
+    <circle cx="60" cy="60" r="58" fill="#D9121F"/>
+    <path d="M60 12A48 48 0 1 0 101.57 36" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="84" cy="18.43" r="4.5" fill="#FFFFFF"/>
+    <g transform="translate(26.5 40) scale(0.5)">
+      <g fill="none" stroke="#FFFFFF" stroke-width="17">
+        <path d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+        <path d="M118.5 0V80M68 55.5H134"/>
+      </g>
+      <polygon fill="#FFFFFF" points="106,0 127,0 89,52 68,52"/>
+    </g>
+    <g transform="translate(144 36) scale(0.6)">
+      <g fill="none" stroke="#FFFFFF" stroke-width="17">
+        <path d="M8.5 0V80M53.5 0V80"/>
+        <path d="M78.5 0V80M78.5 8.5H120M78.5 40H115M78.5 71.5H120"/>
+        <path d="M303 8.5H267.5a12 12 0 0 0-12 12V28a12 12 0 0 0 12 12H282.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H247"/>
+      </g>
+      <g fill="#FFFFFF">
+        <polygon points="0,0 20,0 62,80 42,80"/>
+        <polygon points="125,0 143,0 161,80 143,80"/>
+        <polygon points="143,80 161,80 183,0 165,0"/>
+        <polygon points="165,0 183,0 205,80 187,80"/>
+        <polygon points="187,80 205,80 223,0 205,0"/>
+      </g>
+      <polygon fill="#FF2E3B" points="230,0 244,0 235,30 227,30"/>
+    </g>
+  </g>
+</svg>

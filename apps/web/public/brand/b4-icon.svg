@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="B4">
+  <title>B4</title>
+  <!-- App icon: the seal filling a red square (the OS rounds the corners) -->
+  <rect width="120" height="120" rx="26" fill="#D9121F"/>
+  <path d="M60 16A44 44 0 1 0 98.1 38" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="82" cy="21.9" r="5" fill="#FFFFFF"/>
+  <g transform="translate(26.5 40) scale(0.5)">
+    <g fill="none" stroke="#FFFFFF" stroke-width="17">
+      <path d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+      <path d="M118.5 0V80M68 55.5H134"/>
+    </g>
+    <polygon fill="#FFFFFF" points="106,0 127,0 89,52 68,52"/>
+  </g>
+</svg>

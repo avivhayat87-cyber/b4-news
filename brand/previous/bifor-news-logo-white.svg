@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 114" width="660" height="114" role="img" aria-label="BIFOR NEW'S">
+  <title>BIFOR NEW'S</title>
+  <!-- One-color white: for red bars and photos -->
+  <g transform="translate(4 4)" fill="#FFFFFF">
+    <g transform="translate(0 80) skewX(-12) translate(0 -80)">
+      <g fill="none" stroke="#FFFFFF" stroke-width="17">
+        <path d="M8.5 0V80M8.5 8.5H37.5a12 12 0 0 1 12 12V27.5a12 12 0 0 1-12 12H8.5M8.5 39.5H39.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H8.5"/>
+        <path d="M76.5 0V80"/>
+        <path d="M101.5 0V80M101.5 8.5H143M101.5 40H137"/>
+        <rect x="157.5" y="8.5" width="45" height="63" rx="16"/>
+        <path d="M227.5 0V80M227.5 8.5H256.5a12 12 0 0 1 12 12V30.5a12 12 0 0 1-12 12H227.5"/>
+        <path d="M314.5 0V80M359.5 0V80"/>
+        <path d="M384.5 0V80M384.5 8.5H426M384.5 40H421M384.5 71.5H426"/>
+        <path d="M609 8.5H573.5a12 12 0 0 0-12 12V28a12 12 0 0 0 12 12H588.5a12 12 0 0 1 12 12V59.5a12 12 0 0 1-12 12H553"/>
+      </g>
+      <polygon points="245,34 264,34 280,80 261,80"/>
+      <polygon points="306,0 326,0 368,80 348,80"/>
+      <polygon points="431,0 449,0 467,80 449,80"/>
+      <polygon points="449,80 467,80 489,0 471,0"/>
+      <polygon points="471,0 489,0 511,80 493,80"/>
+      <polygon points="493,80 511,80 529,0 511,0"/>
+      <polygon points="536,0 550,0 541,30 533,30"/>
+    </g>
+    <path d="M2 100C180 112 430 112 650 78C450 94 200 100 2 100Z"/>
+  </g>
+</svg>
