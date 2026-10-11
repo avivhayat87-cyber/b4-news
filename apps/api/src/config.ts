@@ -14,7 +14,8 @@ const Env = z
     HOST: z.string().default('127.0.0.1'),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     DATABASE_URL: z.string().optional(),
-    CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001'),
+    // Site (3000), CMS (3001), the app's web build (8081)
+    CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001,http://localhost:8081'),
     PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
     COOKIE_DOMAIN: z.string().optional(),
     HASH_PEPPER: z.string().optional(),
