@@ -1,7 +1,7 @@
 'use client';
 // The big rotating image of the main articles: a new story every few seconds with
-// a slide and a slow zoom, swipe on phones, drag on desktop, dots to jump,
-// and a pause button (auto-rotation pauses on hover, on focus and when the tab is hidden).
+// a slide and a slow zoom, swipe on phones, drag on desktop, one countdown bar,
+// and a pause button (it also holds on hover, on keyboard focus and when the tab is hidden).
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -20,7 +20,10 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
   const [hidden, setHidden] = useState(false);
   const [reduced, setReduced] = useState(false);
   const count = articles.length;
-  const running = count > 1 && !paused && !hovering && !keyboardFocus && !hidden && !reduced;
+  // Rotation is on unless paused by the button or by a reduced-motion preference;
+  // hover, keyboard focus and a hidden tab only hold it for a moment.
+  const autoplay = count > 1 && !paused && !reduced;
+  const frozen = hovering || keyboardFocus || hidden;
 
   // In RTL the first slide is on the right and later ones are at negative scrollLeft.
   // Snapping is switched off while the slide moves (it would stop a jump across several
@@ -56,7 +59,7 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
     };
   }, []);
 
-  // Which slide is showing, from the scroll position (works for swipes, drags and dots alike).
+  // Which slide is showing, from the scroll position (works for swipes, drags and automatic moves alike).
   useEffect(() => {
     const el = track.current;
     if (!el) return;
@@ -71,13 +74,6 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
       el.removeEventListener('scroll', onScroll);
     };
   }, []);
-
-  // Auto-advance; any manual change of slide restarts the countdown.
-  useEffect(() => {
-    if (!running) return;
-    const t = setTimeout(() => goTo(index + 1), INTERVAL_MS);
-    return () => clearTimeout(t);
-  }, [running, index, goTo]);
 
   // Desktop mouse drag: one slide per drag, in the direction pulled.
   useEffect(() => {
@@ -216,25 +212,21 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
 
       {count > 1 ? (
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 px-6 pb-5 md:px-10">
-          <div className="flex flex-1 items-center gap-1.5" role="group" aria-label="בחירת כתבה">
-            {articles.map((a, i) => (
-              <button
-                key={a.id}
-                type="button"
-                aria-current={i === index ? 'true' : undefined}
-                aria-label={`כתבה ${i + 1}: ${a.title}`}
-                onClick={() => goTo(i)}
-                className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/30 hover:bg-white/50"
-              >
-                {/* The active dot fills up until the next story. */}
-                <span
-                  key={`${i}-${index}-${running}`}
-                  className={`absolute inset-y-0 right-0 rounded-full bg-white ${i < index ? 'w-full' : 'w-0'}`}
-                  style={i === index ? { width: running ? undefined : '100%', animation: running ? `hero-progress ${INTERVAL_MS}ms linear forwards` : undefined } : undefined}
-                />
-              </button>
-            ))}
+          {/* One bar that fills until the next story. It drives the rotation itself, so pausing
+              (button, hover, keyboard focus, hidden tab) freezes the bar where it is. */}
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/25" aria-hidden="true">
+            {autoplay ? (
+              <span
+                key={index}
+                className="block h-full w-full origin-right rounded-full bg-white"
+                style={{ animation: `hero-progress ${INTERVAL_MS}ms linear forwards`, animationPlayState: frozen ? 'paused' : 'running' }}
+                onAnimationEnd={() => goTo(index + 1)}
+              />
+            ) : null}
           </div>
+          <span className="sr-only" aria-live="polite">
+            כתבה {index + 1} מתוך {count}
+          </span>
           <button
             type="button"
             onClick={() => setPaused((p) => !p)}

@@ -27,10 +27,10 @@
 /* The hero carousel's countdown bar (used from an inline style, so defined outside @theme). */
 @keyframes hero-progress {
   from {
-    width: 0%;
+    transform: scaleX(0);
   }
   to {
-    width: 100%;
+    transform: scaleX(1);
   }
 }
 
