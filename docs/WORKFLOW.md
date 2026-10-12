@@ -56,7 +56,12 @@ npm run live -- restore           # list backups
 npm run live -- restore <name>    # put one back (the replaced data is kept aside, never deleted)
 npm run live -- start | stop | restart
 npm run live -- logs [api|web|cms]
+npm run live -- import-sources <file.json>   # news sites set up and tested in the workshop
 ```
+
+The live environment keeps running when the terminal that started it closes. After the
+computer restarts, start it again with `npm run live -- start`, or double-click
+`b4-news-live\start-live.cmd`.
 
 A backup is taken before every release, and the last 10 are kept. **Rollback** changes only
 the code. Articles and comments written since the release stay. **Restore** goes back in

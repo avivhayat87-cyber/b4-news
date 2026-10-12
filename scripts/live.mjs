@@ -319,6 +319,30 @@ async function smoke(which) {
   return problems;
 }
 
+/** Whatever happened during a release, the live environment is left running if it can be. */
+async function reviveLive(keys) {
+  const R = releaseDir(readState().current);
+  if (!R || !fs.existsSync(R) || (await healthy(PORTS.live.api))) return;
+  say('The live API is not answering; starting the live environment again...');
+  await stopAll('live').catch(() => {});
+  await startAll(R, 'live', keys).catch((e) => say(`Could not start it: ${e.message}. Run "npm run live -- start".`));
+}
+
+/** A double-click starter in the live folder, e.g. after the computer restarts. */
+function writeLauncher() {
+  const file = path.join(HOME, 'start-live.cmd');
+  fs.writeFileSync(
+    file,
+    [
+      '@echo off',
+      "rem Starts the B4 NEW'S live environment: site http://localhost:3100, CMS http://localhost:3101",
+      `"${process.execPath}" "${path.join(REPO, 'scripts', 'live.mjs')}" start`,
+      'pause',
+      '',
+    ].join('\r\n'),
+  );
+}
+
 /** After a switch, pages built before it are refreshed from the live data. */
 async function refreshSite(keys) {
   try {
@@ -481,6 +505,7 @@ async function release(ref = 'HEAD') {
     state.history = [state.current, ...(state.history ?? [])].slice(0, 50);
     writeState(state);
     prune(DIR.releases, KEEP_RELEASES, [id, previous?.id].filter(Boolean));
+    writeLauncher();
     say(`Done: the live site runs ${id}.`);
     say(`   site http://localhost:${PORTS.live.web}  |  CMS http://localhost:${PORTS.live.cms}`);
     if (firstTime) say(`   first admin sign-in: ${path.join(HOME, 'admin.txt')}`);
@@ -488,6 +513,7 @@ async function release(ref = 'HEAD') {
     // A version that never went live is removed; its log stays.
     await stopAll('staging').catch(() => {});
     if (!switched) fs.rmSync(R, { recursive: true, force: true });
+    await reviveLive(keys);
     throw e;
   } finally {
     releaseLock();
@@ -505,7 +531,10 @@ function requireCurrent() {
 async function start() {
   const state = requireCurrent();
   if (await healthy(PORTS.live.api)) return say('The live environment is already running.');
+  // Whatever is left of a half-running environment (e.g. the API stopped but not the site) goes first.
+  await stopAll('live');
   await startAll(releaseDir(state.current), 'live', secrets());
+  writeLauncher();
   say(`Running ${state.current.id}: site http://localhost:${PORTS.live.web} | CMS http://localhost:${PORTS.live.cms}`);
 }
 
@@ -520,6 +549,7 @@ async function status() {
     const up = name === 'api' ? await healthy(port) : await answering(port);
     console.log(`  ${name.padEnd(4)} http://localhost:${port}  ${up ? 'running' : 'stopped'}`);
   }
+  if (!(await healthy(PORTS.live.api))) console.log(`Start it with: npm run live -- start  (or double-click ${path.join(HOME, 'start-live.cmd')})`);
   const backups = fs.existsSync(DIR.backups) ? fs.readdirSync(DIR.backups).sort().reverse().slice(0, 3) : [];
   console.log(`Latest backups: ${backups.join(', ') || 'none'}`);
 }
