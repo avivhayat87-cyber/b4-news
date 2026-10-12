@@ -4,7 +4,8 @@ import { timingSafeEqual } from 'node:crypto';
 import { revalidateTag } from 'next/cache';
 
 function secretMatches(given: string | null): boolean {
-  const expected = process.env.REVALIDATE_SECRET;
+  // Development falls back to the API's development default, so publishing refreshes the local site.
+  const expected = process.env.REVALIDATE_SECRET || (process.env.NODE_ENV === 'development' ? 'local-development-revalidate-secret' : undefined);
   if (!expected || !given) return false;
   const a = Buffer.from(given);
   const b = Buffer.from(expected);

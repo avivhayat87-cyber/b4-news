@@ -1,67 +1,66 @@
 # B4 NEW'S
 
-News platform: public site, AI-assisted CMS and mobile app. "B4" reads "before".
-Design source: the "BIFOR NEW'S Design" canvas (homepage, mobile home, brand sheet).
+News platform: public site, mobile app, and an AI-assisted newsroom CMS. "B4" reads "before".
 
 ```
-apps/web/        Next.js public site (App Router, Tailwind v4)       ← built
-services/api/    FastAPI backend + Celery workers                   ← next
-apps/admin/      CMS (split-screen AI editor)                       ← later
-apps/mobile/     Expo app                                           ← later
-db/schema.sql    PostgreSQL schema (source of truth until Alembic)
-docs/            ARCHITECTURE.md, API.md
-brand/           Seal logo: b4-logo (light, dark, white), b4-mark (seal only), b4-icon (app);
-                 options/ = the B4 directions considered; previous/ = earlier logos
+apps/web/       Public site: Next.js 15 (App Router, SSR/ISR), Tailwind v4       :3000
+apps/admin/     Newsroom CMS: Next.js, TipTap canvas, TanStack Query             :3001
+apps/api/       API + background jobs: Fastify 5, Drizzle, zod                    :4000
+apps/mobile/    App: Expo SDK 57 (iOS, Android; web build for preview)            :8081
+packages/db/    Database schema, migrations, seeds (PostgreSQL; PGlite locally)
+packages/shared/ Types and validation shared by all of the above (zod)
+brand/          Seal logo files and icon renderer
+docs/           ARCHITECTURE.md (start here), API.md, NEXT-STEPS.md
 ```
 
-## Run the site
+## Run everything locally
 
-Requires Node.js 20+.
+Needs Node.js 20.18+ only. No database or Docker install: the API embeds PostgreSQL (PGlite) and stores it in `.data/`.
 
 ```bash
-cd apps/web
 npm install
-cp .env.example .env.local
+```
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000. With `API_URL` empty the site runs on built-in sample data
-(`lib/mock.ts`), so the design can be reviewed before the backend exists.
+This starts the API (http://localhost:4000), the site (http://localhost:3000) and the CMS (http://localhost:3001).
+On the first start the API creates a development admin and writes its password to `.data/dev-admin.txt`.
 
-Pages: `/` home · `/article/<slug>` · `/category/<slug>` · `/search?q=` · `/a/<id>` (short link, redirects).
+The app: `npm run dev:app`, then press `w` for the web build or scan the QR code with Expo Go.
 
-## Run the database
+### What works out of the box
 
-Requires Docker.
+- Sample articles on the site and in the app.
+- Three made-up sample news sites served by the API (`/dev/sites/*`): an RSS feed, an HTML listing page and a news sitemap.
+  Each publishes a new article every 10 minutes, so "איתור כתבות" shows the delta fetch in action.
+- AI stand-ins: without API keys, rewriting is simulated and images are abstract placeholders, and the CMS says so in a banner.
+  Add `ANTHROPIC_API_KEY` (text) and `OPENAI_API_KEY` (images) in `apps/api/.env` for the real thing.
+- Social posts are prepared but not sent until an account has a token (`SOCIAL_SECRET_<NAME>`, see `apps/api/.env.example`).
+
+## The newsroom process (CMS)
+
+1. **הגדרות אתרים**: an editor adds a site (name + link); the developer gets an email, builds the trigger (RSS / sitemap / HTML selectors), tests it against the live site and approves it.
+2. **איתור כתבות**: one click fetches only what was published since the last run, from every active site. Every run is kept with its date and count; an article from an older run can be moved into the latest one.
+3. Results are grouped by section with source, thumbnail, headline and first paragraph. Tick articles, then **save as a magazine** (or as single articles with a color label) in **עריכות שמורות**.
+4. **The editor**: the original (read-only) beside the canvas. The AI has already written its own version "as an external reporter" and 4 images. Ask the AI for changes in the chat (on a selected passage, or the whole article), edit by hand; everything autosaves. Choose main / trending / section, tags, byline, push. "Not for publishing" sets an article aside.
+5. **Social networks** open after the text is marked final: a story image different from the article image, a headline and two sentences; regenerate, edit, upload, or comment to the AI. On Facebook, Instagram and X the link goes in the first comment.
+6. **Preview and final approval**: every article with its date, editor and tags. Publishing goes to the site first, then to the networks; each correction goes back to the AI (see **למידת ה-AI**).
+
+## Commands
 
 ```bash
-docker compose up -d db redis
+npm run typecheck          # all workspaces
+npm test                   # API (PGlite in memory) and shared tests
+npm run db:generate        # new migration after editing packages/db/src/schema.ts
+npm run create-admin -w @b4/api -- --email you@example.com --name "Your Name" --role admin
 ```
 
-On first start PostgreSQL loads `db/schema.sql` (tables, enums, the 12 categories, the rewrite prompt).
-To reload it from scratch: `docker compose down -v && docker compose up -d db`.
+Stop the API before `create-admin` when using the local database (PGlite allows one process).
 
-## How the site gets fresh content
+## Configuration
 
-Pages are server-rendered and cached (ISR). Every API fetch is tagged; after publishing, the backend calls:
-
-```
-POST /api/revalidate
-x-revalidate-secret: <REVALIDATE_SECRET>
-{ "tags": ["home", "category:real-estate", "article:123", "article-slug:<slug>"] }
-```
-
-| Tag | Covers |
-|---|---|
-| `home` | homepage, ticker, trending sidebar, sitemap |
-| `category:<slug>` | category page, related articles |
-| `article:<id>` / `article-slug:<slug>` | article page |
-| `markets` | market quotes (also refreshed every 60 s) |
-
-The public API returns camelCase JSON matching `apps/web/lib/types.ts`.
-
-## Open items
-
-- Social profile and channel URLs: `apps/web/lib/site.ts` (`SOCIAL`, `CHANNELS`) are `#` placeholders.
-- Podcasts ("BIFOR TALK") are sample data; the schema has no podcasts table yet.
-- Static pages linked from the footer (about, contact, accessibility statement, privacy, terms) are not written yet.
+Each app has a `.env.example`. Production needs at least: `DATABASE_URL` (PostgreSQL), `HASH_PEPPER`, `SMTP_URL`,
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `REVALIDATE_SECRET` (same value in the API and the site), `CORS_ORIGINS`,
+`PUBLIC_SITE_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL`. The API refuses to start in production with unsafe settings.

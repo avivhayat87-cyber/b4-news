@@ -94,7 +94,7 @@ export default async function ArticlePage({ params }: Props) {
               </span>
               <div className="flex flex-col text-sm leading-snug">
                 <span>
-                  {article.author ? <strong className="font-extrabold">{article.author.name}</strong> : null}
+                  <strong className="font-extrabold">{article.author?.name ?? 'מערכת B4'}</strong>
                   {article.editor ? <span className="text-muted"> · עריכה: {article.editor.name}</span> : null}
                 </span>
                 <span className="text-muted">

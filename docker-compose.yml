@@ -1,25 +1,22 @@
-# Local infrastructure: PostgreSQL (schema loaded on first start) + Redis (Celery broker).
+# Optional: a real PostgreSQL for production-like local runs. The default
+# development setup needs nothing (the API embeds PostgreSQL via PGlite).
+# Use it with: DATABASE_URL=postgres://b4:b4-local@localhost:5432/b4
+# The API applies migrations itself on start.
 services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: bifor
-      POSTGRES_USER: bifor
-      POSTGRES_PASSWORD: bifor-local
+      POSTGRES_DB: b4
+      POSTGRES_USER: b4
+      POSTGRES_PASSWORD: b4-local
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bifor -d bifor"]
+      test: ["CMD-SHELL", "pg_isready -U b4 -d b4"]
       interval: 5s
       retries: 10
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
 
 volumes:
   pgdata:

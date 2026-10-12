@@ -421,6 +421,13 @@ export async function runImages(s: Services, job: JobRow) {
     });
     ids.push(media.id);
   }
+  // The first story image is preselected; the editor can pick the other one, ask again or upload.
+  if (purpose === 'social' && ids[0]) {
+    await s.db
+      .update(socialPackages)
+      .set({ imageMediaId: ids[0], approvedAt: null, version: sql`${socialPackages.version} + 1` })
+      .where(and(eq(socialPackages.draftId, batch.draftId), sql`${socialPackages.imageMediaId} is null`));
+  }
   return { mediaIds: ids };
 }
 

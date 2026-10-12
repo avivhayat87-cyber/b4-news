@@ -141,12 +141,15 @@ function readBody(res: http.IncomingMessage, maxBytes: number, deadline: number)
 }
 
 export async function safeFetch(raw: string, options: FetchOptions): Promise<FetchResult> {
+  // `??` rather than spreading: an explicit `undefined` from a caller must not erase a default.
   const opts = {
-    timeoutMs: 15_000,
-    maxBytes: 5 * 1024 * 1024,
-    maxRedirects: 5,
-    accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    ...options,
+    allowPrivate: options.allowPrivate,
+    userAgent: options.userAgent,
+    allowTypes: options.allowTypes,
+    timeoutMs: options.timeoutMs ?? 15_000,
+    maxBytes: options.maxBytes ?? 5 * 1024 * 1024,
+    maxRedirects: options.maxRedirects ?? 5,
+    accept: options.accept ?? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   };
   const deadline = Date.now() + opts.timeoutMs;
   let url = checkUrl(raw, opts.allowPrivate);

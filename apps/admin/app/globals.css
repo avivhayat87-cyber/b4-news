@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* Same brand tokens as the public site (apps/web/app/globals.css) */
+@theme {
+  --color-brand: #D9121F;
+  --color-brand-deep: #A80E18;
+  --color-brand-soft: #FFE3E5;
+  --color-ink: #121214;
+  --color-ink-2: #4A4A52;
+  --color-muted: #6B6B73;
+  --color-line: #E6E4E1;
+  --color-line-soft: #EFEDEA;
+  --color-stone: #F4F3F1;
+  --color-canvas: #FAFAF8;
+  --color-night: #1C1C20;
+  --color-ok: #1F7A4D;
+  --color-ok-soft: #E3F4EA;
+  --color-warn: #8A5A00;
+  --color-warn-soft: #FFF4D6;
+  --color-info: #1D4E89;
+  --color-info-soft: #E3EDFA;
+}
+
+/* Color labels for saved articles. Plain variables (not @theme): they are read
+   from inline styles, which Tailwind can't see, so it would drop them. */
+:root {
+  --color-label-red: #D9121F;
+  --color-label-orange: #E8742D;
+  --color-label-yellow: #E5B710;
+  --color-label-green: #2E9E5B;
+  --color-label-blue: #2F6FD6;
+  --color-label-purple: #7B4FD1;
+  --color-label-gray: #8A8A92;
+}
+
+@theme inline {
+  --font-sans: var(--font-heebo), "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-rubik), var(--font-heebo), sans-serif;
+}
+
+@layer base {
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
+/* The editor canvas (TipTap) and the read-only original share one reading style. */
+.reading {
+  font-size: 1.0625rem;
+  line-height: 1.85;
+}
+.reading > * + * {
+  margin-top: 0.9em;
+}
+.reading h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  line-height: 1.35;
+  margin-top: 1.4em;
+}
+.reading h3 {
+  font-size: 1.12rem;
+  font-weight: 800;
+  margin-top: 1.2em;
+}
+.reading blockquote {
+  border-inline-start: 4px solid var(--color-brand);
+  padding-inline-start: 0.9rem;
+  font-weight: 700;
+}
+.reading ul {
+  list-style: disc;
+  padding-inline-start: 1.3rem;
+}
+.reading ol {
+  list-style: decimal;
+  padding-inline-start: 1.3rem;
+}
+.reading a {
+  color: var(--color-brand);
+  text-decoration: underline;
+}
+.tiptap {
+  outline: none;
+  min-height: 24rem;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted);
+  float: right;
+  height: 0;
+  pointer-events: none;
+}

@@ -1,192 +1,146 @@
-# BIFOR NEW'S: Backend API v1
+# API reference
 
-Companion to [ARCHITECTURE.md](ARCHITECTURE.md). Table and column names refer to [`db/schema.sql`](../db/schema.sql).
+Base: `/api/v1`. JSON in and out (camelCase). Request and response shapes are the zod schemas in `packages/shared` (named below).
+Every error is `{ code, message, fields? }`; `message` is Hebrew and safe to show. Admin responses are `no-store`.
 
-## Conventions
+Auth: readers use the `b4_rs` cookie (site) or `Authorization: Bearer` (app); staff use the `b4_ss` cookie (CMS).
+Cookie-authenticated writes must send an allowed `Origin`.
 
-- Base path `/api/v1`, JSON, UTF-8.
-- Two surfaces:
-  - `/public/*`: no auth, CDN-cacheable. Consumed by the Next.js site (server side) and the mobile app.
-  - `/admin/*`: JWT bearer token (15 min), refresh token in an httpOnly cookie, role checks per route.
-- Errors use `application/problem+json`: `{ "type", "title", "status", "detail", "code" }`.
-- Lists use cursor pagination: `?cursor=&limit=` → `{ "items": [...], "next_cursor": "..." }`.
-- Slow work returns **202** `{ "job_id" }`. Progress arrives on the SSE stream `GET /admin/events`.
-- Draft and social-package writes carry `version`. A stale version returns **409** with the current server copy.
-- `POST /admin/scrape-runs` and `POST /admin/magazines/{id}/publish` require an `Idempotency-Key` header.
+## Public content (`/public`, cacheable)
 
-Roles: **A** admin · **E** editor · **D** developer · **V** viewer. A route marked E is also open to A.
+| Method | Path | Returns |
+| --- | --- | --- |
+| GET | `/public/home` | `HomeData`: 7 main, 14 trending, latest, sections, podcasts |
+| GET | `/public/categories` | `CategoryRef[]` |
+| GET | `/public/categories/:slug?cursor=` | `CategoryPage` (keyset pagination) |
+| GET | `/public/articles/:slug` | `ArticleFull` (body HTML, tags, editor, source, comment count) |
+| GET | `/public/articles/:slug/related` | `ArticleCard[]` |
+| GET | `/public/a/:id` | `{ slug }`: the short link used in social posts and push |
+| GET | `/public/feed?cursor=&limit=` | `Page<ArticleCard>` (the app's endless feed) |
+| GET | `/public/search?q=&cursor=` | `Page<ArticleCard>` |
+| GET | `/public/markets` | `MarketQuote[]` (placeholder until a data provider is connected) |
+| POST | `/public/newsletter` · `/public/newsletter/confirm` | double opt-in |
+| POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app) |
 
----
+## Comments and readers
 
-## Auth
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/public/articles/:id/comments?cursor=` | `CommentList`; the viewer also sees their own comments held for review |
+| POST | `/articles/:id/comments` | `CreateCommentInput`; reader session; automatic filter; 5/min, 50/day |
+| DELETE | `/comments/:id` | own comment |
+| POST | `/comments/:id/report` | `ReportCommentInput`; 3 reports hide the comment |
+| POST | `/auth/reader/request-code` | always 204 (no account enumeration) |
+| POST | `/auth/reader/verify` | `VerifyCodeInput` → `ReaderSession` (cookie for web, token for the app); 409 `name_required` on first sign-in |
+| GET | `/auth/reader/session` | `{ reader \| null }` |
+| GET/PATCH | `/auth/reader/me` | profile |
+| POST | `/auth/reader/logout` | |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/auth/login` | – | Email + password → access token; sets refresh cookie |
-| POST | `/auth/refresh` | – | Rotate tokens |
-| POST | `/auth/logout` | any | Revoke refresh token |
-| GET | `/auth/me` | any | Current user and role |
+## Staff sign-in
 
-## Dashboard & system (tab 1)
+| Method | Path | |
+| --- | --- | --- |
+| POST | `/auth/staff/login` | `StaffLoginInput` → `StaffDto` + cookie (10 attempts / 15 min) |
+| GET | `/auth/staff/me` | `StaffDto` |
+| POST | `/auth/staff/logout` | |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| GET | `/admin/dashboard` | V | Drafts by status, magazines by status, last 5 scrape runs, sources waiting for a developer, failed social posts, AI spend today/month, weekly avg `edit_ratio` |
-| GET | `/admin/system/health` | V | DB, Redis, queue depths, worker heartbeat, provider status, social tokens expiring within 7 days |
-| GET | `/admin/events` | V | **SSE**: `scrape.progress`, `scrape.finished`, `draft.ai_ready`, `draft.ai_failed`, `images.ready`, `social.ready`, `publish.step`, `source.status_changed` |
+## CMS (`/admin`, staff only)
 
-## Source Management: הגדרות אתרים (tab 4)
+Roles: **viewer** reads only · **editor** content work · **developer** site triggers · **admin** everything, users, social accounts, style rules.
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| GET | `/admin/sources?status=` | V | List with health (last success, failures) |
-| POST | `/admin/sources` | E | `{ name, base_url, list_urls?, default_category_id? }` → `pending_dev`; notifies developers |
-| GET | `/admin/sources/{id}` | V | Detail, including `selector_config` |
-| PATCH | `/admin/sources/{id}` | E | Name, list URLs, default category, interval |
-| PUT | `/admin/sources/{id}/config` | D | `{ method, selector_config }` → `in_development` |
-| POST | `/admin/sources/{id}/test` | D | Dry run with the current config: 5 parsed sample items + extraction warnings. Writes nothing except `last_test_passed_at` |
-| POST | `/admin/sources/{id}/approve` | D | Requires a passing test in the last 24 h → `active` |
-| POST | `/admin/sources/{id}/pause` | E | → `paused` |
-| POST | `/admin/sources/{id}/resume` | E | → `active` |
-| DELETE | `/admin/sources/{id}` | A | → `archived` (history kept) |
+### Dashboard, learning, settings
 
-## Discovery: איתור כתבות (tab 2)
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/dashboard` | any | `DashboardDto` |
+| GET | `/admin/learning` | any | `LearningOverview` |
+| POST | `/admin/learning/distill` | editor | learn now from pending corrections |
+| POST | `/admin/learning/profiles/:id/activate` | admin | roll back / forward the style rules |
+| PUT | `/admin/learning/rules` | admin | `{ rules }` → new active version |
+| GET | `/admin/authors` | any | `AuthorDto[]` |
+| GET/POST | `/admin/social-accounts` | any / admin | `SocialAccountDto`, `CreateSocialAccountInput` |
+| PATCH | `/admin/social-accounts/:id` | admin | `{ isActive }` |
+| GET/POST | `/admin/users` | admin | `StaffUserDto`; POST returns a one-time temporary password |
+| PATCH | `/admin/users/:id` | admin | `UpdateStaffInput` (can't demote or disable yourself) |
+| POST | `/admin/users/:id/reset-password` | admin | one-time temporary password; signs the user out |
+| POST | `/admin/me/password` | any | `ChangePasswordInput`; signs out other sessions |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/admin/scrape-runs` | E | `{ source_ids? }` (default: all active) → **202** `{ run_id }`. Delta fetch per source |
-| GET | `/admin/scrape-runs` | V | History: time, trigger, user, found/new counts, status |
-| GET | `/admin/scrape-runs/{id}` | V | Per-source breakdown with errors |
-| GET | `/admin/scrape-runs/{id}/items?category_id=&source_id=` | V | Grid data grouped by category: source name, thumbnail, title, intro |
-| GET | `/admin/scraped-items?q=&source_id=&category_id=&from=&to=&status=` | V | Search the whole archive (to pull older articles) |
-| GET | `/admin/scraped-items/{id}` | V | Full original for the editor's left pane |
-| PATCH | `/admin/scraped-items/{id}` | E | `{ category_id }` re-categorize · `{ status: "ignored" }` |
+### Site settings
 
-## Magazines: עריכות שמורות (tab 5) and Preview
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/sources` | any | `SourceDto[]` |
+| POST | `/admin/sources` | editor, developer | `CreateSourceInput` (name + link) → `pending_dev`; emails the developers |
+| PUT | `/admin/sources/:id/config` | developer | `ConfigureSourceInput` (method, list URLs, `SelectorConfig`); a changed trigger must be re-tested |
+| POST | `/admin/sources/:id/test` | developer | `ConfigureSourceInput` → `SourceTestResult` (dry run, nothing saved) |
+| POST | `/admin/sources/:id/approve` | developer | needs a saved config with a passing test → `active` |
+| POST | `/admin/sources/:id/status` | developer | `active` (approved only) · `paused` · `archived` |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/admin/magazines` | E | **Save** from Discovery: `{ title?, scraped_item_ids[] }` → magazine + one draft per item, rewrite jobs queued → **201** |
-| GET | `/admin/magazines?status=` | V | Cards with status color and progress (`ready / total`) |
-| GET | `/admin/magazines/{id}` | V | Magazine + draft summaries in order |
-| PATCH | `/admin/magazines/{id}` | E | Rename · archive |
-| POST | `/admin/magazines/{id}/drafts` | E | `{ scraped_item_id }`: pull an older article into this magazine |
-| PUT | `/admin/magazines/{id}/order` | E | `{ draft_ids[] }` |
-| GET | `/admin/magazines/{id}/preview` | V | **Preview Magazine**: every non-skipped draft with its readiness checklist |
-| POST | `/admin/magazines/{id}/publish` | E | **Publish All** → **202** `{ publish_job_id }`; **422** lists drafts that are not ready |
-| GET | `/admin/publish-jobs/{id}` | V | Step-by-step status (articles, revalidate, social, feedback, push) |
-| POST | `/admin/publish-jobs/{id}/retry` | E | Retry failed steps only |
+### Discovery
 
-## Drafts & the split-screen editor (tab 3 + editor)
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| POST | `/admin/discovery/runs` | editor | 202 `{ runId, created }`; returns the running one if a run is in progress |
+| GET | `/admin/discovery/runs?limit=` | any | `RunDto[]` (date, counts, per-source results) |
+| GET | `/admin/discovery/runs/latest` | any | `RunDetail \| null` |
+| GET | `/admin/discovery/runs/:id` | any | `RunDetail` (items with source, image, title, first paragraph, section) |
+| POST | `/admin/discovery/items/:id/pull` | editor | add an item from an older run to the latest run |
+| POST | `/admin/discovery/save` | editor | `SaveSelectionInput` (`magazine` or `single` + color) → `SaveSelectionResult`; queues the AI |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/admin/drafts` | E | Manual Entry: `{ mode: "url", url }` (fetch + extract + rewrite) or `{ mode: "scratch" }`; optional `magazine_id` |
-| GET | `/admin/drafts?standalone=true&status=` | V | Single saved articles |
-| GET | `/admin/drafts/{id}` | V | `{ draft, original, chat, image_batches, social_package, lock }`: everything the editor needs in one call |
-| PATCH | `/admin/drafts/{id}` | E | **Autosave** `{ version, title?, subtitle?, body_doc? }` → `{ version, saved_at }` · **409** on conflict |
-| PATCH | `/admin/drafts/{id}/meta` | E | `{ category_id, placement: main\|trending\|none, author_id, tag_names[], send_push }` |
-| POST | `/admin/drafts/{id}/lock` | E | Take or renew the 60 s edit lock (heartbeat) |
-| DELETE | `/admin/drafts/{id}/lock` | E | Release |
-| POST | `/admin/drafts/{id}/rewrite` | E | Re-run the full rewrite → **202**. Replaces canvas and AI baseline (previous text kept as a revision) |
-| POST | `/admin/drafts/{id}/chat` | E | `{ message, selection? }` → **SSE** stream; the change is applied as an `ai_refine` revision |
-| GET | `/admin/drafts/{id}/chat` | V | Chat history |
-| GET | `/admin/drafts/{id}/revisions` | V | Snapshot list |
-| POST | `/admin/drafts/{id}/revisions/{rev_id}/restore` | E | Restore (creates a `restore` revision) |
-| POST | `/admin/drafts/{id}/skip` | E | `{ reason? }` → `skipped`; frees the scraped item |
-| POST | `/admin/drafts/{id}/finalize-text` | E | → `text_final`; unlocks the social module |
-| POST | `/admin/drafts/{id}/reopen-text` | E | → `editing`; marks the social package stale |
+### Manual entry and media
 
-### Images
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| POST | `/admin/manual/url` | editor | `ManualUrlInput` → `{ draftId }` (page read through the SSRF guard, AI rewrite queued) |
+| POST | `/admin/manual/write` | editor | `ManualWriteInput` → `{ draftId }` |
+| POST | `/admin/media` | editor | multipart `file` (+ `alt`, `credit`), ≤ 15 MB → `MediaDto` with all renditions |
+| GET/PATCH | `/admin/media/:id` | any / editor | `UpdateMediaInput` (alt, credit, focal point → re-cut renditions) |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/admin/drafts/{id}/images` | E | `{ purpose: "article", prompt? }` → **202** `{ batch_id }`; 4 options. Call again for 4 new ones |
-| GET | `/admin/drafts/{id}/images?purpose=article` | V | Batches, newest first |
-| PUT | `/admin/drafts/{id}/hero` | E | `{ media_id }`: select the article image |
-| POST | `/admin/media` | E | Multipart upload → normalized to site renditions → `{ media }` |
-| POST | `/admin/media/import` | E | `{ url }`: fetch a remote image into the pipeline |
-| PATCH | `/admin/media/{id}` | E | `{ focal_x, focal_y, alt_text, credit }` → renditions re-cropped |
+### Saved edits and the editor
 
-## Social distribution
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/saved` | any | `SavedEdits` (magazines + single articles) |
+| GET/PATCH | `/admin/magazines/:id` | any / editor | `MagazineDetail`; rename |
+| POST | `/admin/magazines/:id/archive` | editor | |
+| GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, nav, active AI job) |
+| PUT | `/admin/drafts/:id/content` | editor | `AutosaveInput` → `AutosaveResult`; 409 `version_conflict` / `text_locked` / `ai_busy` |
+| PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, tags, byline, color, push, main image |
+| POST | `/admin/drafts/:id/refine` | editor | `RefineInput` → 202 `{ jobId }` |
+| GET | `/admin/drafts/:id/chat` | any | `ChatMessageDto[]` |
+| POST | `/admin/drafts/:id/retry-ai` | editor | re-run the first rewrite |
+| GET/POST | `/admin/drafts/:id/images` | any / editor | batches of 4 · `GenerateImagesInput` → 202 `{ jobId }` |
+| POST | `/admin/drafts/:id/finalize` · `/reopen` · `/skip` · `/unskip` | editor | text final (opens social) · back to editing · not for publishing |
+| GET | `/admin/drafts/:id/revisions` | any | history |
+| POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
+| GET | `/admin/jobs/:id` | any | `JobRef` (poll an AI job) |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| GET | `/admin/drafts/{id}/social` | V | Package + per-platform previews (exact payloads) |
-| POST | `/admin/drafts/{id}/social/generate` | E | **409** unless `text_final`. Caption + social image → **202** |
-| POST | `/admin/drafts/{id}/social/caption` | E | New AI caption only |
-| POST | `/admin/drafts/{id}/social/image` | E | New AI social image only |
-| PATCH | `/admin/drafts/{id}/social` | E | `{ version, caption?, posts: [{ social_account_id, format, enabled, caption_override? }] }` |
-| POST | `/admin/drafts/{id}/social/approve` | E | Approve → draft can become `ready` |
-| GET | `/admin/social-accounts` | V | Connected accounts and token expiry |
-| GET | `/auth/social/{platform}/start` | A | Begin OAuth connect |
-| GET | `/auth/social/{platform}/callback` | – | OAuth callback; token goes to the secrets manager |
-| POST | `/admin/social-accounts/{id}/test` | A | Verify the token and permissions |
-| PATCH | `/admin/social-accounts/{id}` | A | Enable/disable |
-| GET | `/admin/social-posts?status=failed` | V | Failed posts and comments |
-| POST | `/admin/social-posts/{id}/retry` | E | Retry (only the comment, if the post already exists) |
+### Social networks (after the text is final)
 
-## Push notifications
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/drafts/:id/social` | any | `SocialPackageDto` (409 `text_not_final` before) |
+| PUT | `/admin/drafts/:id/social` | editor | `UpdateSocialInput` (optimistic version; story image must differ from the main image) |
+| POST | `/admin/drafts/:id/social/generate` | editor | `GenerateSocialInput` (`text` / `image` / `both`, optional comment) |
+| PUT | `/admin/drafts/:id/social/targets` | editor | `SocialTargetsInput` |
+| POST | `/admin/drafts/:id/social/approve` | editor | checks: headline, ≤ 2 sentences, story image ≠ main image |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| POST | `/admin/push` | E | `{ article_id, title, body, topic }`: breaking-news alert |
-| GET | `/admin/push` | V | History with delivery status |
+### Preview and publishing
 
-## AI settings & learning loop
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/magazines/:id/preview` · `/admin/drafts/:id/preview` | any | `PublishPreview` (date, editor, tags, networks, what's missing) |
+| POST | `/admin/magazines/:id/publish` · `/admin/drafts/:id/publish` | editor | `PublishInput` (idempotency key) → 202 `{ publishJobId }`; 422 lists what isn't ready |
+| GET | `/admin/publish-jobs/:id` | any | `PublishJobDto` with per-step results (`<draft>:site`, `revalidate`, `<draft>:<platform>:<account>`) |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| GET | `/admin/ai/prompts` | A | All prompt keys with versions |
-| POST | `/admin/ai/prompts/{key}` | A | New version `{ body, activate }` |
-| GET | `/admin/ai/style-profile` | E | Active house-style rules + example pairs |
-| POST | `/admin/ai/style-profile/rebuild` | A | **202**: distill pending feedback into a new profile version |
-| POST | `/admin/ai/style-profile/{id}/activate` | A | Activate or roll back |
-| GET | `/admin/ai/feedback?category_id=&cursor=` | E | Diffs with `edit_ratio` |
-| PATCH | `/admin/ai/feedback/{id}` | E | `{ status: "excluded" }`: keep a bad example out of training |
-| GET | `/admin/ai/usage?from=&to=` | A | Tokens, images and cost by job type and model |
+### Comment moderation
 
-## Published content & homepage
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/comments?status=&reported=` | any | held (`hidden`) and reported first |
+| PATCH | `/admin/comments/:id` | editor | `{ status: visible \| hidden \| removed, note? }` |
+| POST | `/admin/readers/:id/ban` | editor | `{ reason, hideComments }`; ends the reader's sessions |
 
-| Method | Path | Role | Purpose |
-|---|---|---|---|
-| GET | `/admin/articles?q=&category_id=&cursor=` | V | Published articles |
-| PATCH | `/admin/articles/{id}` | E | Post-publish correction → revalidates the page |
-| POST | `/admin/articles/{id}/unpublish` | E | Remove from site, slots and feeds |
-| GET | `/admin/homepage` | V | The 7 main + 14 trending slots |
-| PUT | `/admin/homepage/{zone}` | E | `{ items: [{ article_id, pinned }] }` in order (max 7 / 14) |
+## Site cache revalidation (site side)
 
----
-
-## Public API (Next.js site + mobile app)
-
-| Method | Path | Cache | Purpose |
-|---|---|---|---|
-| GET | `/public/home` | tag `home` | `{ main[7], trending[14], sections: [{ category, items[≤6] }] }`: the whole homepage in one call |
-| GET | `/public/feed?cursor=` | 60 s | Mixed-category infinite feed (mobile home) |
-| GET | `/public/categories` | 1 h | Category list with order and parent |
-| GET | `/public/categories/{slug}?cursor=` | tag `category:<slug>` | Category page |
-| GET | `/public/articles/{slug}` | tag `article:<id>` | Article + author/editor + tags + hero renditions + attribution |
-| GET | `/public/articles/{slug}/related` | tag `article:<id>` | 6 related: shared tags first, then same category |
-| GET | `/public/a/{id}` | tag `article:<id>` | Resolve the short deep-link path to the article |
-| GET | `/public/tags/{slug}?cursor=` | 5 min | Tag page |
-| GET | `/public/authors/{slug}?cursor=` | 5 min | Author page (columnists) |
-| GET | `/public/search?q=&cursor=` | none | Full-text search |
-| GET | `/public/markets` | 60 s | Ticker quotes (provider to be decided) |
-| POST | `/public/newsletter` | – | `{ email }` → double opt-in mail |
-| GET | `/public/newsletter/confirm?token=` | – | Confirm subscription |
-| POST | `/public/devices` | – | `{ platform, push_token, topics[] }` |
-| PATCH | `/public/devices/{push_token}` | – | Update topics |
-| DELETE | `/public/devices/{push_token}` | – | Unregister |
-
-Bookmarks and offline reading are stored on the device in v1, so they need no API.
-
-## Outbound calls (backend → others)
-
-| Call | When |
-|---|---|
-| `POST {SITE_URL}/api/revalidate` `{ tags[] }` with a shared secret | After publish, correction or unpublish |
-| LLM provider | rewrite, refine (chat), classify, social caption, style distill |
-| Image provider | article images (4 per batch), social image |
-| Meta Graph API / X API / Telegram Bot API | Social posting + first comment |
-| FCM | Push notifications |
+`POST {site}/api/revalidate` with header `x-revalidate-secret` and `{ "tags": [...] }`. Tags: `home`, `search`, `category:<slug>`, `article:<id>`, `article-slug:<slug>`.

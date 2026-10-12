@@ -140,6 +140,7 @@ export function toMediaDto(storage: MediaStorage, m: MediaRow): MediaDto {
     id: m.id,
     url: storage.url(m.variants.hero ?? m.storageKey),
     thumbUrl: storage.url(m.variants.thumb ?? m.storageKey),
+    storyUrl: storage.url(m.variants.story ?? m.storageKey),
     width: m.width,
     height: m.height,
     alt: m.altText,

@@ -5,6 +5,8 @@ const imageHosts = (process.env.IMAGE_HOSTS ?? '')
   .filter(Boolean);
 
 const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1').origin;
+// Where uploaded and AI images are served (the API in development, a CDN in production).
+const media = new URL(process.env.NEXT_PUBLIC_MEDIA_URL ?? `${apiOrigin}/media`);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -13,7 +15,10 @@ const nextConfig = {
   poweredByHeader: false,
   images: {
     formats: ['image/avif', 'image/webp'],
-    remotePatterns: imageHosts.map((hostname) => ({ protocol: 'https', hostname })),
+    remotePatterns: [
+      ...imageHosts.map((hostname) => ({ protocol: 'https', hostname })),
+      { protocol: media.protocol.replace(':', ''), hostname: media.hostname, port: media.port, pathname: `${media.pathname.replace(/\/$/, '')}/**` },
+    ],
   },
   async headers() {
     return [
@@ -31,7 +36,7 @@ const nextConfig = {
               // Next.js inlines its bootstrap scripts and styles.
               "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
               "style-src 'self' 'unsafe-inline'",
-              `img-src 'self' data: blob: ${imageHosts.map((h) => `https://${h}`).join(' ')}`.trim(),
+              `img-src 'self' data: blob: ${media.origin} ${imageHosts.map((h) => `https://${h}`).join(' ')}`.trim(),
               "font-src 'self'",
               `connect-src 'self' ${apiOrigin}`,
               "frame-ancestors 'none'",

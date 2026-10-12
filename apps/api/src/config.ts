@@ -130,7 +130,8 @@ const Env = z
 export type Config = z.output<typeof Env> & { socialSecret(ref: string): string | undefined };
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = Env.safeParse(source);
+  // "NAME=" in a .env file means "not set", so defaults apply.
+  const parsed = Env.safeParse(Object.fromEntries(Object.entries(source).filter(([, v]) => v !== '')));
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid configuration:\n${problems}`);

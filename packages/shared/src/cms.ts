@@ -178,6 +178,8 @@ export const MediaDto = z.object({
   id,
   url: z.string(),
   thumbUrl: z.string(),
+  /** Vertical 1080x1920 crop for stories */
+  storyUrl: z.string(),
   width: z.number().int(),
   height: z.number().int(),
   alt: z.string().nullable(),

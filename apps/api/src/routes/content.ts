@@ -83,7 +83,8 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 
     publicCache(reply);
     return {
-      main: main.map(card),
+      // The lead story fills the hero slot: send the 1600px rendition, not the card.
+      main: main.map((row, i) => (i === 0 ? toCard(row, config.mediaBaseUrl, 'hero') : card(row))),
       trending: trending.map(card),
       latest: latest.map(card),
       sections: cats

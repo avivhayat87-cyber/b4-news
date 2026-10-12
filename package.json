@@ -10,9 +10,12 @@
     "node": ">=20.18"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c red,blue \"npm run dev -w @b4/api\" \"npm run dev -w @b4/web\"",
+    "dev": "concurrently -k -n api,web,cms -c red,blue,magenta \"npm run dev -w @b4/api\" \"npm run dev -w @b4/web\" \"npm run dev -w @b4/admin\"",
     "dev:api": "npm run dev -w @b4/api",
     "dev:web": "npm run dev -w @b4/web",
+    "dev:cms": "npm run dev -w @b4/admin",
+    "dev:app": "npm run start -w @b4/mobile",
+    "worker": "npm run worker -w @b4/api",
     "db:generate": "npm run generate -w @b4/db",
     "db:migrate": "npm run migrate -w @b4/db",
     "db:seed": "npm run seed -w @b4/db",

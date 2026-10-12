@@ -1,5 +1,6 @@
 // Shared query + mapping for article cards (the shape every listing returns).
 import type { ArticleCard } from '@b4/shared';
+import { RENDITIONS } from './images';
 import { type Db, and, articles, authors, categories, eq, lte, mediaAssets, sql } from '@b4/db';
 
 export const cardColumns = {
@@ -70,8 +71,9 @@ export function toCard(row: CardRow, mediaBase: string, variant = 'card'): Artic
       row.imageKey && row.imageWidth && row.imageHeight
         ? {
             url: mediaUrl(mediaBase, row.imageVariants?.[variant] ?? row.imageKey),
-            width: row.imageWidth,
-            height: row.imageHeight,
+            // A rendition has fixed dimensions; the original keeps its own.
+            width: row.imageVariants?.[variant] && variant in RENDITIONS ? RENDITIONS[variant as keyof typeof RENDITIONS][0] : row.imageWidth,
+            height: row.imageVariants?.[variant] && variant in RENDITIONS ? RENDITIONS[variant as keyof typeof RENDITIONS][1] : row.imageHeight,
             alt: row.imageAlt ?? row.title,
             credit: row.imageCredit,
           }

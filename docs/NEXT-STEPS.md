@@ -1,36 +1,19 @@
-# Build status and next steps
+# Next steps
 
-## Done
-- Brand: B4 seal logo set (`brand/`), design canvas with the owner's latest edits
-  (white header with large logo + red section links, ticker inside the hero area,
-  footer as a separate piece that opens with the red app banner).
-- `apps/web`: Next.js site (built before the owner's header/footer edits; needs updating).
-- `db/schema.sql`, `docs/ARCHITECTURE.md`, `docs/API.md`: first data model and API design.
-- Tooling: Node.js v24.20.0 (portable, `C:\Users\avivh\Tools\node-v24.20.0-win-x64`, on user PATH).
-- Root workspace files: `package.json` (npm workspaces), `tsconfig.base.json`, `.gitignore`.
+## To go live
 
-## Decisions made with the owner
-- Project folder: `C:\Users\avivh\Projects\b4-news`.
-- Comments: registered readers only (email one-time code), published immediately,
-  automatic abuse/spam filter, report button, moderation from the CMS.
-- New category: תיירות (tourism, slug `tourism`).
-- Stack: TypeScript end to end (one language for site, app, API, CMS):
-  Fastify + zod + Drizzle ORM (PGlite locally, PostgreSQL in production), Next.js (web, admin),
-  Expo (mobile), BullMQ workers.
+1. **Infrastructure**: managed PostgreSQL (`DATABASE_URL`), object storage + CDN for `MEDIA_DIR`/`MEDIA_BASE_URL`, the API behind a reverse proxy (`TRUST_PROXY=true`), HTTPS everywhere, `COOKIE_DOMAIN` set to the parent domain of the site, CMS and API.
+2. **Keys**: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SMTP_URL`, `HASH_PEPPER`, `REVALIDATE_SECRET` (also on the site). The API refuses to start in production without them.
+3. **Real sources**: add each site in "הגדרות אתרים"; a developer configures and approves its trigger. Check each site's terms of use; the published article credits its source.
+4. **Social accounts**: Facebook page token, Instagram business account (`instagram_content_publish`), Telegram bot as channel admin, each as `SOCIAL_SECRET_<NAME>`. Images must be on a public HTTPS URL (the CDN) for Meta to fetch them.
+5. **App stores**: EAS project (`EAS_PROJECT_ID`), `APP_DOMAIN` for universal links, push credentials, store listings.
+6. **Scale-out**: run the API with `WORKER=off` and one or more `npm run worker` processes.
 
-## Next, in order
-1. Git: install (user scope) and make the first commit.
-2. `packages/shared` (categories incl. tourism, zod schemas) and `packages/db` (Drizzle schema
-   from `db/schema.sql` + readers, sessions, login codes, comments, comment reports,
-   `scrape_run_items`, draft color labels; seed with the sample content).
-3. `apps/api`: security plugins (helmet, CORS allowlist, rate limits, cookies), public API,
-   reader auth, comments, staff auth. Tests with Vitest + PGlite.
-4. `apps/web`: apply the owner's design edits, tourism, comments UI, read from the API.
-5. `apps/mobile`: Expo app (home carousel of 7, trending 14, feed, categories, saved, search,
-   push, deep links `/a/<id>`).
-6. `apps/admin` + `apps/worker`: the newsroom CMS following the owner's process
-   (discovery runs, run history and pulling items into the latest run, manual entry by link or
-   writing, source settings with developer approval, saved edits with color labels and magazines,
-   split-screen AI editor with auto-save, 4 AI images, main/trending/category, skip,
-   preview + final approval, social package with story image and link in the first comment,
-   learning loop from the editors' fixes).
+## Product backlog
+
+- Scheduled discovery (sources already have `scrape_interval_min`; a scheduler only needs to call `startRun(…, 'schedule')`).
+- X and TikTok posting once API access is approved; WhatsApp channels have no posting API (posts are prepared for manual posting).
+- Edit locks with presence ("X is editing") on top of the existing optimistic versioning.
+- Market data provider for the ticker (`/public/markets` returns placeholders).
+- Headless rendering (`html_js`) for sources that need JavaScript.
+- Editable prompt templates in the CMS (they are versioned in `prompt_templates` already).
