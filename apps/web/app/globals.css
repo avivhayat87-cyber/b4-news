@@ -24,6 +24,16 @@
   }
 }
 
+/* The hero carousel's countdown bar (used from an inline style, so defined outside @theme). */
+@keyframes hero-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
 /* next/font exposes these variables on <html> */
 @theme inline {
   --font-sans: var(--font-heebo), "Segoe UI", system-ui, sans-serif;

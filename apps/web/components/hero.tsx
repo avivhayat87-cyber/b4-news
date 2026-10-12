@@ -2,80 +2,64 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { ArticleCard } from '@/lib/types';
 import { articleHref, toneBackground } from '@/lib/site';
-import { ArticleImage, Byline, CategoryTag, PublishedTime, wrap } from './ui';
+import { HeroCarousel } from './hero-carousel';
+import { CategoryTag, PublishedTime, wrap } from './ui';
 
-/** The 7 main articles (one lead, two beside it, four below), opened by the breaking-news ticker. */
+/**
+ * The 7 main articles, opened by the breaking-news ticker: one big image that
+ * rotates through the lead story and stories 4-7, and stories 2-3 fixed beside it.
+ */
 export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: ArticleCard[] }) {
   const [lead, ...rest] = articles;
   if (!lead) return null;
-  const side = rest.slice(0, 2);
-  const row = rest.slice(2, 6);
+  const fixed = rest.slice(0, 2);
+  const rotating = [lead, ...rest.slice(2, 6)];
 
   return (
     <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-5`}>
       <BreakingTicker items={latest} />
 
-      <div className="flex flex-wrap gap-6">
-        <Link
-          href={articleHref(lead)}
-          className="group relative flex min-h-[420px] min-w-0 flex-[2_1_560px] flex-col justify-end overflow-hidden rounded-xl px-6 pb-7 pt-9 text-white md:min-h-[540px] md:px-8"
-          style={{ background: toneBackground(lead.id) }}
-        >
-          {lead.image ? (
-            <Image
-              src={lead.image.url}
-              alt={lead.image.alt}
-              fill
-              priority
-              sizes="(min-width: 1280px) 820px, 100vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.02] motion-reduce:transition-none"
-            />
-          ) : (
-            <span aria-hidden="true" className="absolute left-1/2 top-[34%] -translate-x-1/2 -translate-y-1/2">
-              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
-              <img src="/brand/b4-mark.svg" alt="" width={120} height={120} className="h-[120px] w-[120px] opacity-25 grayscale" />
-            </span>
-          )}
-          {/* Strong enough for any photo: the headline must stay readable over bright images. */}
-          <CategoryTag name={lead.category.name} className="absolute right-5 top-5 text-[13px]" />
-          <h1 className="relative max-w-[20ch] text-balance [text-shadow:0_2px_16px_rgba(0,0,0,.45)] text-[34px] font-extrabold leading-[1.08] tracking-[-0.01em] md:text-[52px]">
-            {lead.title}
-          </h1>
-          {lead.excerpt ? <p className="relative mt-3.5 max-w-[60ch] text-[17px] leading-relaxed text-[#E6E6EB] md:text-lg">{lead.excerpt}</p> : null}
-          <span className="relative mt-4 text-[13px] text-[#BEBEC7]">
-            {lead.author ? <>מאת {lead.author.name} · </> : null}
-            <PublishedTime iso={lead.publishedAt} />
-          </span>
-        </Link>
-
-        <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
-          {side.map((a, i) => (
-            <Link key={a.id} href={articleHref(a)} className="group flex flex-col gap-2.5">
-              <ArticleImage article={a} sizes="(min-width: 1280px) 400px, (min-width: 768px) 50vw, 100vw" priority={i === 0} iconSize={32} className="rounded-[10px]">
-                <CategoryTag name={a.category.name} className="absolute right-3 top-3" />
-              </ArticleImage>
-              <h2 className="text-balance text-[21px] font-extrabold leading-[1.3] transition-colors group-hover:text-brand">{a.title}</h2>
-              <Byline article={a} />
-            </Link>
-          ))}
-        </div>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-6">
+        <HeroCarousel articles={rotating} />
+        {fixed.length > 0 ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 lg:gap-6">
+            {fixed.map((a) => (
+              <FeatureCard key={a.id} article={a} />
+            ))}
+          </div>
+        ) : null}
       </div>
-
-      {row.length > 0 ? (
-        <div className="mt-7 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-6 border-t border-line pt-6">
-          {row.map((a) => (
-            <Link key={a.id} href={articleHref(a)} className="group flex min-w-0 flex-col gap-2">
-              <ArticleImage article={a} sizes="(min-width: 1280px) 300px, (min-width: 768px) 50vw, 100vw" className="rounded-[10px]" />
-              <span className="text-[13px] font-extrabold text-brand">{a.category.name}</span>
-              <h2 className="text-balance text-[17px] font-bold leading-snug transition-colors group-hover:text-brand">{a.title}</h2>
-            </Link>
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
 
+/** A fixed main article: the image fills the card, the headline sits on it. */
+function FeatureCard({ article: a }: { article: ArticleCard }) {
+  return (
+    <Link
+      href={articleHref(a)}
+      className="group relative flex min-h-[230px] flex-col justify-end overflow-hidden rounded-xl p-5 text-white lg:min-h-0"
+      style={{ background: toneBackground(a.id) }}
+    >
+      {a.image ? (
+        <Image
+          src={a.image.url}
+          alt={a.image.alt}
+          fill
+          sizes="(min-width: 1280px) 410px, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition-transform duration-500 group-hover:scale-[1.04] motion-reduce:transition-none"
+        />
+      ) : null}
+      <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/0 from-25% via-ink/50 via-55% to-ink/95" />
+      <CategoryTag name={a.category.name} className="absolute right-4 top-4" />
+      <h2 className="relative text-balance text-[21px] font-extrabold leading-[1.25] [text-shadow:0_2px_12px_rgba(0,0,0,.45)] md:text-[23px]">{a.title}</h2>
+      <span className="relative mt-2 text-[13px] text-[#BEBEC7]">
+        {a.author ? <>מאת {a.author.name} · </> : null}
+        <PublishedTime iso={a.publishedAt} />
+      </span>
+    </Link>
+  );
+}
 function BreakingTicker({ items }: { items: ArticleCard[] }) {
   if (items.length === 0) return null;
   const row = (hidden: boolean) =>
