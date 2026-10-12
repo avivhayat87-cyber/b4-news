@@ -5,11 +5,24 @@
 //   tsx src/cli/live-db.ts migrate <database-url>          applies migrations; fails if any of those counts went down
 //   tsx src/cli/live-db.ts init    <database-url> [<dir>]  new database: migrations, reference data and, with <dir>,
 //                                                          a first admin whose password goes to <dir>/admin.txt
+//   tsx src/cli/live-db.ts import-sources <database-url> <file.json>
+//                                                          adds tested news sites (exported from another environment) as active
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { type Db, createDb, seedReferenceData, sql, users } from '@b4/db';
+import { SelectorConfig } from '@b4/shared';
+import { type Db, createDb, seedReferenceData, sources, sql, users } from '@b4/db';
+import { z } from 'zod';
 import { hashPassword } from '../lib/password';
+
+const ImportedSource = z.object({
+  name: z.string().trim().min(1).max(80),
+  baseUrl: z.string().url().startsWith('https://'),
+  method: z.enum(['rss', 'sitemap', 'html']),
+  listUrls: z.array(z.string().url().startsWith('https://')).min(1).max(20),
+  selectorConfig: SelectorConfig,
+  devNotes: z.string().max(2000).nullish(),
+});
 
 /** The work that must survive every release. Tables a version doesn't have yet are skipped. */
 const KEPT = [
@@ -82,6 +95,21 @@ async function main() {
         console.log(`Created the first admin (${email}); the password is in ${path.join(dir, 'admin.txt')}.`);
       }
       console.log(JSON.stringify(await countRows(handle.db)));
+      return;
+    }
+
+    if (command === 'import-sources') {
+      if (!dir) throw new Error('usage: live-db.ts import-sources <database-url> <file.json>');
+      const list = z.array(ImportedSource).parse(JSON.parse(readFileSync(dir, 'utf8')));
+      const now = new Date();
+      for (const s of list) {
+        const added = await handle.db
+          .insert(sources)
+          .values({ ...s, devNotes: s.devNotes ?? null, status: 'active', approvedAt: now, lastTestPassedAt: now })
+          .onConflictDoNothing({ target: sources.baseUrl })
+          .returning({ id: sources.id });
+        console.log(`${added.length ? 'added  ' : 'exists '} ${s.name} (${s.baseUrl})`);
+      }
       return;
     }
 

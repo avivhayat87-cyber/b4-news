@@ -11,6 +11,7 @@
 //   npm run live -- rollback            back to the previous version (the data stays as it is)
 //   npm run live -- backup              copy the database and media now
 //   npm run live -- restore [backup]    put a backup back (the current data is kept aside, not deleted)
+//   npm run live -- import-sources <file.json>   add news sites tested in the workshop
 //   npm run live -- logs [api|web|cms]
 //
 // Everything lives in ../b4-news-live (or $B4_LIVE_HOME):
@@ -568,6 +569,21 @@ async function restore(name) {
   say(`Restored ${name}. The data it replaced is in ${aside}.`);
 }
 
+/** News sites tested elsewhere (a JSON export), added to the live CMS as active. */
+async function importSources(file) {
+  if (!file || !fs.existsSync(file)) fail('Usage: npm run live -- import-sources <file.json>');
+  const state = requireCurrent();
+  const R = releaseDir(state.current);
+  const out = await withLiveApiStopped(secrets(), () =>
+    tsx(R, ['src/cli/live-db.ts', 'import-sources', `pglite:${path.join(DIR.data, 'db')}`, path.resolve(file)], {
+      cwd: path.join(R, 'apps', 'api'),
+      env: baseEnv(),
+      label: 'importing sites',
+    }),
+  );
+  console.log(out.trim());
+}
+
 function logs(name = 'api') {
   const file = path.join(DIR.logs, `live-${name}.log`);
   if (!fs.existsSync(file)) fail(`No log yet for ${name}.`);
@@ -591,6 +607,7 @@ const commands = {
   rollback,
   backup: backupCommand,
   restore: () => restore(arg),
+  'import-sources': () => importSources(arg),
   logs: () => logs(arg),
 };
 
