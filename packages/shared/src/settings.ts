@@ -20,7 +20,7 @@ export type IntegrationField = {
 
 export type IntegrationDef = { title: string; description: string; docsUrl: string; fields: IntegrationField[] };
 
-export const INTEGRATION_IDS = ['anthropic', 'openai', 'smtp'] as const;
+export const INTEGRATION_IDS = ['anthropic', 'gemini', 'smtp'] as const;
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 
 export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
@@ -34,13 +34,22 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
       { key: 'modelFast', label: 'מודל מהיר (רשתות)', secret: false, defaultValue: 'claude-haiku-5-5' },
     ],
   },
-  openai: {
-    title: 'OpenAI: תמונות',
-    description: 'יוצר את 4 התמונות לכל כתבה ואת תמונות הסטורי.',
-    docsUrl: 'https://platform.openai.com/api-keys',
+  gemini: {
+    title: 'Gemini: תמונות',
+    description: 'יוצר את 4 התמונות לכל כתבה ואת תמונות הסטורי (Nano Banana של Google).',
+    docsUrl: 'https://aistudio.google.com/apikey',
     fields: [
-      { key: 'apiKey', label: 'מפתח API', secret: true, placeholder: 'sk-…', pattern: '^sk-[A-Za-z0-9_\\-]{20,}$' },
-      { key: 'imageModel', label: 'מודל תמונות', secret: false, defaultValue: 'gpt-image-2' },
+      {
+        key: 'apiKey',
+        label: 'מפתח API',
+        secret: true,
+        placeholder: 'AIza…',
+        // Google has more than one key format (standard "AIza…" keys and newer auth keys).
+        pattern: '^[A-Za-z0-9_.\\-]{30,300}$',
+        help: 'נוצר ב-aistudio.google.com תחת API Keys. מפתח ישן צריך הגבלה ל-Gemini API בלבד.',
+      },
+      { key: 'imageModel', label: 'מודל תמונות', secret: false, defaultValue: 'gemini-nano-banana-2.1' },
+      { key: 'imageSize', label: 'רזולוציה (1K / 2K / 4K)', secret: false, defaultValue: '2K', pattern: '^(1K|2K|4K)$' },
     ],
   },
   smtp: {

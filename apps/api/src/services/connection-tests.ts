@@ -29,13 +29,16 @@ export async function testIntegration(s: Services, id: IntegrationId): Promise<C
         throw e;
       }
     }
-    if (id === 'openai') {
+    if (id === 'gemini') {
       if (!v.apiKey) return fail('לא הוזן מפתח.');
-      const r = await getJson(`https://api.openai.com/v1/models/${encodeURIComponent(v.imageModel!)}`, { headers: { authorization: `Bearer ${v.apiKey}` } });
-      if (r.status === 200) return ok(`מחובר. המודל ${v.imageModel} זמין.`);
-      if (r.status === 401) return fail('המפתח לא תקין או בוטל.');
-      if (r.status === 404) return fail(`המפתח תקין, אבל המודל "${v.imageModel}" לא זמין בו.`);
-      return fail(`OpenAI החזיר שגיאה (${r.status}).`);
+      const r = await getJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(v.imageModel!)}`, { headers: { 'x-goog-api-key': v.apiKey } });
+      if (r.status === 200) return ok(`מחובר. המודל ${r.body.displayName ?? v.imageModel} זמין.`);
+      if (r.status === 404) return fail(`המפתח תקין, אבל המודל "${v.imageModel}" לא זמין בו. בדקו את שם המודל.`);
+      // Google answers a bad key with 400, and a key it won't accept (e.g. unrestricted) with 401/403; its message says which.
+      const reason = typeof r.body.error?.message === 'string' ? ` Google: ${r.body.error.message.slice(0, 200)}` : '';
+      if (JSON.stringify(r.body.error ?? {}).includes('API_KEY_INVALID')) return fail('המפתח לא תקין או בוטל.');
+      if (r.status === 400 || r.status === 401 || r.status === 403) return fail(`המפתח לא התקבל.${reason}`);
+      return fail(`Gemini החזיר שגיאה (${r.status}).${reason}`);
     }
     if (!v.url) return fail('לא הוזנה כתובת SMTP.');
     await nodemailer.createTransport(v.url).verify();

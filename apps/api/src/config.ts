@@ -50,9 +50,10 @@ const Env = z
     ANTHROPIC_API_KEY: z.string().optional(),
     AI_MODEL: z.string().default('claude-sonnet-5-5'),
     AI_MODEL_FAST: z.string().default('claude-haiku-5-5'),
-    IMAGE_PROVIDER: z.enum(['openai', 'placeholder', '']).default(''),
-    OPENAI_API_KEY: z.string().optional(),
-    IMAGE_MODEL: z.string().default('gpt-image-2'),
+    IMAGE_PROVIDER: z.enum(['gemini', 'placeholder', '']).default(''),
+    GEMINI_API_KEY: z.string().optional(),
+    IMAGE_MODEL: z.string().default('gemini-nano-banana-2.1'),
+    IMAGE_SIZE: z.enum(['1K', '2K', '4K']).default('2K'),
     /** Generate the first 4 article images automatically after the AI rewrite. */
     AUTO_IMAGES: bool(true),
 
@@ -76,7 +77,7 @@ const Env = z
     const publicApiUrl = (env.PUBLIC_API_URL ?? `http://localhost:${env.PORT}`).replace(/\/+$/, '');
     // "auto": a key entered in the CMS or set here; without one, development uses stand-ins and production refuses.
     const textMode = (env.AI_PROVIDER || 'auto') as 'anthropic' | 'fake' | 'auto';
-    const imageMode = (env.IMAGE_PROVIDER || 'auto') as 'openai' | 'placeholder' | 'auto';
+    const imageMode = (env.IMAGE_PROVIDER || 'auto') as 'gemini' | 'placeholder' | 'auto';
     const secretsKey = decodeKey(env.SECRETS_KEY) ?? (production ? null : createHash('sha256').update(`b4-secrets|${pepper}`).digest());
     const devFixtures = env.DEV_FIXTURES ?? development;
     const allowPrivate = env.SCRAPER_ALLOW_PRIVATE ?? development;
@@ -87,7 +88,7 @@ const Env = z
     if (env.SECRETS_KEY && !decodeKey(env.SECRETS_KEY)) issue('SECRETS_KEY', 'SECRETS_KEY must be 32 bytes, base64 or hex (e.g. `openssl rand -base64 32`)');
     if (production && !secretsKey) issue('SECRETS_KEY', 'Production needs SECRETS_KEY (32 random bytes, base64)');
     if (textMode === 'anthropic' && !env.ANTHROPIC_API_KEY) issue('ANTHROPIC_API_KEY', 'AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
-    if (imageMode === 'openai' && !env.OPENAI_API_KEY) issue('OPENAI_API_KEY', 'IMAGE_PROVIDER=openai needs OPENAI_API_KEY');
+    if (imageMode === 'gemini' && !env.GEMINI_API_KEY) issue('GEMINI_API_KEY', 'IMAGE_PROVIDER=gemini needs GEMINI_API_KEY');
     if (production && (textMode === 'fake' || imageMode === 'placeholder')) issue('AI_PROVIDER', 'The AI stand-ins are for development only');
     if (production && (devFixtures || allowPrivate)) issue('DEV_FIXTURES', 'DEV_FIXTURES and SCRAPER_ALLOW_PRIVATE are for development only');
     if (production && (!env.REVALIDATE_SECRET || env.REVALIDATE_SECRET.length < 16)) {
@@ -121,8 +122,9 @@ const Env = z
         anthropicKey: env.ANTHROPIC_API_KEY,
         model: env.AI_MODEL,
         modelFast: env.AI_MODEL_FAST,
-        openaiKey: env.OPENAI_API_KEY,
+        geminiKey: env.GEMINI_API_KEY,
         imageModel: env.IMAGE_MODEL,
+        imageSize: env.IMAGE_SIZE,
         autoImages: env.AUTO_IMAGES,
       },
       scraper: { userAgent: env.SCRAPER_USER_AGENT, allowPrivate },

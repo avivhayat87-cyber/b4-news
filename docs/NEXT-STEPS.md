@@ -3,7 +3,7 @@
 ## To go live
 
 1. **Infrastructure**: managed PostgreSQL (`DATABASE_URL`), object storage + CDN for `MEDIA_DIR`/`MEDIA_BASE_URL`, the API behind a reverse proxy (`TRUST_PROXY=true`), HTTPS everywhere, `COOKIE_DOMAIN` set to the parent domain of the site, CMS and API.
-2. **Server secrets**: `HASH_PEPPER`, `SECRETS_KEY`, `REVALIDATE_SECRET` (also on the site). Then, in the CMS (הגדרות > חיבורים): Claude, OpenAI and SMTP keys.
+2. **Server secrets**: `HASH_PEPPER`, `SECRETS_KEY`, `REVALIDATE_SECRET` (also on the site). Then, in the CMS (הגדרות > חיבורים): Claude, Gemini (images) and SMTP keys.
 3. **Real sources**: paste the sites' links in "הגדרות אתרים" (automatic setup), approve the ones that pass, configure the rest by hand. Check each site's terms of use; the published article credits its source, and the crawler respects robots.txt.
 4. **Social accounts** (הגדרות > חיבורים): Facebook page token, Instagram business account (`instagram_content_publish`), Telegram bot as channel admin. Images must be on a public HTTPS URL (the CDN) for Meta and Telegram to fetch them.
 5. **Site details** (הגדרות > פרטי האתר): social and app links, contact details; have a lawyer review the default privacy, terms and accessibility pages.

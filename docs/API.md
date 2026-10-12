@@ -71,7 +71,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 
 | Method | Path | |
 | --- | --- | --- |
-| GET | `/admin/integrations` | `IntegrationStatus[]` (Claude, OpenAI, SMTP): configured or not, last 4 characters, source (CMS / environment) |
+| GET | `/admin/integrations` | `IntegrationStatus[]` (Claude, Gemini, SMTP): configured or not, last 4 characters, source (CMS / environment) |
 | PUT | `/admin/integrations/:id` | `UpdateIntegrationInput` (`null` removes a value); secrets stored encrypted |
 | POST | `/admin/integrations/:id/test` | `ConnectionTest` |
 | PUT | `/admin/social-accounts/:id/token` | `SetTokenInput` (`null` removes) → `SocialAccountDto` |

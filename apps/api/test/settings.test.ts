@@ -58,10 +58,24 @@ describe('connections', () => {
 
   it('binds each secret to its name', () => {
     const box = new SecretBox(ctx.config.secretsKey);
-    const sealed = box.seal('integration:openai:apiKey', 'sk-test-value');
-    expect(box.open('integration:openai:apiKey', sealed)).toBe('sk-test-value');
+    const sealed = box.seal('integration:gemini:apiKey', 'test-value');
+    expect(box.open('integration:gemini:apiKey', sealed)).toBe('test-value');
     expect(() => box.open('integration:anthropic:apiKey', sealed)).toThrow();
-    expect(() => new SecretBox(Buffer.alloc(32, 1)).open('integration:openai:apiKey', sealed)).toThrow();
+    expect(() => new SecretBox(Buffer.alloc(32, 1)).open('integration:gemini:apiKey', sealed)).toThrow();
+  });
+
+  it('makes images with Gemini once its key is entered', async () => {
+    const hub = createAiHub({ ...ctx.config, ai: { ...ctx.config.ai, image: 'auto' } }, new SettingsStore(ctx.db, ctx.config));
+    expect((await hub.image()).provider).toBe('placeholder');
+
+    expect((await admin.put('/integrations/gemini', { values: { imageSize: '8K' } })).status).toBe(422);
+    const res = await admin.put('/integrations/gemini', { values: { apiKey: `AIza${'y'.repeat(35)}`, imageSize: '1K' } });
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(true);
+    const image = await createAiHub({ ...ctx.config, ai: { ...ctx.config.ai, image: 'auto' } }, new SettingsStore(ctx.db, ctx.config)).image();
+    expect(image.provider).toBe('gemini');
+    expect(image.model).toBe('gemini-nano-banana-2.1');
+    expect((await admin.put('/integrations/gemini', { values: { apiKey: null, imageSize: null } })).body.connected).toBe(false);
   });
 
   it('keeps social tokens write-only too', async () => {

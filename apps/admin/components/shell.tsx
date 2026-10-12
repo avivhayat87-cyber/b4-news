@@ -124,7 +124,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="bg-warn-soft px-6 py-2 text-sm font-semibold text-warn" role="note">
             ה-AI {dash.data.ai.text === 'anthropic' ? 'לכתיבה מחובר, אבל התמונות' : 'והתמונות'} עדיין במצב הדגמה.{' '}
             <Link href="/settings" className="underline">
-              חברו את Claude ו-OpenAI ב&quot;הגדרות&quot; ← &quot;חיבורים&quot;
+              חברו את Claude ו-Gemini ב&quot;הגדרות&quot; ← &quot;חיבורים&quot;
             </Link>{' '}
             כדי לקבל כתיבה ותמונות אמיתיות.
           </div>

@@ -4,7 +4,7 @@ import { PermanentJobError } from '../../lib/jobs';
 import type { SettingsStore } from '../settings';
 import { AnthropicText } from './anthropic';
 import { FakeText, PlaceholderImages } from './fake';
-import { OpenAiImages } from './openai-images';
+import { GeminiImages, type ImageSize } from './gemini-images';
 import type { ImageAI, TextAI, Usage } from './types';
 
 /** Resolves the AI providers per call, so a key entered in the CMS takes effect immediately. */
@@ -19,7 +19,7 @@ export class AiNotConnectedError extends PermanentJobError {
     super(
       what === 'text'
         ? 'ה-AI לכתיבה לא מחובר. מנהל/ת יכול/ה לחבר את Claude ב"הגדרות" > "חיבורים".'
-        : 'ה-AI לתמונות לא מחובר. מנהל/ת יכול/ה לחבר את OpenAI ב"הגדרות" > "חיבורים".',
+        : 'ה-AI לתמונות לא מחובר. מנהל/ת יכול/ה לחבר את Gemini ב"הגדרות" > "חיבורים".',
     );
   }
 }
@@ -49,10 +49,10 @@ export function createAiHub(config: Config, settings: SettingsStore): AiHub {
 
   const image = async (): Promise<ImageAI> => {
     if (config.ai.image === 'placeholder') return placeholder;
-    const v = await settings.integration('openai');
+    const v = await settings.integration('gemini');
     if (v.apiKey) {
-      const key = `${v.apiKey}|${v.imageModel}`;
-      if (imageCache?.key !== key) imageCache = { key, ai: new OpenAiImages(v.apiKey, v.imageModel!) };
+      const key = `${v.apiKey}|${v.imageModel}|${v.imageSize}`;
+      if (imageCache?.key !== key) imageCache = { key, ai: new GeminiImages(v.apiKey, v.imageModel!, v.imageSize as ImageSize) };
       return imageCache.ai;
     }
     if (config.ai.allowStandIns) return placeholder;

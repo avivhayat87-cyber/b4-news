@@ -40,7 +40,7 @@ The app: `npm run dev:app`, then press `w` for the web build or scan the QR code
 
 ## Connecting services (CMS > הגדרות)
 
-- **חיבורים**: Claude (writing), OpenAI (images), outgoing email (SMTP), and social accounts (Facebook page, Instagram, Telegram bot). Keys are stored encrypted, shown only as their last characters, and take effect immediately; each has a "בדיקת חיבור" button.
+- **חיבורים**: Claude (writing), Gemini (images), outgoing email (SMTP), and social accounts (Facebook page, Instagram, Telegram bot). Keys are stored encrypted, shown only as their last characters, and take effect immediately; each has a "בדיקת חיבור" button.
 - **פרטי האתר**: social and app links, contact details, and the info pages (About, Contact, Advertise, Accessibility, Privacy, Terms). Empty links are hidden on the site and in the app.
 - **הגדרות אתרים**: paste a list of news-site links; each one is set up automatically (RSS / news sitemap detection, a section filter for section links, a live test) and waits for a developer/admin "אישור כולם". Sites that block bots or have no feed need a manual trigger.
 

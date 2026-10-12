@@ -16,7 +16,7 @@ One TypeScript monorepo (npm workspaces). Every part shares the same types and v
                  │  job runner (inline, or `npm run worker` processes)   │
                  └──────┬──────────────────┬───────────────┬────────────┘
                         ▼                  ▼               ▼
-                 PostgreSQL          media files      Anthropic · OpenAI images
+                 PostgreSQL          media files      Anthropic · Gemini images
                  (PGlite locally)    (disk / CDN)     Meta Graph · Telegram · Expo push
 ```
 
@@ -44,7 +44,7 @@ services/
   context.ts      Services = { db, config, settings, ai, storage, fetch, mailer, log }, built once (createServices)
   settings.ts     SettingsStore: CMS-managed settings and encrypted secrets (30 s cache); integration values = CMS, then env
   site-settings.ts public links, contact details and info pages (defaults included)
-  connection-tests.ts  the "test connection" calls (Anthropic, OpenAI, SMTP, Telegram, Meta)
+  connection-tests.ts  the "test connection" calls (Anthropic, Gemini, SMTP, Telegram, Meta)
   scraper/        parse (RSS/Atom, sitemap, HTML, article incl. JSON-LD), collect (delta, canonical URLs, sitemap indexes),
                   robots (robots.txt), autodetect + setup (feed discovery from a link), run, test-source
   drafts.ts       selections → drafts, AI rewrite/refine/images, autosave, finalize/skip, reading models

@@ -99,8 +99,9 @@ export class SettingsStore {
       'anthropic.apiKey': c.ai.anthropicKey,
       'anthropic.model': c.ai.model,
       'anthropic.modelFast': c.ai.modelFast,
-      'openai.apiKey': c.ai.openaiKey,
-      'openai.imageModel': c.ai.imageModel,
+      'gemini.apiKey': c.ai.geminiKey,
+      'gemini.imageModel': c.ai.imageModel,
+      'gemini.imageSize': c.ai.imageSize,
       'smtp.url': c.smtpUrl,
       'smtp.from': c.mailFrom,
     };
