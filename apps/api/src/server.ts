@@ -43,6 +43,8 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 await app.listen({ host: config.host, port: config.port });
+// The embedded database has a single worker (this process), so jobs a restart cut off resume right away.
+if (runner && handle.kind === 'pglite') await runner.recoverInterrupted();
 runner?.start();
 const ai = await app.services.ai.status();
 app.log.info(`AI: text=${ai.text} images=${ai.image}; worker=${config.worker.mode}`);

@@ -152,26 +152,41 @@ export class JobRunner<Ctx> {
             : { status: 'failed', finishedAt: new Date(), lockedAt: null, lastError: error.message.slice(0, 2000) },
         )
         .where(eq(jobs.id, job.id));
-      if (!retry && handler?.onFailed) {
-        try {
-          await handler.onFailed(this.ctx, job, error);
-        } catch (err) {
-          this.opts.logger?.error({ job: job.id, err }, 'onFailed hook failed');
-        }
-      }
+      if (!retry) await this.gaveUp(job, error);
     }
   }
 
+  /** Lets the job's domain state know it won't be retried (e.g. a discovery run is closed). */
+  private async gaveUp(job: JobRow, error: Error): Promise<void> {
+    const onFailed = this.handlers[job.kind]?.onFailed;
+    if (!onFailed) return;
+    try {
+      await onFailed(this.ctx, job, error);
+    } catch (err) {
+      this.opts.logger?.error({ job: job.id, err }, 'onFailed hook failed');
+    }
+  }
+
+  /**
+   * At startup, when this process is the only possible worker (the embedded database
+   * can't be shared), every job still marked running was cut off by a restart: retry it now
+   * instead of after the 15-minute safety margin that shared databases need.
+   */
+  async recoverInterrupted(): Promise<void> {
+    await this.recoverStale(new Date());
+  }
+
   /** Jobs whose worker died mid-run go back to the queue (or fail, if out of attempts). */
-  private async recoverStale(): Promise<void> {
-    const cutoff = new Date(Date.now() - 15 * 60_000);
+  private async recoverStale(cutoff = new Date(Date.now() - 15 * 60_000)): Promise<void> {
     await this.db
       .update(jobs)
       .set({ status: 'queued', lockedAt: null, lastError: 'worker stopped while running; retried' })
       .where(and(eq(jobs.status, 'running'), lt(jobs.lockedAt, cutoff), lt(jobs.attempts, jobs.maxAttempts)));
-    await this.db
+    const abandoned = await this.db
       .update(jobs)
       .set({ status: 'failed', lockedAt: null, finishedAt: new Date(), lastError: 'worker stopped while running' })
-      .where(and(eq(jobs.status, 'running'), lt(jobs.lockedAt, cutoff)));
+      .where(and(eq(jobs.status, 'running'), lt(jobs.lockedAt, cutoff)))
+      .returning();
+    for (const job of abandoned) await this.gaveUp(job, new Error('worker stopped while running'));
   }
 }
