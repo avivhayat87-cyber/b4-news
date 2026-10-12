@@ -35,6 +35,7 @@ export function contentHash(body: string | null): string | null {
 const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5';
 
 const looksLikeSitemap = (u: string) => /\.xml(\.gz)?(\?|$)|sitemap/i.test(u);
+const NOT_ARTICLE_SITEMAPS = /tag|categor|author|writer|topic|show|contentpage|static|image|video/i;
 
 export async function listPage(fetch: Fetcher, source: SourceSpec, url: string, depth = 0): Promise<FoundItem[]> {
   const res = await fetch(url, { accept: source.method === 'html' ? undefined : FEED_ACCEPT });
@@ -51,7 +52,10 @@ export async function listPage(fetch: Fetcher, source: SourceSpec, url: string, 
           at: Date.parse(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i.exec(m[1]!)?.[1] ?? '') || 0,
         }))
       : items.filter((i) => looksLikeSitemap(i.url)).map((i) => ({ url: i.url, at: i.publishedAt?.getTime() ?? 0 }));
-    const newest = children.filter((c) => c.url).sort((a, b) => b.at - a.at).slice(0, 3);
+    // Tag, category and author sitemaps change often but list pages, not articles: followed only if there is nothing else.
+    const all = children.filter((c) => c.url);
+    const articleLike = all.filter((c) => !NOT_ARTICLE_SITEMAPS.test(c.url));
+    const newest = (articleLike.length ? articleLike : all).sort((a, b) => b.at - a.at).slice(0, 3);
     const nested = await Promise.all(newest.map((c) => listPage(fetch, source, c.url, depth + 1).catch(() => [])));
     return nested.flat();
   }
@@ -70,8 +74,11 @@ export async function listItems(fetch: Fetcher, source: SourceSpec, since: Date 
       all.push(item);
     }
   }
+  // The filter may have several parts separated by spaces ("/economy/ /article-"); an address must contain all of them,
+  // in any letter case (sites mix "Article-" and "article-").
+  const filter = source.config.list.urlFilter?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
   return all
-    .filter((i) => !source.config.list.urlFilter || i.url.includes(source.config.list.urlFilter))
+    .filter((i) => filter.every((part) => i.url.toLowerCase().includes(part)))
     .filter((i) => !since || !i.publishedAt || i.publishedAt > since)
     .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
     .slice(0, source.config.list.maxItems);

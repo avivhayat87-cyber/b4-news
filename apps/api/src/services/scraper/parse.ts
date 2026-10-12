@@ -146,7 +146,14 @@ export function parseHtmlList(html: string, pageUrl: string, cfg: SelectorConfig
   return items;
 }
 
-const NOISE = 'script, style, noscript, iframe, form, nav, aside, footer, header, figure figcaption, .ad, .ads, [class*="advert"], [class*="share"], [class*="related"], [class*="newsletter"]';
+const NOISE = 'script, style, noscript, iframe, nav, aside, footer, header, figure figcaption, .ad, .ads, [class*="advert"], [class*="share"], [class*="related"], [class*="newsletter"]';
+
+/** Search boxes and sign-up forms go; a form that wraps the whole page (ASP.NET sites such as Globes) stays. */
+function removeSmallForms($: cheerio.CheerioAPI) {
+  $('form')
+    .filter((_, f) => cleanText($(f).find('p').text()).length < 400)
+    .remove();
+}
 
 /** Paragraph and sub-heading text of an element, as blocks separated by blank lines ("## " marks sub-headings). */
 function blocksOf($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string {
@@ -227,6 +234,7 @@ export function extractArticle(html: string, pageUrl: string, cfg?: SelectorConf
   const ld = jsonLdArticle($);
   for (const sel of cfg?.remove ?? []) $(sel).remove();
   $(NOISE).remove();
+  removeSmallForms($);
 
   const title =
     cleanText(cfg?.title ? $(cfg.title).first().text() : null) || meta($, 'og:title', 'twitter:title') || cleanText(ld?.headline) || cleanText($('h1').first().text()) || cleanText($('title').text());
