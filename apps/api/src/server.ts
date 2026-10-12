@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { createDb, defaultDatabaseUrl, seedReferenceData, seedSampleContent } from '@b4/db';
 import { buildApp } from './app';
@@ -33,14 +34,32 @@ const app = await buildApp({ config, db: handle.db });
 // Background work runs in this process unless WORKER=off (then run `npm run worker`).
 const runner = config.worker.mode === 'inline' ? new JobRunner(handle.db, handlers, app.services, { concurrency: config.worker.concurrency, logger: app.log }) : null;
 
+let stopping = false;
 const shutdown = async () => {
-  await runner?.stop();
+  if (stopping) return;
+  stopping = true;
+  // Running jobs get a minute to finish; any still running then resume at the next start.
+  await Promise.race([runner?.stop(), new Promise((resolve) => setTimeout(resolve, 60_000))]);
   await app.close();
   await handle.close();
   process.exit(0);
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// The live environment's release tool (scripts/live.mjs) stops this process over HTTP, since
+// Windows has no graceful signal for a background process. Local callers with the token only.
+const shutdownToken = process.env.SHUTDOWN_TOKEN;
+if (shutdownToken) {
+  app.post('/internal/shutdown', { config: { rateLimit: false } }, async (req, reply) => {
+    const given = Buffer.from(String(req.headers['x-shutdown-token'] ?? ''));
+    const expected = Buffer.from(shutdownToken);
+    const local = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+    if (!local || given.length !== expected.length || !timingSafeEqual(given, expected)) return reply.status(404).send();
+    setImmediate(() => void shutdown());
+    return reply.status(202).send({ stopping: true });
+  });
+}
 
 await app.listen({ host: config.host, port: config.port });
 // The embedded database has a single worker (this process), so jobs a restart cut off resume right away.

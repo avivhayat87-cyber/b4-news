@@ -1,0 +1,27 @@
+# The same gate as a release (docs/WORKFLOW.md): types, tests and database changes.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund --include-workspace-root --workspace=@b4/api --workspace=@b4/web --workspace=@b4/admin
+      - run: npm run check
+      - name: Database changes keep what is already on the target branch
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p /tmp/base
+          git archive "origin/${{ github.base_ref }}" packages/db/drizzle | tar -x -C /tmp/base
+          npx tsx packages/db/src/scripts/check-migrations.ts --against /tmp/base/packages/db/drizzle

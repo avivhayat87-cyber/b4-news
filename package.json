@@ -21,7 +21,11 @@
     "db:seed": "npm run seed -w @b4/db",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "db:check": "npm run check -w @b4/db",
+    "check": "npm run typecheck -w @b4/shared -w @b4/db -w @b4/api -w @b4/web -w @b4/admin && npm test -w @b4/shared -w @b4/api --if-present && npm run db:check",
+    "live": "node scripts/live.mjs",
+    "release": "node scripts/live.mjs release"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
