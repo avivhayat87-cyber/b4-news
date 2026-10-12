@@ -15,7 +15,7 @@
 //
 // Everything lives in ../b4-news-live (or $B4_LIVE_HOME):
 //   live.env      secrets, created once      data/db, data/media   the real data
-//   releases/<id> installed versions         backups/<stamp>-…     copies of data/
+//   releases/<id> installed versions         backups/<stamp>-...     copies of data/
 //   staging/      throwaway copy for rehearsals   logs/   run/
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -54,7 +54,12 @@ const fail = (message) => {
 };
 const tail = (text, n) => text.trimEnd().split(/\r?\n/).slice(-n).join('\n');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const stamp = () => new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '');
+/** Local time, e.g. 2026-10-12_2306 (releases and backups sort by it). */
+const stamp = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+};
 
 // --- Commands -------------------------------------------------------------------------
 /** Only what tools need from the shell: the live processes never inherit development settings. */
@@ -396,7 +401,7 @@ async function release(ref = 'HEAD') {
     const pending = git(['status', '--porcelain']).trim();
     if (pending) say(`   ${pending.split('\n').length} uncommitted changes in the workshop are not part of it: only committed work goes live.`);
 
-    say('1/7 A clean copy of the committed version, and its packages…');
+    say('1/7 A clean copy of the committed version, and its packages...');
     const tar = path.join(DIR.releases, `${id}.tar`);
     git(['archive', '--format=tar', '-o', tar, commit]);
     fs.mkdirSync(R, { recursive: true });
@@ -404,7 +409,7 @@ async function release(ref = 'HEAD') {
     fs.rmSync(tar);
     npm(['ci', '--no-audit', '--no-fund', '--include-workspace-root', ...SERVED.map((w) => `--workspace=${w}`)], { cwd: R, env: baseEnv(), label: 'installing packages' });
 
-    say('2/7 Checks: types, tests, database changes…');
+    say('2/7 Checks: types, tests, database changes...');
     const ws = CHECKED.map((w) => `--workspace=${w}`);
     npm(['run', 'typecheck', '--if-present', ...ws], { cwd: R, env: baseEnv(), label: 'type check' });
     npm(['test', '--if-present', ...ws], { cwd: R, env: baseEnv(), label: 'tests' });
@@ -415,7 +420,7 @@ async function release(ref = 'HEAD') {
       label: 'database change check',
     });
 
-    say(firstTime ? '3/7 Rehearsal on a new database…' : '3/7 Rehearsal on a copy of the live data…');
+    say(firstTime ? '3/7 Rehearsal on a new database...' : '3/7 Rehearsal on a copy of the live data...');
     fs.rmSync(DIR.staging, { recursive: true, force: true });
     fs.mkdirSync(path.join(DIR.staging, 'media'), { recursive: true });
     const stagingDb = `pglite:${path.join(DIR.staging, 'db')}`;
@@ -431,11 +436,11 @@ async function release(ref = 'HEAD') {
     await startService(R, 'staging', 'api', keys);
     if (!(await until(() => healthy(PORTS.staging.api), 180_000))) fail('The new version\'s API did not start on the copy (see logs/staging-api.log).');
 
-    say('4/7 Building the site and the CMS…');
+    say('4/7 Building the site and the CMS...');
     npm(['run', 'build', '--workspace=@b4/admin'], { cwd: R, env: buildEnv('cms', keys), label: 'CMS build' });
     npm(['run', 'build', '--workspace=@b4/web'], { cwd: R, env: buildEnv('web', keys), label: 'site build' });
 
-    say('5/7 Testing the rehearsal: home page, article, category, sitemap, CMS…');
+    say('5/7 Testing the rehearsal: home page, article, category, sitemap, CMS...');
     await startService(R, 'staging', 'web', keys);
     await startService(R, 'staging', 'cms', keys);
     for (const name of ['web', 'cms']) await until(() => answering(PORTS.staging[name]), 90_000);
@@ -443,7 +448,7 @@ async function release(ref = 'HEAD') {
     await stopAll('staging');
     if (rehearsal.length) fail(`The new version failed on the copy of the live data:\n  - ${rehearsal.join('\n  - ')}`);
 
-    say('6/7 Switching over: stop, back up, start the new version…');
+    say('6/7 Switching over: stop, back up, start the new version...');
     if (previous) await stopAll('live');
     switched = true;
     const backup = firstTime ? null : backupNow(`before-${id}`);
@@ -455,11 +460,11 @@ async function release(ref = 'HEAD') {
     }
     try {
       await startAll(R, 'live', keys);
-      say('7/7 Testing the live site…');
+      say('7/7 Testing the live site...');
       const problems = await smoke('live');
       if (problems.length) fail(`The new version failed live:\n  - ${problems.join('\n  - ')}`);
     } catch (e) {
-      say(`${e.message}\nRolling back…`);
+      say(`${e.message}\nRolling back...`);
       await stopAll('live').catch(() => {});
       if (backup) putBack(backup);
       if (previous && fs.existsSync(releaseDir(previous))) {
@@ -476,7 +481,7 @@ async function release(ref = 'HEAD') {
     writeState(state);
     prune(DIR.releases, KEEP_RELEASES, [id, previous?.id].filter(Boolean));
     say(`Done: the live site runs ${id}.`);
-    say(`   site http://localhost:${PORTS.live.web}  ·  CMS http://localhost:${PORTS.live.cms}`);
+    say(`   site http://localhost:${PORTS.live.web}  |  CMS http://localhost:${PORTS.live.cms}`);
     if (firstTime) say(`   first admin sign-in: ${path.join(HOME, 'admin.txt')}`);
   } catch (e) {
     // A version that never went live is removed; its log stays.
@@ -500,7 +505,7 @@ async function start() {
   const state = requireCurrent();
   if (await healthy(PORTS.live.api)) return say('The live environment is already running.');
   await startAll(releaseDir(state.current), 'live', secrets());
-  say(`Running ${state.current.id}: site http://localhost:${PORTS.live.web} · CMS http://localhost:${PORTS.live.cms}`);
+  say(`Running ${state.current.id}: site http://localhost:${PORTS.live.web} | CMS http://localhost:${PORTS.live.cms}`);
 }
 
 async function status() {
