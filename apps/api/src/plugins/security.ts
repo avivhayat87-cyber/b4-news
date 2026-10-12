@@ -26,7 +26,7 @@ export const securityPlugin = fp(async (app: FastifyInstance, opts: { config: Co
   await app.register(cors, {
     origin: (origin, cb) => cb(null, !origin || config.corsOrigins.includes(origin)),
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['content-type', 'authorization', 'idempotency-key'],
     maxAge: 600,
   });
@@ -39,6 +39,8 @@ export const securityPlugin = fp(async (app: FastifyInstance, opts: { config: Co
     hook: 'preHandler',
     max: 300,
     timeWindow: '1 minute',
+    // Static media is cacheable and served by a CDN in production.
+    allowList: (req) => req.url.startsWith('/media/'),
     errorResponseBuilder: (_req, ctx) => {
       const err = new AppError(429, 'rate_limited', 'יותר מדי בקשות. נסו שוב בעוד כמה דקות.');
       (err as AppError & { retryAfter?: number }).retryAfter = Math.ceil(ctx.ttl / 1000);

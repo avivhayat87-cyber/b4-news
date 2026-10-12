@@ -8,6 +8,13 @@
       "when": 1791748722256,
       "tag": "0000_broad_hardball",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791751277468,
+      "tag": "0001_cms_jobs",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES } from '@b4/shared';
+import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, type SelectorConfig } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -200,14 +200,7 @@ export const authors = pgTable('authors', {
 // ---------------------------------------------------------------------------
 // Sources & discovery
 // ---------------------------------------------------------------------------
-/** Written by the developer when a source is set up; see docs/ARCHITECTURE.md. */
-export type SelectorConfig = {
-  list: { urls: string[]; item: string; link: string; publishedAt?: string; nextPage?: string; maxPages?: number };
-  article: { title: string; intro?: string; body: string; image?: string; publishedAt?: string; remove?: string[] };
-  categoryRules?: { urlContains: string; category: string }[];
-  requiresJs?: boolean;
-};
-
+/** `selectorConfig` is written by the developer when a source is set up (SelectorConfig in @b4/shared). */
 export const sources = pgTable(
   'sources',
   {
@@ -414,6 +407,10 @@ export const articleDrafts = pgTable(
     aiBaselineJobId: uuid().references(() => aiJobs.id),
 
     categoryId: smallint().references(() => categories.id),
+    /** What the AI classified it as; the editor's choice goes in categoryId. */
+    suggestedCategoryId: smallint().references(() => categories.id),
+    /** Image prompt the AI wrote with the rewrite; the default for "4 images". */
+    imagePrompt: text(),
     placement: homepagePlacement().notNull().default('none'),
     authorId: uuid().references(() => authors.id),
     heroMediaId: uuid().references(() => mediaAssets.id),
@@ -747,22 +744,54 @@ export const styleProfiles = pgTable('style_profiles', {
 // ---------------------------------------------------------------------------
 // Operations
 // ---------------------------------------------------------------------------
-export const publishJobs = pgTable('publish_jobs', {
-  id: uuid().primaryKey().defaultRandom(),
-  magazineId: uuid()
-    .notNull()
-    .references(() => magazines.id),
-  idempotencyKey: text().notNull().unique(),
-  status: jobStatus().notNull().default('queued'),
-  steps: jsonb().$type<Record<string, string>>().notNull().default({}),
-  requestedBy: uuid()
-    .notNull()
-    .references(() => users.id),
-  startedAt: tstz(),
-  finishedAt: tstz(),
-  error: text(),
-  createdAt: createdAt(),
-});
+/** One "publish" click: a whole magazine, or one single saved article. Site first, then social. */
+export const publishJobs = pgTable(
+  'publish_jobs',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    magazineId: uuid().references(() => magazines.id),
+    draftId: uuid().references(() => articleDrafts.id),
+    idempotencyKey: text().notNull().unique(),
+    status: jobStatus().notNull().default('queued'),
+    /** "<draftId>:site" / "<draftId>:<platform>" -> "ok" | "failed: ..." | "skipped" */
+    steps: jsonb().$type<Record<string, string>>().notNull().default({}),
+    requestedBy: uuid()
+      .notNull()
+      .references(() => users.id),
+    startedAt: tstz(),
+    finishedAt: tstz(),
+    error: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [check('publish_jobs_one_target', sql`(${t.magazineId} is null) <> (${t.draftId} is null)`)],
+);
+
+/**
+ * Background work queue (AI calls, discovery runs, publishing). Workers claim
+ * rows with FOR UPDATE SKIP LOCKED, so any number of worker processes can share it.
+ */
+export const jobs = pgTable(
+  'jobs',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    kind: text().notNull(),
+    payload: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    status: jobStatus().notNull().default('queued'),
+    /** The draft a job works on, so the editor can show that the AI is busy with it. */
+    draftId: uuid().references(() => articleDrafts.id, { onDelete: 'cascade' }),
+    runAt: tstz().notNull().defaultNow(),
+    attempts: smallint().notNull().default(0),
+    maxAttempts: smallint().notNull().default(3),
+    lockedAt: tstz(),
+    lockedBy: text(),
+    result: jsonb(),
+    lastError: text(),
+    createdBy: uuid().references(() => users.id),
+    createdAt: createdAt(),
+    finishedAt: tstz(),
+  },
+  (t) => [index('jobs_queue_idx').on(t.status, t.runAt), index('jobs_draft_idx').on(t.draftId, t.createdAt.desc())],
+);
 
 export const devices = pgTable('devices', {
   id: uuid().primaryKey().defaultRandom(),
