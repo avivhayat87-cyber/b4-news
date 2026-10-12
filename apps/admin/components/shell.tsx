@@ -122,7 +122,11 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="flex h-screen min-w-0 flex-1 flex-col">
         {dash.data && !dash.data.ai.live && (
           <div className="bg-warn-soft px-6 py-2 text-sm font-semibold text-warn" role="note">
-            מצב פיתוח: ה-AI והתמונות הם תחליף מקומי ({dash.data.ai.text} / {dash.data.ai.image}). הוסיפו מפתחות API בשרת כדי לקבל כתיבה ותמונות אמיתיות.
+            ה-AI {dash.data.ai.text === 'anthropic' ? 'לכתיבה מחובר, אבל התמונות' : 'והתמונות'} עדיין במצב הדגמה.{' '}
+            <Link href="/settings" className="underline">
+              חברו את Claude ו-OpenAI ב&quot;הגדרות&quot; ← &quot;חיבורים&quot;
+            </Link>{' '}
+            כדי לקבל כתיבה ותמונות אמיתיות.
           </div>
         )}
         {/* The editor is full-bleed and manages its own scrolling; every other screen is a padded page. */}

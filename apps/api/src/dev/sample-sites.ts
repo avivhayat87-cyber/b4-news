@@ -92,7 +92,7 @@ function fill(text: string, n: number): string {
 export function story(n: number): Story {
   const t = TOPICS[n % TOPICS.length]!;
   const title = fill(t.titles[Math.floor(n / TOPICS.length) % t.titles.length]!, n);
-  return { title: `${title} (#${n})`, intro: fill(t.intro, n), paragraphs: t.body.map((p) => fill(p, n)), section: t.section };
+  return { title, intro: fill(t.intro, n), paragraphs: t.body.map((p) => fill(p, n)), section: t.section };
 }
 
 function publishedAt(site: SampleSite, n: number): Date {
@@ -147,6 +147,16 @@ export const sampleSites: FastifyPluginAsync<{ publicApiUrl: string }> = async (
     const hue = (n * 47) % 360;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="hsl(${hue} 35% 35%)"/><circle cx="${200 + (n % 5) * 80}" cy="220" r="120" fill="hsl(${(hue + 160) % 360} 60% 55%)" opacity=".8"/></svg>`;
     return reply.header('content-type', 'image/svg+xml').header('cross-origin-resource-policy', 'cross-origin').send(svg);
+  });
+
+  // calc: a homepage that declares its feed (what automatic setup looks for)
+  app.get('/calc/', routeConfig, async (_req, reply) => {
+    const base = baseOf('calc');
+    return reply
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(
+        `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>${SAMPLE_SITES.calc.name} | חדשות כלכלה</title><meta property="og:site_name" content="${SAMPLE_SITES.calc.name}"><link rel="alternate" type="application/rss+xml" title="RSS" href="${base}/feed.xml"></head><body><h1>${SAMPLE_SITES.calc.name}</h1></body></html>`,
+      );
   });
 
   // calc: RSS 2.0

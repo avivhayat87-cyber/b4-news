@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
@@ -30,6 +31,8 @@ const Env = z
     PUBLIC_API_URL: z.string().url().optional(),
     COOKIE_DOMAIN: z.string().optional(),
     HASH_PEPPER: z.string().optional(),
+    /** 32 bytes (base64 or hex) that encrypt the API keys and tokens entered in the CMS. Required in production. */
+    SECRETS_KEY: z.string().optional(),
     MEDIA_DIR: z.string().default(DEFAULT_MEDIA_DIR),
     MEDIA_BASE_URL: z.string().default(''),
     SMTP_URL: z.string().optional(),
@@ -71,19 +74,21 @@ const Env = z
     const pepper = env.HASH_PEPPER || (production ? '' : DEV_PEPPER);
     const seedSampleContent = env.SEED_SAMPLE_CONTENT ? env.SEED_SAMPLE_CONTENT === 'true' : development;
     const publicApiUrl = (env.PUBLIC_API_URL ?? `http://localhost:${env.PORT}`).replace(/\/+$/, '');
-    const textProvider = env.AI_PROVIDER || (env.ANTHROPIC_API_KEY ? 'anthropic' : 'fake');
-    const imageProvider = env.IMAGE_PROVIDER || (env.OPENAI_API_KEY ? 'openai' : 'placeholder');
+    // "auto": a key entered in the CMS or set here; without one, development uses stand-ins and production refuses.
+    const textMode = (env.AI_PROVIDER || 'auto') as 'anthropic' | 'fake' | 'auto';
+    const imageMode = (env.IMAGE_PROVIDER || 'auto') as 'openai' | 'placeholder' | 'auto';
+    const secretsKey = decodeKey(env.SECRETS_KEY) ?? (production ? null : createHash('sha256').update(`b4-secrets|${pepper}`).digest());
     const devFixtures = env.DEV_FIXTURES ?? development;
     const allowPrivate = env.SCRAPER_ALLOW_PRIVATE ?? development;
 
     const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     if (pepper.length < 16) issue('HASH_PEPPER', 'Set HASH_PEPPER to a random string of 16+ characters');
     if (production && seedSampleContent) issue('SEED_SAMPLE_CONTENT', 'Sample content must not be seeded in production');
-    if (production && !env.SMTP_URL) issue('SMTP_URL', 'Production needs SMTP_URL (sign-in codes must not go to the log)');
-    if (textProvider === 'anthropic' && !env.ANTHROPIC_API_KEY) issue('ANTHROPIC_API_KEY', 'AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
-    if (imageProvider === 'openai' && !env.OPENAI_API_KEY) issue('OPENAI_API_KEY', 'IMAGE_PROVIDER=openai needs OPENAI_API_KEY');
-    if (production && textProvider === 'fake') issue('ANTHROPIC_API_KEY', 'Production needs a real AI provider (set ANTHROPIC_API_KEY)');
-    if (production && imageProvider === 'placeholder') issue('OPENAI_API_KEY', 'Production needs a real image provider (set OPENAI_API_KEY)');
+    if (env.SECRETS_KEY && !decodeKey(env.SECRETS_KEY)) issue('SECRETS_KEY', 'SECRETS_KEY must be 32 bytes, base64 or hex (e.g. `openssl rand -base64 32`)');
+    if (production && !secretsKey) issue('SECRETS_KEY', 'Production needs SECRETS_KEY (32 random bytes, base64)');
+    if (textMode === 'anthropic' && !env.ANTHROPIC_API_KEY) issue('ANTHROPIC_API_KEY', 'AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
+    if (imageMode === 'openai' && !env.OPENAI_API_KEY) issue('OPENAI_API_KEY', 'IMAGE_PROVIDER=openai needs OPENAI_API_KEY');
+    if (production && (textMode === 'fake' || imageMode === 'placeholder')) issue('AI_PROVIDER', 'The AI stand-ins are for development only');
     if (production && (devFixtures || allowPrivate)) issue('DEV_FIXTURES', 'DEV_FIXTURES and SCRAPER_ALLOW_PRIVATE are for development only');
     if (production && (!env.REVALIDATE_SECRET || env.REVALIDATE_SECRET.length < 16)) {
       issue('REVALIDATE_SECRET', 'Production needs REVALIDATE_SECRET (16+ characters, same value as the site)');
@@ -107,9 +112,12 @@ const Env = z
       seedSampleContent,
       trustProxy: env.TRUST_PROXY,
       worker: { mode: env.WORKER, concurrency: env.WORKER_CONCURRENCY },
+      secretsKey: secretsKey as Buffer,
       ai: {
-        text: textProvider as 'anthropic' | 'fake',
-        image: imageProvider as 'openai' | 'placeholder',
+        text: textMode,
+        image: imageMode,
+        /** Development without keys: simulated writing and placeholder images. */
+        allowStandIns: !production,
         anthropicKey: env.ANTHROPIC_API_KEY,
         model: env.AI_MODEL,
         modelFast: env.AI_MODEL_FAST,
@@ -127,6 +135,12 @@ const Env = z
     };
   });
 
+function decodeKey(raw: string | undefined): Buffer | null {
+  if (!raw) return null;
+  const buf = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
+  return buf.length === 32 ? buf : null;
+}
+
 export type Config = z.output<typeof Env> & { socialSecret(ref: string): string | undefined };
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
@@ -136,6 +150,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     const problems = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid configuration:\n${problems}`);
   }
-  // Social network tokens live in the environment (or a secrets manager feeding it), never in the database.
+  // Social tokens can also come from the environment (a secrets manager); a token entered in the CMS wins.
   return { ...parsed.data, socialSecret: (ref) => source[`SOCIAL_SECRET_${ref}`] || undefined };
 }

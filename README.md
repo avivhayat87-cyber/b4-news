@@ -35,9 +35,14 @@ The app: `npm run dev:app`, then press `w` for the web build or scan the QR code
 - Sample articles on the site and in the app.
 - Three made-up sample news sites served by the API (`/dev/sites/*`): an RSS feed, an HTML listing page and a news sitemap.
   Each publishes a new article every 10 minutes, so "איתור כתבות" shows the delta fetch in action.
-- AI stand-ins: without API keys, rewriting is simulated and images are abstract placeholders, and the CMS says so in a banner.
-  Add `ANTHROPIC_API_KEY` (text) and `OPENAI_API_KEY` (images) in `apps/api/.env` for the real thing.
-- Social posts are prepared but not sent until an account has a token (`SOCIAL_SECRET_<NAME>`, see `apps/api/.env.example`).
+- Sample articles come with section illustrations (drawn on first start), and the ticker shows the Bank of Israel's official exchange rates.
+- AI stand-ins: without keys, rewriting is simulated and images are section illustrations, and the CMS says so in a banner.
+
+## Connecting services (CMS > הגדרות)
+
+- **חיבורים**: Claude (writing), OpenAI (images), outgoing email (SMTP), and social accounts (Facebook page, Instagram, Telegram bot). Keys are stored encrypted, shown only as their last characters, and take effect immediately; each has a "בדיקת חיבור" button.
+- **פרטי האתר**: social and app links, contact details, and the info pages (About, Contact, Advertise, Accessibility, Privacy, Terms). Empty links are hidden on the site and in the app.
+- **הגדרות אתרים**: paste a list of news-site links; each one is set up automatically (RSS / news sitemap detection, a section filter for section links, a live test) and waits for a developer/admin "אישור כולם". Sites that block bots or have no feed need a manual trigger.
 
 ## The newsroom process (CMS)
 
@@ -61,6 +66,6 @@ Stop the API before `create-admin` when using the local database (PGlite allows 
 
 ## Configuration
 
-Each app has a `.env.example`. Production needs at least: `DATABASE_URL` (PostgreSQL), `HASH_PEPPER`, `SMTP_URL`,
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `REVALIDATE_SECRET` (same value in the API and the site), `CORS_ORIGINS`,
-`PUBLIC_SITE_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL`. The API refuses to start in production with unsafe settings.
+Each app has a `.env.example`. Production needs at least: `DATABASE_URL` (PostgreSQL), `HASH_PEPPER`, `SECRETS_KEY` (encrypts the keys entered in the CMS),
+`REVALIDATE_SECRET` (same value in the API and the site), `CORS_ORIGINS`, `PUBLIC_SITE_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL`.
+The AI, email and social keys can be set in the CMS instead of the environment. The API refuses to start in production with unsafe settings.

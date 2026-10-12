@@ -59,6 +59,8 @@ export const SelectorConfig = z.object({
       title: CssSelector.optional(),
       publishedAt: CssSelector.optional(),
       maxItems: z.number().int().min(1).max(200).default(40),
+      /** Keep only articles whose address contains this (e.g. "/economy" on a whole-site sitemap). */
+      urlFilter: z.string().trim().min(1).max(200).optional(),
     })
     .default({}),
   /** How to read an article page. Omit to use only what the feed provides. */
@@ -95,6 +97,8 @@ export const SourceDto = z.object({
   approvedBy: z.string().nullable(),
   approvedAt: iso.nullable(),
   createdAt: iso,
+  /** Automatic setup (feed detection + test) is running. */
+  setupRunning: z.boolean(),
 });
 export type SourceDto = z.infer<typeof SourceDto>;
 
@@ -104,6 +108,16 @@ export const CreateSourceInput = z.object({
   baseUrl: HttpUrl,
   defaultCategory: CategorySlugField.nullable().optional(),
   notes: z.string().trim().max(1000).optional(),
+});
+
+/** Several sites at once (one link per site); each gets an automatic setup attempt. */
+export const BulkSourcesInput = z.object({
+  urls: z.array(HttpUrl).min(1, 'הוסיפו לפחות קישור אחד').max(50, 'עד 50 אתרים בבת אחת'),
+  defaultCategory: CategorySlugField.nullable().optional(),
+});
+export const BulkSourcesResult = z.object({
+  created: z.array(z.object({ id, baseUrl: z.string() })),
+  skipped: z.array(z.object({ url: z.string(), reason: z.string() })),
 });
 
 /** Step 2 (developer): the trigger configuration. */
@@ -124,6 +138,8 @@ export const SourceTestResult = z.object({
   ),
   article: z.object({ url: z.string(), title: z.string(), intro: z.string().nullable(), bodyText: z.string(), imageUrl: z.string().nullable() }).nullable(),
   errors: z.array(z.string()),
+  /** Problems that don't block approval (e.g. a paywalled body: the feed summary is used). */
+  warnings: z.array(z.string()),
 });
 export type SourceTestResult = z.infer<typeof SourceTestResult>;
 

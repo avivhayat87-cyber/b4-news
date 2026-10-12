@@ -5,6 +5,7 @@ import { markRefineFailed, markRewriteFailed, runImages, runRefine, runRewrite }
 import { runDistill } from './learning';
 import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
+import { runSourceSetup } from './scraper/setup';
 import { runSocialGenerate } from './social';
 
 export const handlers: Handlers<Services> = {
@@ -19,4 +20,5 @@ export const handlers: Handlers<Services> = {
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   'publish.run': { run: runPublish, onFailed: markPublishFailed, maxAttempts: 2 },
   'learning.distill': { run: runDistill, maxAttempts: 2 },
+  'source.setup': { run: runSourceSetup, maxAttempts: 1 },
 };

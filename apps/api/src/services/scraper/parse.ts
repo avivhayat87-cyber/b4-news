@@ -192,20 +192,64 @@ function largestTextBlock($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
   return best;
 }
 
+type LdArticle = { headline?: string; description?: string; articleBody?: string; image?: unknown; datePublished?: string };
+
+/** schema.org NewsArticle data, which most news sites embed for search engines. */
+function jsonLdArticle($: cheerio.CheerioAPI): LdArticle | null {
+  const found: LdArticle[] = [];
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    const o = node as Record<string, unknown>;
+    const type = ([] as unknown[]).concat(o['@type'] ?? []).map(String);
+    if (type.some((t) => /Article$/i.test(t))) found.push(o as LdArticle);
+    if (o['@graph']) visit(o['@graph']);
+  };
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      visit(JSON.parse($(el).text()));
+    } catch {
+      // Malformed JSON-LD is common; ignore it.
+    }
+  });
+  return found.sort((a, b) => (b.articleBody?.length ?? 0) - (a.articleBody?.length ?? 0))[0] ?? null;
+}
+
+function ldImage(image: unknown): string | undefined {
+  if (typeof image === 'string') return image;
+  if (Array.isArray(image)) return ldImage(image[0]);
+  if (image && typeof image === 'object' && 'url' in image) return String((image as { url: unknown }).url);
+  return undefined;
+}
+
 export function extractArticle(html: string, pageUrl: string, cfg?: SelectorConfig['article']): ExtractedArticle {
   const $ = cheerio.load(html);
+  const ld = jsonLdArticle($);
   for (const sel of cfg?.remove ?? []) $(sel).remove();
   $(NOISE).remove();
 
-  const title = cleanText(cfg?.title ? $(cfg.title).first().text() : null) || meta($, 'og:title', 'twitter:title') || cleanText($('h1').first().text()) || cleanText($('title').text());
-  const intro = cleanText(cfg?.intro ? $(cfg.intro).first().text() : null) || meta($, 'og:description', 'description', 'twitter:description');
+  const title =
+    cleanText(cfg?.title ? $(cfg.title).first().text() : null) || meta($, 'og:title', 'twitter:title') || cleanText(ld?.headline) || cleanText($('h1').first().text()) || cleanText($('title').text());
+  const intro = cleanText(cfg?.intro ? $(cfg.intro).first().text() : null) || meta($, 'og:description', 'description', 'twitter:description') || cleanText(ld?.description);
   const bodyRoot = cfg?.body ? $(cfg.body).first() : largestTextBlock($);
-  const bodyText = bodyRoot.length ? blocksOf($, bodyRoot) : '';
+  let bodyText = bodyRoot.length ? blocksOf($, bodyRoot) : '';
+  // Without a body selector, the structured data often has the cleanest full text.
+  const ldBody = ld?.articleBody
+    ? htmlBlocksToText(
+        ld.articleBody
+          .split(/\r?\n+/)
+          .map((p) => `<p>${p}</p>`)
+          .join(''),
+      )
+    : '';
+  if (!cfg?.body && ldBody.length > bodyText.length) bodyText = ldBody;
   const imageEl = cfg?.image ? $(cfg.image).first() : null;
-  const imageUrl = absolute(imageEl ? (imageEl.attr('content') ?? imageEl.attr('data-src') ?? imageEl.attr('src')) : meta($, 'og:image', 'twitter:image'), pageUrl);
+  const imageUrl = absolute(imageEl ? (imageEl.attr('content') ?? imageEl.attr('data-src') ?? imageEl.attr('src')) : (meta($, 'og:image', 'twitter:image') ?? ldImage(ld?.image)), pageUrl);
   const dateEl = cfg?.publishedAt ? $(cfg.publishedAt).first() : null;
   const publishedAt = parseDate(
-    dateEl ? (dateEl.attr('datetime') ?? dateEl.attr('content') ?? dateEl.text()) : (meta($, 'article:published_time', 'og:published_time', 'pubdate') ?? $('time[datetime]').first().attr('datetime')),
+    dateEl
+      ? (dateEl.attr('datetime') ?? dateEl.attr('content') ?? dateEl.text())
+      : (meta($, 'article:published_time', 'og:published_time', 'pubdate') ?? ld?.datePublished ?? $('time[datetime]').first().attr('datetime')),
   );
   return { title, intro: intro || null, bodyText, imageUrl, publishedAt };
 }

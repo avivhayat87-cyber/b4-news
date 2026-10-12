@@ -828,6 +828,26 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
   createdAt: createdAt(),
 });
 
+/** Non-secret settings the newsroom manages in the CMS (site links, contact details, info pages). */
+export const appSettings = pgTable('app_settings', {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+  updatedBy: uuid().references(() => users.id),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * API keys and tokens entered in the CMS. Encrypted with AES-256-GCM under
+ * SECRETS_KEY (never stored in the database); only the last characters are kept in clear as a hint.
+ */
+export const secrets = pgTable('secrets', {
+  key: text().primaryKey(),
+  ciphertext: text().notNull(),
+  hint: text().notNull(),
+  updatedBy: uuid().references(() => users.id),
+  updatedAt: updatedAt(),
+});
+
 export const auditLog = pgTable(
   'audit_log',
   {

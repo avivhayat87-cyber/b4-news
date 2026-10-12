@@ -1,7 +1,7 @@
 // Site settings ("הגדרות אתרים"): an editor asks for a site by name and address,
 // a developer builds and tests its trigger, then approves it and it goes active.
-import { ConfigureSourceInput, CreateSourceInput, SelectorConfig, SourceDto, SourceTestResult } from '@b4/shared';
-import { and, categories, desc, eq, sources, users } from '@b4/db';
+import { BulkSourcesInput, BulkSourcesResult, ConfigureSourceInput, CreateSourceInput, SelectorConfig, SourceDto, SourceTestResult } from '@b4/shared';
+import { and, categories, desc, eq, isNotNull, sources, users } from '@b4/db';
 import { alias } from 'drizzle-orm/pg-core';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import { AppError, errors } from '../../errors';
 import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
+import { queueSourceSetup, sourcesBeingSetUp } from '../../services/scraper/setup';
 import { testSource } from '../../services/scraper/test-source';
 
 const params = z.object({ id: z.string().uuid() });
@@ -26,6 +27,7 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
       .leftJoin(approver, eq(sources.approvedBy, approver.id))
       .where(id ? eq(sources.id, id) : undefined)
       .orderBy(desc(sources.createdAt));
+    const settingUp = await sourcesBeingSetUp(s);
     return rows.map(({ source: r, category, requestedBy, approvedBy }) => {
       const config = r.selectorConfig ? SelectorConfig.safeParse(r.selectorConfig) : null;
       return {
@@ -46,6 +48,7 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
         approvedBy,
         approvedAt: r.approvedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
+        setupRunning: settingUp.has(r.id),
       };
     });
   }
@@ -88,6 +91,51 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
     return reply.status(201).send(await one(row!.id));
   });
 
+  /** Several sites from a list of links: each is created and gets an automatic setup attempt. */
+  app.post('/sources/bulk', { schema: { body: BulkSourcesInput, response: { 201: BulkSourcesResult } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor', 'developer');
+    const created: { id: string; baseUrl: string }[] = [];
+    const skipped: { url: string; reason: string }[] = [];
+    const seen = new Set<string>();
+    for (const raw of req.body.urls) {
+      const u = new URL(raw);
+      u.hash = '';
+      const baseUrl = u.toString();
+      if (seen.has(baseUrl)) continue;
+      seen.add(baseUrl);
+      const [dup] = await s.db.select({ id: sources.id }).from(sources).where(eq(sources.baseUrl, baseUrl)).limit(1);
+      if (dup) {
+        skipped.push({ url: raw, reason: 'כבר קיים ברשימה' });
+        continue;
+      }
+      const [row] = await s.db
+        .insert(sources)
+        .values({ name: u.hostname.replace(/^www\./, ''), baseUrl, defaultCategoryId: await categoryId(req.body.defaultCategory), requestedBy: staff.id, status: 'pending_dev' })
+        .returning({ id: sources.id });
+      await queueSourceSetup(s, row!.id, staff.id);
+      created.push({ id: row!.id, baseUrl });
+    }
+    await audit(s.db, { userId: staff.id, entity: 'source', entityId: 'bulk', action: 'request', details: { count: created.length } });
+    return reply.status(201).send({ created, skipped });
+  });
+
+  app.post('/sources/:id/autodetect', { schema: { params, response: { 202: z.object({ jobId: z.string().uuid() }) } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor', 'developer');
+    await one(req.params.id);
+    return reply.status(202).send({ jobId: await queueSourceSetup(s, req.params.id, staff.id) });
+  });
+
+  /** Approves every site whose saved trigger passed its test. */
+  app.post('/sources/approve-tested', { schema: { response: { 200: z.object({ approved: z.number().int() }) } } }, async (req) => {
+    const staff = requireStaff(req, 'developer');
+    const rows = await s.db
+      .update(sources)
+      .set({ status: 'active', approvedBy: staff.id, approvedAt: new Date(), consecutiveFailures: 0 })
+      .where(and(eq(sources.status, 'in_development'), isNotNull(sources.lastTestPassedAt), isNotNull(sources.method), isNotNull(sources.selectorConfig)))
+      .returning({ id: sources.id });
+    for (const r of rows) await audit(s.db, { userId: staff.id, entity: 'source', entityId: r.id, action: 'approve' });
+    return { approved: rows.length };
+  });
   app.put('/sources/:id/config', { schema: { params, body: ConfigureSourceInput, response: { 200: SourceDto } } }, async (req) => {
     const staff = requireStaff(req, 'developer');
     const current = await one(req.params.id);

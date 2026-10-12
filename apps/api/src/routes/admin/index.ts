@@ -9,6 +9,7 @@ import { discoveryRoutes } from './discovery';
 import { draftRoutes } from './drafts';
 import { mediaRoutes } from './media';
 import { overviewRoutes } from './overview';
+import { settingsRoutes } from './settings';
 import { sourceRoutes } from './sources';
 
 export const adminRoutes: FastifyPluginAsync<{ s: Services }> = async (app, { s }) => {
@@ -22,6 +23,7 @@ export const adminRoutes: FastifyPluginAsync<{ s: Services }> = async (app, { s 
   });
 
   await app.register(overviewRoutes, { s });
+  await app.register(settingsRoutes, { s });
   await app.register(sourceRoutes, { s });
   await app.register(discoveryRoutes, { s });
   await app.register(mediaRoutes, { s });

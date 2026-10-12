@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
-import { AdSlot, ArticleImage, RankBadge, SectionHeader, wrap } from '@/components/ui';
+import { ArticleImage, HousePromo, RankBadge, SectionHeader, wrap } from '@/components/ui';
 import { getArticle, getHome, getRelated } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { SITE, articleHref, categoryHref } from '@/lib/site';
@@ -165,7 +165,7 @@ export default async function ArticlePage({ params }: Props) {
               ))}
             </ol>
           </section>
-          <AdSlot />
+          <HousePromo />
         </aside>
       </div>
 

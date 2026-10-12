@@ -6,6 +6,7 @@ import { JobRunner } from '../src/lib/jobs';
 import { MemoryMailer } from '../src/lib/mailer';
 import { hashPassword } from '../src/lib/password';
 import { MemoryStorage } from '../src/lib/storage';
+import { fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages } from '../src/services/ai/fake';
 import { handlers } from '../src/services/handlers';
 import type { Fetcher } from '../src/services/scraper/collect';
@@ -40,7 +41,7 @@ export async function setup(opts: { fetch?: Fetcher } = {}) {
     return { url, status: 200, contentType: String(res.headers['content-type'] ?? ''), body: res.rawPayload };
   };
 
-  const app = await buildApp({ config, db: handle.db, mailer, logger: false, storage, ai: { text: new FakeText(), image: new PlaceholderImages() }, fetch: opts.fetch ?? fixtureFetch });
+  const app = await buildApp({ config, db: handle.db, mailer, logger: false, storage, ai: fixedAi(new FakeText(), new PlaceholderImages()), fetch: opts.fetch ?? fixtureFetch });
   inject = (path) => app.inject({ method: 'GET', url: path });
   const runner = new JobRunner(handle.db, handlers, app.services, { concurrency: 1 });
   return {

@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import type { ArticleCard } from '@/lib/types';
 import { toneBackground } from '@/lib/site';
 import { formatPublished } from '@/lib/format';
-import { PhotoIcon } from './icons';
 
 /** Page column: 1280px max, 16px gutter on phones, 24px from tablet up. */
 export const wrap = 'mx-auto w-full max-w-[1280px] px-4 md:px-6';
@@ -138,8 +137,10 @@ export function ArticleImage({
           className="object-cover"
         />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center text-white/30">
-          <PhotoIcon size={iconSize} />
+        // No image yet: the brand seal as a quiet watermark, so the card still looks intentional.
+        <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
+          <img src="/brand/b4-mark.svg" alt="" width={iconSize * 2.4} height={iconSize * 2.4} className="opacity-25 grayscale" style={{ width: `${iconSize * 2.4}px`, height: 'auto' }} />
         </span>
       )}
       {children}
@@ -147,11 +148,20 @@ export function ArticleImage({
   );
 }
 
-export function AdSlot({ size = '300×250' }: { size?: string }) {
+/** The ad position, until an ad network is connected: a house promo for advertisers. */
+export function HousePromo() {
   return (
-    <div className="flex h-[250px] flex-col items-center justify-center gap-1 rounded-[10px] border-[1.5px] border-dashed border-[#CFCCC7] bg-[#FAF9F8] text-muted">
-      <span className="text-xs font-bold tracking-[.08em]">פרסומת</span>
-      <span className="font-mono text-[13px]">{size}</span>
-    </div>
+    <Link
+      href="/advertise"
+      className="on-dark group flex min-h-[250px] flex-col justify-between rounded-[10px] bg-[linear-gradient(135deg,#1C1C20_0%,#3A3A40_100%)] p-6 text-white"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
+      <img src="/brand/b4-mark.svg" alt="" width={52} height={52} className="h-[52px] w-[52px]" />
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-bold tracking-[.08em] text-mist">פרסום</span>
+        <span className="font-display text-[22px] font-extrabold leading-tight">רוצים להגיע לקוראים של B4?</span>
+        <span className="text-[15px] font-bold text-[#FF5A63] group-hover:underline">לפרטים על פרסום באתר ←</span>
+      </div>
+    </Link>
   );
 }

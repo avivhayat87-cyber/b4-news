@@ -9,6 +9,7 @@ import type {
   CommentList,
   HomeData,
   Page,
+  PublicSite,
   ReaderDto,
   ReaderSession,
 } from '@b4/shared';
@@ -29,6 +30,9 @@ function apiBase(): string {
 }
 
 export const API_BASE = apiBase();
+
+/** The public site, for info pages and sharing. Development: the same host on port 3000. */
+export const SITE_URL = (process.env.EXPO_PUBLIC_SITE_URL ?? API_BASE.replace(/:4000\/api\/v1$/, ':3000').replace(/\/api\/v1$/, '')).replace(/\/+$/, '');
 
 export class ApiFailure extends Error {
   constructor(
@@ -69,6 +73,7 @@ export const api = {
   home: () => call<HomeData>('/public/home'),
   feed: (cursor?: string | null) => call<Page<ArticleCard>>(withCursor('/public/feed', cursor)),
   categories: () => call<CategoryRef[]>('/public/categories'),
+  site: () => call<PublicSite>('/public/site'),
   category: (slug: string, cursor?: string | null) => call<CategoryPage>(withCursor(`/public/categories/${enc(slug)}`, cursor)),
   article: (slug: string) => call<ArticleFull>(`/public/articles/${enc(slug)}`),
   related: (slug: string) => call<ArticleCard[]>(`/public/articles/${enc(slug)}/related`),

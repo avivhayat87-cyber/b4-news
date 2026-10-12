@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { HomeSection, Podcast } from '@/lib/types';
 import { articleHref, categoryHref, toneBackground } from '@/lib/site';
-import { PersonIcon, PhotoIcon, PlayIcon } from './icons';
+import { PersonIcon, PlayIcon } from './icons';
 import { ArticleImage, Byline, CategoryTag, SectionHeader, wrap } from './ui';
 
 /** Lead story with excerpt + three thumbnail rows. Used for the economy pair and the trio. */
@@ -69,11 +69,12 @@ export function TourismFeature({ section }: { section: HomeSection }) {
           {lead.image ? (
             <Image src={lead.image.url} alt={lead.image.alt} fill sizes="(min-width: 1280px) 760px, 100vw" className="object-cover" />
           ) : (
-            <span aria-hidden="true" className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 text-white/30">
-              <PhotoIcon size={48} />
+            <span aria-hidden="true" className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
+              <img src="/brand/b4-mark.svg" alt="" width={100} height={100} className="h-[100px] w-[100px] opacity-25 grayscale" />
             </span>
           )}
-          <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/0 from-25% to-ink/90" />
+          <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/10 from-15% via-ink/60 via-50% to-ink/95" />
           <h3 className="relative max-w-[24ch] text-balance text-[26px] font-extrabold leading-[1.15] md:text-[32px]">{lead.title}</h3>
           {lead.excerpt ? <p className="relative mt-3 max-w-[56ch] text-base leading-relaxed text-[#E6E6EB]">{lead.excerpt}</p> : null}
         </Link>
@@ -134,10 +135,6 @@ export function PodcastBand({ podcasts }: { podcasts: Podcast[] }) {
             <span>TALK</span>
           </h2>
           <span className="text-[15px] text-mist">פודקאסטים ושיחות עם האנשים שמזיזים את הכלכלה</span>
-          <span className="flex-1" />
-          <Link href="/podcasts" className="text-[13px] font-extrabold text-[#E4E4E8] hover:text-white">
-            לכל הפרקים
-          </Link>
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-5">
           {podcasts.map((p, i) => (

@@ -7,7 +7,7 @@ import type { Config } from './config';
 import { sampleSites } from './dev/sample-sites';
 import { AppError } from './errors';
 import type { Mailer } from './lib/mailer';
-import { LocalStorage, type MediaStorage } from './lib/storage';
+import type { MediaStorage } from './lib/storage';
 import { authPlugin } from './plugins/auth';
 import { securityPlugin } from './plugins/security';
 import { adminRoutes } from './routes/admin';
@@ -15,19 +15,21 @@ import { audienceRoutes } from './routes/audience';
 import { commentRoutes, publicCommentRoutes } from './routes/comments';
 import { contentRoutes } from './routes/content';
 import { readerAuthRoutes } from './routes/reader-auth';
+import { siteRoutes } from './routes/site';
 import { staffAuthRoutes } from './routes/staff-auth';
-import { type Ai, createAi } from './services/ai';
-import { type Services, createFetcher } from './services/context';
+import type { AiHub } from './services/ai';
+import { type Services, createServices } from './services/context';
 import type { Fetcher } from './services/scraper/collect';
 
 export type AppDeps = {
   config: Config;
   db: Db;
-  mailer: Mailer;
+  /** Default: the SMTP server configured in the CMS (or SMTP_URL). */
+  mailer?: Mailer;
   logger?: boolean;
   /** Overrides for tests; production builds these from the config. */
   storage?: MediaStorage;
-  ai?: Ai;
+  ai?: AiHub;
   fetch?: Fetcher;
 };
 
@@ -37,7 +39,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, db, mailer, logger = true, ...overrides }: AppDeps) {
+export async function buildApp({ config, db, logger = true, ...overrides }: AppDeps) {
   const app = Fastify({
     logger: logger ? { level: 'info' } : false,
     trustProxy: config.trustProxy,
@@ -73,16 +75,8 @@ export async function buildApp({ config, db, mailer, logger = true, ...overrides
 
   app.setNotFoundHandler((_req, reply) => reply.status(404).send({ code: 'not_found', message: 'הכתובת לא נמצאה' }));
 
-  const storage = overrides.storage ?? new LocalStorage(config.mediaDir, config.mediaBaseUrl);
-  const services: Services = {
-    db,
-    config,
-    ai: overrides.ai ?? createAi(config),
-    storage,
-    fetch: overrides.fetch ?? createFetcher(config),
-    mailer,
-    log: app.log,
-  };
+  const services: Services = createServices(config, db, app.log, overrides);
+  const { mailer } = services;
   app.decorate('services', services);
 
   await app.register(securityPlugin, { config });
@@ -109,6 +103,7 @@ export async function buildApp({ config, db, mailer, logger = true, ...overrides
   await app.register(
     async (v1) => {
       await v1.register(contentRoutes, { prefix: '/public', db, config });
+      await v1.register(siteRoutes, { prefix: '/public', s: services });
       await v1.register(publicCommentRoutes, { prefix: '/public', db });
       await v1.register(audienceRoutes, { prefix: '/public', db, config, mailer });
       await v1.register(commentRoutes, { db });

@@ -18,7 +18,8 @@ describe('public content', () => {
     expect(home.main).toHaveLength(HOMEPAGE_LIMITS.main);
     expect(home.trending).toHaveLength(HOMEPAGE_LIMITS.trending);
     expect(home.sections.map((s) => s.category.slug)).toContain('tourism');
-    expect(home.podcasts.length).toBeGreaterThan(0);
+    // No sample podcasts (the site hides the band until real episodes exist).
+    expect(home.podcasts).toEqual([]);
     expect(res.headers['cache-control']).toContain('public');
   });
 

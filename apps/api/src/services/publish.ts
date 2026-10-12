@@ -207,7 +207,7 @@ async function publishArticle(db: Db, draft: DraftRow, editorId: string): Promis
   });
 }
 
-async function revalidateSite(s: Services, tagList: string[]): Promise<void> {
+export async function revalidateSite(s: Services, tagList: string[]): Promise<void> {
   if (!s.config.revalidate.secret) return;
   const res = await fetch(s.config.revalidate.url, {
     method: 'POST',
@@ -263,7 +263,7 @@ async function postSocial(s: Services, draft: DraftRow, articleId: number, steps
     };
     const key = `${draft.id}:${account.platform}:${account.displayName}`;
     try {
-      const result = await publishToNetwork(s.config, account, payload);
+      const result = await publishToNetwork(s.config, account, await s.settings.socialToken(account), payload);
       await s.db
         .update(socialPosts)
         .set(

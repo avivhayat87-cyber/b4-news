@@ -19,6 +19,7 @@ import { enqueue } from '../../lib/jobs';
 import { classifyHeadline } from '../classify';
 import type { Services } from '../context';
 import { type SourceSpec, canonicalUrl, categoryFor, completeItem, contentHash, listItems, sha256 } from './collect';
+import { RobotsCache } from './robots';
 
 const BREAK_AFTER_FAILURES = 5;
 
@@ -52,6 +53,7 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
   await db.update(scrapeRuns).set({ status: 'running', startedAt: new Date() }).where(eq(scrapeRuns.id, runId));
   const categoryIds = new Map((await db.select({ id: categories.id, slug: categories.slug }).from(categories)).map((c) => [c.slug, c.id]));
   const active = await db.select().from(sources).where(eq(sources.status, 'active'));
+  const robots = new RobotsCache(s.fetch, s.config.scraper.userAgent);
 
   let totalFound = 0;
   let totalNew = 0;
@@ -79,7 +81,7 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
 
       await pool(fresh, 4, async (found) => {
         try {
-          const item = await completeItem(s.fetch, spec, found);
+          const item = await completeItem(s.fetch, spec, found, robots);
           if (!item.title) return;
           const hash = contentHash(item.bodyText);
           if (hash) {

@@ -1,6 +1,7 @@
 // Deterministic stand-ins for local development and tests: no network, no
 // cost, predictable output. The CMS shows a banner while these are active.
 import sharp from 'sharp';
+import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
 import type { AiResult, DistillRequest, ImageAI, ImageShape, RefineRequest, RewriteRequest, SocialRequest, TextAI } from './types';
 import type { DistillOutput, RefineOutput, RewriteOutput, SocialOutput } from './types';
@@ -72,22 +73,9 @@ export class FakeText implements TextAI {
   }
 }
 
-function hash(text: string): number {
-  let h = 2166136261;
-  for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  return h;
-}
+const SECTION_ORDER = ['israeli-economy', 'global-economy', 'capital-market', 'real-estate', 'insurance', 'hi-tech', 'health', 'automotive', 'entertainment', 'consumerism', 'tourism'];
 
-const PALETTES = [
-  ['#2B3B50', '#D9121F', '#F4F3F1'],
-  ['#40354F', '#E8A33D', '#FFFFFF'],
-  ['#2A4844', '#7FC8A9', '#F4F3F1'],
-  ['#4D3E31', '#D9121F', '#EFEDEA'],
-  ['#121214', '#3D7BD9', '#FFFFFF'],
-  ['#5E5139', '#F2C94C', '#FFFFFF'],
-];
-
-/** Abstract, on-brand placeholder artwork (rings and shapes; no text). */
+/** Section-themed illustrations (the same art as the sample articles); no text. */
 export class PlaceholderImages implements ImageAI {
   readonly provider = 'placeholder';
   readonly model = 'placeholder';
@@ -95,21 +83,13 @@ export class PlaceholderImages implements ImageAI {
 
   async generate(prompt: string, opts: { count: number; shape: ImageShape }): Promise<Buffer[]> {
     const [w, h] = opts.shape === 'portrait' ? [1080, 1920] : [1600, 900];
+    const guessed = classifyHeadline(prompt);
     const out: Buffer[] = [];
     for (let i = 0; i < opts.count; i++) {
-      const seed = hash(`${prompt}#${i}#${Date.now()}`);
-      const [bg, accent, light] = PALETTES[seed % PALETTES.length]!;
-      const r = (n: number) => ((seed >> n) & 255) / 255;
-      const cx = Math.round(w * (0.25 + r(3) * 0.5));
-      const cy = Math.round(h * (0.25 + r(7) * 0.5));
-      const radius = Math.round(Math.min(w, h) * (0.22 + r(11) * 0.2));
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg}"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></linearGradient></defs>
-        <rect width="100%" height="100%" fill="${bg}"/><rect width="100%" height="100%" fill="url(#g)" opacity="0.6"/>
-        <circle cx="${cx}" cy="${cy}" r="${radius}" fill="${accent}" opacity="0.92"/>
-        <circle cx="${cx}" cy="${cy}" r="${Math.round(radius * 1.35)}" fill="none" stroke="${light}" stroke-width="${Math.round(radius * 0.05)}" stroke-dasharray="${Math.round(radius * 6)} ${Math.round(radius * 2.5)}" opacity="0.8"/>
-        <rect x="${Math.round(w * r(15) * 0.6)}" y="${Math.round(h * (0.65 + r(19) * 0.2))}" width="${Math.round(w * 0.4)}" height="${Math.round(h * 0.04)}" fill="${light}" opacity="0.35"/>
-      </svg>`;
+      // The guessed section first, then neighbours, so the options differ.
+      const base = guessed ? SECTION_ORDER.indexOf(guessed) : prompt.length % SECTION_ORDER.length;
+      const category = SECTION_ORDER[(Math.max(0, base) + i) % SECTION_ORDER.length]!;
+      const svg = illustrationSvg(category, `${prompt}#${i}#${Date.now()}`, w, h);
       out.push(await sharp(Buffer.from(svg)).png().toBuffer());
     }
     return out;

@@ -67,8 +67,9 @@ export async function runDistill(s: Services, job: JobRow) {
     .limit(20);
   if (pending.length === 0) return { skipped: 'nothing pending' };
   const currentRules = await activeStyleRules(s.db);
-  const { result, aiJobId } = await tracked(s.db, { type: 'style_distill', provider: s.ai.text.provider, requestedBy: job.createdBy }, () =>
-    s.ai.text.distill({
+  const textAi = await s.ai.text();
+  const { result, aiJobId } = await tracked(s.db, { type: 'style_distill', provider: textAi.provider, requestedBy: job.createdBy }, () =>
+    textAi.distill({
       currentRules,
       examples: pending.map((f) => ({ aiText: f.aiText, finalText: f.finalText, diff: f.unifiedDiff, editRatio: f.editRatio })),
     }),

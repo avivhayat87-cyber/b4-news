@@ -65,9 +65,77 @@ function AddSource() {
   );
 }
 
+function BulkAdd() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [category, setCategory] = useState('');
+  const urls = text
+    .split(/[\s,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean)
+    .map((u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`));
+  const add = useMutation({
+    mutationFn: () => admin.post<{ created: { id: string }[]; skipped: { url: string; reason: string }[] }>('/sources/bulk', { urls, defaultCategory: category || null }),
+    onSuccess: (r) => {
+      toast(`${r.created.length} אתרים נוספו והמערכת מגדירה אותם אוטומטית${r.skipped.length ? ` (${r.skipped.length} כבר היו ברשימה)` : ''}.`);
+      setText('');
+      void qc.invalidateQueries({ queryKey: ['sources'] });
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  return (
+    <Card title="הוספת כמה אתרים בבת אחת">
+      <form
+        className="space-y-4"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          if (urls.length) add.mutate();
+        }}
+      >
+        <Field label="קישורים (אחד בכל שורה)" htmlFor="bulk-urls" hint="לכל אתר המערכת מחפשת לבד את פיד ה-RSS או מפת האתר, מגדירה את הטריגר ובודקת אותו. אחר כך נשאר רק לאשר.">
+          <textarea id="bulk-urls" dir="ltr" rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={'https://www.example.co.il\nhttps://news.example.com/economy'} className={`${inputClass} font-mono text-sm`} />
+        </Field>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="קטגוריה לכל האתרים (לא חובה)" htmlFor="bulk-cat">
+            <select id="bulk-cat" value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+              <option value="">לפי תוכן הכתבה</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Button type="submit" variant="primary" busy={add.isPending} disabled={urls.length === 0}>
+            הוספה והגדרה אוטומטית {urls.length > 1 ? `(${urls.length})` : ''}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
 export default function SourcesPage() {
   const canRequest = useCan('editor', 'developer');
-  const sources = useQuery({ queryKey: ['sources'], queryFn: () => admin.get<SourceDto[]>('/sources') });
+  const isDev = useCan('developer');
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [mode, setMode] = useState<'bulk' | 'one'>('bulk');
+  const sources = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => admin.get<SourceDto[]>('/sources'),
+    refetchInterval: (q) => (q.state.data?.some((s) => s.setupRunning) ? 2500 : false),
+  });
+  const ready = sources.data?.filter((s) => s.status === 'in_development' && s.lastTestPassedAt && !s.setupRunning) ?? [];
+  const approveAll = useMutation({
+    mutationFn: () => admin.post<{ approved: number }>('/sources/approve-tested'),
+    onSuccess: (r) => {
+      toast(`${r.approved} אתרים אושרו ונכללים מעכשיו בכל איתור.`);
+      void qc.invalidateQueries({ queryKey: ['sources'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
 
   return (
     <>
@@ -79,7 +147,31 @@ export default function SourcesPage() {
           </li>
         ))}
       </ol>
-      {canRequest && <AddSource />}
+      {isDev && ready.length > 0 ? (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-ok-soft px-5 py-4 text-ok">
+          <b>{ready.length} אתרים הוגדרו ועברו בדיקה, ומחכים לאישור.</b>
+          <Button variant="dark" className="mr-auto" busy={approveAll.isPending} onClick={() => approveAll.mutate()}>
+            אישור כולם
+          </Button>
+        </div>
+      ) : null}
+      {canRequest && (
+        <>
+          <div className="mb-3 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
+            {(
+              [
+                ['bulk', 'רשימת קישורים'],
+                ['one', 'אתר אחד'],
+              ] as const
+            ).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={mode === id} onClick={() => setMode(id)} className={`rounded-md px-4 py-2 font-bold ${mode === id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-stone'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {mode === 'bulk' ? <BulkAdd /> : <AddSource />}
+        </>
+      )}
       <div className="mt-6">
         {sources.isPending ? (
           <Loading />
@@ -111,8 +203,15 @@ export default function SourcesPage() {
                       </p>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge tone={SOURCE_STATUS[s.status].tone}>{SOURCE_STATUS[s.status].label}</Badge>
+                      {s.setupRunning ? (
+                        <Badge tone="info">מגדיר אוטומטית…</Badge>
+                      ) : s.status === 'in_development' && s.lastTestPassedAt ? (
+                        <Badge tone="ok">מוכן לאישור</Badge>
+                      ) : (
+                        <Badge tone={SOURCE_STATUS[s.status].tone}>{SOURCE_STATUS[s.status].label}</Badge>
+                      )}
                       {s.consecutiveFailures > 0 && <span className="mr-2 text-xs text-brand">{s.consecutiveFailures} כשלונות</span>}
+                      {!s.setupRunning && s.status !== 'active' && s.devNotes ? <p className="mt-1 max-w-xs truncate text-xs text-muted" title={s.devNotes}>{s.devNotes}</p> : null}
                     </td>
                     <td className="px-4 py-3 text-sm uppercase text-muted">{s.method ?? '—'}</td>
                     <td className="px-4 py-3 text-sm">{timeAgo(s.lastSuccessAt)}</td>

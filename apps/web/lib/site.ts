@@ -16,25 +16,22 @@ export function categoryBySlug(slug: string): CategoryRef | undefined {
   return c ? { slug: c.slug, name: c.name } : undefined;
 }
 
-// TODO: replace '#' with the real profile and channel URLs.
+/** Social profiles in display order. The addresses come from the CMS (Settings > site details); empty ones are hidden. */
 export const SOCIAL = [
-  { key: 'facebook', label: 'פייסבוק', href: '#' },
-  { key: 'instagram', label: 'אינסטגרם', href: '#' },
-  { key: 'telegram', label: 'טלגרם', href: '#' },
-  { key: 'whatsapp', label: 'וואטסאפ', href: '#' },
-  { key: 'x', label: 'X', href: '#' },
-  { key: 'tiktok', label: 'טיקטוק', href: '#' },
-  { key: 'youtube', label: 'יוטיוב', href: '#' },
+  { key: 'facebook', label: 'פייסבוק' },
+  { key: 'instagram', label: 'אינסטגרם' },
+  { key: 'telegram', label: 'טלגרם' },
+  { key: 'whatsapp', label: 'וואטסאפ' },
+  { key: 'x', label: 'X' },
+  { key: 'tiktok', label: 'טיקטוק' },
+  { key: 'youtube', label: 'יוטיוב' },
 ] as const;
 
 export type SocialKey = (typeof SOCIAL)[number]['key'];
 
-export const CHANNELS = {
-  app: '#',
-  telegram: '#',
-  whatsapp: '#',
-};
-
+export function socialLinks(links: Record<string, string>): { key: SocialKey; label: string; href: string }[] {
+  return SOCIAL.flatMap((s) => (links[s.key] ? [{ ...s, href: links[s.key]! }] : []));
+}
 export const articleHref = (article: { slug: string }) => `/article/${article.slug}`;
 export const categoryHref = (slug: string) => `/category/${slug}`;
 

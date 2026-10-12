@@ -3,11 +3,8 @@
 // embedded local database can only be opened by one process.
 import { createDb } from '@b4/db';
 import { loadConfig } from './config';
-import { LocalStorage } from './lib/storage';
 import { JobRunner } from './lib/jobs';
-import { ConsoleMailer, SmtpMailer } from './lib/mailer';
-import { createAi } from './services/ai';
-import { type Services, consoleLog, createFetcher } from './services/context';
+import { consoleLog, createServices } from './services/context';
 import { handlers } from './services/handlers';
 
 try {
@@ -22,15 +19,7 @@ if (!config.databaseUrl?.startsWith('postgres')) {
   process.exit(1);
 }
 const handle = createDb(config.databaseUrl);
-const services: Services = {
-  db: handle.db,
-  config,
-  ai: createAi(config),
-  storage: new LocalStorage(config.mediaDir, config.mediaBaseUrl),
-  fetch: createFetcher(config),
-  mailer: config.smtpUrl ? new SmtpMailer(config.smtpUrl, config.mailFrom) : new ConsoleMailer(),
-  log: consoleLog,
-};
+const services = createServices(config, handle.db, consoleLog);
 const runner = new JobRunner(handle.db, handlers, services, { concurrency: config.worker.concurrency, logger: consoleLog });
 
 const shutdown = async () => {

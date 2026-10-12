@@ -38,6 +38,7 @@ import { z } from 'zod';
 import type { Config } from '../config';
 import { errors } from '../errors';
 import { cardColumns, cardsQuery, decodeCursor, encodeCursor, isLive, olderThan, toCard } from '../lib/cards';
+import { marketQuotes } from '../lib/markets';
 
 const PAGE_SIZE = 20;
 const SECTION_SIZE = 6;
@@ -284,17 +285,9 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     },
   );
 
-  // Market data provider not chosen yet: the widget gets its rows in the final format.
-  // TODO: connect a market-data provider (TASE / international indices / FX).
+  // Official exchange rates (Bank of Israel). Empty when unavailable: the site hides the widgets.
   app.get('/markets', { schema: { response: { 200: z.array(MarketQuote) } } }, async (_req, reply) => {
-    reply.header('cache-control', 'public, max-age=60');
-    return [
-      { symbol: 'TA35', name: 'ת״א 35', value: '—', change: '—', direction: 'flat' as const },
-      { symbol: 'TA125', name: 'ת״א 125', value: '—', change: '—', direction: 'flat' as const },
-      { symbol: 'SPX', name: 'S&P 500', value: '—', change: '—', direction: 'flat' as const },
-      { symbol: 'IXIC', name: 'נאסד״ק', value: '—', change: '—', direction: 'flat' as const },
-      { symbol: 'USDILS', name: 'דולר/שקל', value: '—', change: '—', direction: 'flat' as const },
-      { symbol: 'EURILS', name: 'אירו/שקל', value: '—', change: '—', direction: 'flat' as const },
-    ];
+    reply.header('cache-control', 'public, max-age=300');
+    return marketQuotes();
   });
 };

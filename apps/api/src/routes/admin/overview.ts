@@ -43,6 +43,7 @@ import { hashPassword, verifyPassword } from '../../lib/password';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
 import { activateProfile, learningOverview, queueDistill, saveRules } from '../../services/learning';
+import { socialAccountDto } from './settings';
 
 const params = z.object({ id: z.string().uuid() });
 const count = sql<number>`count(*)::int`;
@@ -87,7 +88,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       sources: { active: src('active'), waitingForDeveloper: src('pending_dev', 'in_development'), broken: src('broken') },
       comments: { toReview: toReview?.n ?? 0, reported: reported?.n ?? 0 },
       failedJobs: failed?.n ?? 0,
-      ai: { text: s.ai.text.provider, image: s.ai.image.provider, live: s.ai.text.live && s.ai.image.live },
+      ai: await s.ai.status(),
     };
   });
 
@@ -119,18 +120,10 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
   );
 
   // --- Social accounts (admin) ---------------------------------------------------
-  const accountDto = (a: typeof socialAccounts.$inferSelect) => ({
-    id: a.id,
-    platform: a.platform,
-    displayName: a.displayName,
-    externalId: a.externalId,
-    linkInFirstComment: a.linkInFirstComment,
-    isActive: a.isActive,
-    connected: Boolean(s.config.socialSecret(a.secretRef)),
-  });
+  const accountDto = (a: typeof socialAccounts.$inferSelect) => socialAccountDto(s, a);
 
   app.get('/social-accounts', { schema: { response: { 200: z.array(SocialAccountDto) } } }, async () =>
-    (await s.db.select().from(socialAccounts).orderBy(asc(socialAccounts.platform))).map(accountDto),
+    Promise.all((await s.db.select().from(socialAccounts).orderBy(asc(socialAccounts.platform))).map(accountDto)),
   );
 
   app.post('/social-accounts', { schema: { body: CreateSocialAccountInput, response: { 201: SocialAccountDto } } }, async (req, reply) => {
@@ -142,7 +135,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       .returning();
     if (!row) throw new AppError(409, 'duplicate', 'החשבון הזה כבר קיים.');
     await audit(s.db, { userId: staff.id, entity: 'social_account', entityId: row.id, action: 'create' });
-    return reply.status(201).send(accountDto(row));
+    return reply.status(201).send(await accountDto(row));
   });
 
   app.patch('/social-accounts/:id', { schema: { params, body: z.object({ isActive: z.boolean() }), response: { 200: SocialAccountDto } } }, async (req) => {

@@ -3,7 +3,6 @@ import Link from 'next/link';
 import type { ArticleCard } from '@/lib/types';
 import { articleHref, toneBackground } from '@/lib/site';
 import { ArticleImage, Byline, CategoryTag, PublishedTime, wrap } from './ui';
-import { PhotoIcon } from './icons';
 
 /** The 7 main articles (one lead, two beside it, four below), opened by the breaking-news ticker. */
 export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: ArticleCard[] }) {
@@ -32,13 +31,14 @@ export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: Ar
               className="object-cover transition-transform duration-500 group-hover:scale-[1.02] motion-reduce:transition-none"
             />
           ) : (
-            <span aria-hidden="true" className="absolute left-1/2 top-[34%] -translate-x-1/2 -translate-y-1/2 text-white/30">
-              <PhotoIcon size={56} strokeWidth={1.2} />
+            <span aria-hidden="true" className="absolute left-1/2 top-[34%] -translate-x-1/2 -translate-y-1/2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
+              <img src="/brand/b4-mark.svg" alt="" width={120} height={120} className="h-[120px] w-[120px] opacity-25 grayscale" />
             </span>
           )}
-          <span aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-ink/0 from-30% to-ink/90" />
+          {/* Strong enough for any photo: the headline must stay readable over bright images. */}
           <CategoryTag name={lead.category.name} className="absolute right-5 top-5 text-[13px]" />
-          <h1 className="relative max-w-[20ch] text-balance text-[34px] font-extrabold leading-[1.08] tracking-[-0.01em] md:text-[52px]">
+          <h1 className="relative max-w-[20ch] text-balance [text-shadow:0_2px_16px_rgba(0,0,0,.45)] text-[34px] font-extrabold leading-[1.08] tracking-[-0.01em] md:text-[52px]">
             {lead.title}
           </h1>
           {lead.excerpt ? <p className="relative mt-3.5 max-w-[60ch] text-[17px] leading-relaxed text-[#E6E6EB] md:text-lg">{lead.excerpt}</p> : null}

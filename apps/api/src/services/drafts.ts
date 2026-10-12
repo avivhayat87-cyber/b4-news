@@ -261,10 +261,11 @@ export async function runRewrite(s: Services, job: JobRow) {
   const prompt = await activePrompt(s.db, 'rewrite.system');
   const systemPrompt = prompt.body.replace('{{style_rules}}', await activeStyleRules(s.db));
   const sourceName = item.sourceName ?? new URL(item.url).hostname.replace(/^www\./, '');
+  const textAi = await s.ai.text();
   const { result, aiJobId } = await tracked(
     s.db,
-    { type: 'rewrite', provider: s.ai.text.provider, draftId, requestedBy: job.createdBy, promptKey: 'rewrite.system', promptVersion: prompt.version },
-    () => s.ai.text.rewrite({ systemPrompt, source: { title: item.title, intro: item.intro, body: item.body ?? item.intro ?? '', sourceName, url: item.url } }),
+    { type: 'rewrite', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey: 'rewrite.system', promptVersion: prompt.version },
+    () => textAi.rewrite({ systemPrompt, source: { title: item.title, intro: item.intro, body: item.body ?? item.intro ?? '', sourceName, url: item.url } }),
   );
   const out = result.data;
   const doc = sanitizeDoc(textToDoc(out.paragraphs));
@@ -353,8 +354,9 @@ export async function runRefine(s: Services, job: JobRow) {
     const [item] = await s.db.select({ title: scrapedItems.title, body: scrapedItems.bodyText }).from(scrapedItems).where(eq(scrapedItems.id, draft.scrapedItemId)).limit(1);
     if (item) original = `${item.title}\n\n${item.body ?? ''}`.slice(0, 20_000);
   }
-  const { result, aiJobId } = await tracked(s.db, { type: 'refine', provider: s.ai.text.provider, draftId, requestedBy: job.createdBy }, () =>
-    s.ai.text.refine({
+  const textAi = await s.ai.text();
+  const { result, aiJobId } = await tracked(s.db, { type: 'refine', provider: textAi.provider, draftId, requestedBy: job.createdBy }, () =>
+    textAi.refine({
       styleRules: '',
       current: { title: draft.title, subtitle: draft.subtitle, body: draft.bodyText },
       instruction: msg.content,
@@ -402,10 +404,11 @@ export async function runImages(s: Services, job: JobRow) {
   const [batch] = await s.db.select().from(imageBatches).where(eq(imageBatches.id, batchId)).limit(1);
   if (!batch) throw new PermanentJobError('batch not found');
   const count = purpose === 'social' ? 2 : 4;
+  const imageAi = await s.ai.image();
   const { result, aiJobId } = await tracked(
     s.db,
-    { type: purpose === 'social' ? 'social_image' : 'article_images', provider: s.ai.image.provider, model: s.ai.image.model, draftId: batch.draftId, requestedBy: job.createdBy, imageCount: count },
-    async () => ({ images: await s.ai.image.generate(batch.prompt, { count, shape: purpose === 'social' ? 'portrait' : 'landscape' }) }),
+    { type: purpose === 'social' ? 'social_image' : 'article_images', provider: imageAi.provider, model: imageAi.model, draftId: batch.draftId, requestedBy: job.createdBy, imageCount: count },
+    async () => ({ images: await imageAi.generate(batch.prompt, { count, shape: purpose === 'social' ? 'portrait' : 'landscape' }) }),
   );
   await s.db.update(imageBatches).set({ aiJobId }).where(eq(imageBatches.id, batchId));
   const ids: string[] = [];

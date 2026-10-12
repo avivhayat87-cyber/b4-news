@@ -18,7 +18,9 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | GET | `/public/a/:id` | `{ slug }`: the short link used in social posts and push |
 | GET | `/public/feed?cursor=&limit=` | `Page<ArticleCard>` (the app's endless feed) |
 | GET | `/public/search?q=&cursor=` | `Page<ArticleCard>` |
-| GET | `/public/markets` | `MarketQuote[]` (placeholder until a data provider is connected) |
+| GET | `/public/markets` | `MarketQuote[]`: Bank of Israel representative rates (empty when unavailable) |
+| GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles |
+| GET | `/public/pages/:slug` | `PublicPage`: about, contact, advertise, accessibility, privacy, terms |
 | POST | `/public/newsletter` · `/public/newsletter/confirm` | double opt-in |
 | POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app) |
 
@@ -65,12 +67,26 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/users/:id/reset-password` | admin | one-time temporary password; signs the user out |
 | POST | `/admin/me/password` | any | `ChangePasswordInput`; signs out other sessions |
 
+### Settings (admin)
+
+| Method | Path | |
+| --- | --- | --- |
+| GET | `/admin/integrations` | `IntegrationStatus[]` (Claude, OpenAI, SMTP): configured or not, last 4 characters, source (CMS / environment) |
+| PUT | `/admin/integrations/:id` | `UpdateIntegrationInput` (`null` removes a value); secrets stored encrypted |
+| POST | `/admin/integrations/:id/test` | `ConnectionTest` |
+| PUT | `/admin/social-accounts/:id/token` | `SetTokenInput` (`null` removes) → `SocialAccountDto` |
+| POST | `/admin/social-accounts/:id/test` | `ConnectionTest` (Telegram, Facebook, Instagram) |
+| GET / PUT | `/admin/site` | `SiteSettings` (read: any staff; write: admin); revalidates the site's `site` tag |
+
 ### Site settings
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
 | GET | `/admin/sources` | any | `SourceDto[]` |
 | POST | `/admin/sources` | editor, developer | `CreateSourceInput` (name + link) → `pending_dev`; emails the developers |
+| POST | `/admin/sources/bulk` | editor, developer | `BulkSourcesInput` (up to 50 links) → `BulkSourcesResult`; each gets an automatic setup job |
+| POST | `/admin/sources/:id/autodetect` | editor, developer | 202 `{ jobId }`: detect the feed, save and test the trigger |
+| POST | `/admin/sources/approve-tested` | developer | approves every configured site whose saved trigger passed its test |
 | PUT | `/admin/sources/:id/config` | developer | `ConfigureSourceInput` (method, list URLs, `SelectorConfig`); a changed trigger must be re-tested |
 | POST | `/admin/sources/:id/test` | developer | `ConfigureSourceInput` → `SourceTestResult` (dry run, nothing saved) |
 | POST | `/admin/sources/:id/approve` | developer | needs a saved config with a passing test → `active` |

@@ -15,6 +15,13 @@
       "when": 1791751277468,
       "tag": "0001_cms_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791793001407,
+      "tag": "0002_settings_secrets",
+      "breakpoints": true
     }
   ]
 }

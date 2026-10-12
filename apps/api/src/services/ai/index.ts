@@ -1,19 +1,72 @@
 import { type Db, aiJobs, and, desc, eq, promptTemplates, styleProfiles } from '@b4/db';
 import type { Config } from '../../config';
+import { PermanentJobError } from '../../lib/jobs';
+import type { SettingsStore } from '../settings';
 import { AnthropicText } from './anthropic';
 import { FakeText, PlaceholderImages } from './fake';
 import { OpenAiImages } from './openai-images';
-import type { Ai, Usage } from './types';
+import type { ImageAI, TextAI, Usage } from './types';
 
-export type { Ai } from './types';
+/** Resolves the AI providers per call, so a key entered in the CMS takes effect immediately. */
+export interface AiHub {
+  text(): Promise<TextAI>;
+  image(): Promise<ImageAI>;
+  status(): Promise<{ text: string; image: string; live: boolean }>;
+}
 
-export function createAi(config: Config): Ai {
-  const text =
-    config.ai.text === 'anthropic' && config.ai.anthropicKey
-      ? new AnthropicText(config.ai.anthropicKey, config.ai.model, config.ai.modelFast)
-      : new FakeText();
-  const image = config.ai.image === 'openai' && config.ai.openaiKey ? new OpenAiImages(config.ai.openaiKey, config.ai.imageModel) : new PlaceholderImages();
-  return { text, image };
+export class AiNotConnectedError extends PermanentJobError {
+  constructor(what: 'text' | 'image') {
+    super(
+      what === 'text'
+        ? 'ה-AI לכתיבה לא מחובר. מנהל/ת יכול/ה לחבר את Claude ב"הגדרות" > "חיבורים".'
+        : 'ה-AI לתמונות לא מחובר. מנהל/ת יכול/ה לחבר את OpenAI ב"הגדרות" > "חיבורים".',
+    );
+  }
+}
+
+/** Fixed providers (tests). */
+export function fixedAi(text: TextAI, image: ImageAI): AiHub {
+  return { text: async () => text, image: async () => image, status: async () => ({ text: text.provider, image: image.provider, live: text.live && image.live }) };
+}
+
+export function createAiHub(config: Config, settings: SettingsStore): AiHub {
+  const fakeText = new FakeText();
+  const placeholder = new PlaceholderImages();
+  let textCache: { key: string; ai: TextAI } | null = null;
+  let imageCache: { key: string; ai: ImageAI } | null = null;
+
+  const text = async (): Promise<TextAI> => {
+    if (config.ai.text === 'fake') return fakeText;
+    const v = await settings.integration('anthropic');
+    if (v.apiKey) {
+      const key = `${v.apiKey}|${v.model}|${v.modelFast}`;
+      if (textCache?.key !== key) textCache = { key, ai: new AnthropicText(v.apiKey, v.model!, v.modelFast!) };
+      return textCache.ai;
+    }
+    if (config.ai.allowStandIns) return fakeText;
+    throw new AiNotConnectedError('text');
+  };
+
+  const image = async (): Promise<ImageAI> => {
+    if (config.ai.image === 'placeholder') return placeholder;
+    const v = await settings.integration('openai');
+    if (v.apiKey) {
+      const key = `${v.apiKey}|${v.imageModel}`;
+      if (imageCache?.key !== key) imageCache = { key, ai: new OpenAiImages(v.apiKey, v.imageModel!) };
+      return imageCache.ai;
+    }
+    if (config.ai.allowStandIns) return placeholder;
+    throw new AiNotConnectedError('image');
+  };
+
+  return {
+    text,
+    image,
+    status: async () => {
+      const [t, i] = await Promise.all([text().catch(() => null), image().catch(() => null)]);
+      return { text: t?.provider ?? 'none', image: i?.provider ?? 'none', live: Boolean(t?.live && i?.live) };
+    },
+  };
 }
 
 /** The active version of an editable prompt (prompt_templates). */

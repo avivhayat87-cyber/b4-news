@@ -1,8 +1,9 @@
+import { getSite } from '@/lib/api';
+import { socialLinks } from '@/lib/site';
 import type { MarketQuote } from '@/lib/types';
-import { SOCIAL } from '@/lib/site';
 import { SocialIcon } from './icons';
 import { NewsletterForm } from './newsletter-form';
-import { AdSlot, SectionHeader } from './ui';
+import { HousePromo, SectionHeader } from './ui';
 
 const changeStyle: Record<MarketQuote['direction'], string> = {
   up: 'bg-[#E7F6EC] text-[#11743A]',
@@ -10,25 +11,24 @@ const changeStyle: Record<MarketQuote['direction'], string> = {
   flat: 'bg-stone text-ink-2',
 };
 
+/** Official exchange rates; hidden entirely when the data isn't available. */
 export function MarketsWidget({ quotes }: { quotes: MarketQuote[] }) {
+  if (quotes.length === 0) return null;
   return (
     <section aria-labelledby="markets-title" className="rounded-[10px] border border-line px-5 py-[18px]">
-      <SectionHeader id="markets-title" title="בורסה ומדדים" size="sm" rule={false} className="mb-2" />
-      {quotes.length === 0 ? (
-        <p className="py-3 text-sm text-muted">נתוני המסחר לא זמינים כרגע.</p>
-      ) : (
-        <dl>
-          {quotes.map((q) => (
-            <div key={q.symbol} className="flex items-center justify-between gap-3 border-t border-line-soft py-2.5">
-              <dt className="text-[15px] font-bold">{q.name}</dt>
-              <dd dir="ltr" className="flex items-center gap-3 font-mono text-sm tabular-nums">
-                <span>{q.value}</span>
-                <span className={`min-w-16 rounded px-1.5 py-0.5 text-center text-[13px] ${changeStyle[q.direction]}`}>{q.change}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <SectionHeader id="markets-title" title="שערי מטבע" size="sm" rule={false} className="mb-2" />
+      <dl>
+        {quotes.map((q) => (
+          <div key={q.symbol} className="flex items-center justify-between gap-3 border-t border-line-soft py-2.5">
+            <dt className="text-[15px] font-bold">{q.name}</dt>
+            <dd dir="ltr" className="flex items-center gap-3 font-mono text-sm tabular-nums">
+              <span>{q.value}</span>
+              <span className={`min-w-16 rounded px-1.5 py-0.5 text-center text-[13px] ${changeStyle[q.direction]}`}>{q.change}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-1 text-xs text-muted">שערים יציגים, בנק ישראל</p>
     </section>
   );
 }
@@ -45,13 +45,18 @@ export function NewsletterBox() {
   );
 }
 
-export function SocialLinks({ variant }: { variant: 'solid' | 'outline' }) {
+/** Social profiles set in the CMS; renders nothing until at least one is set. */
+export function SocialLinks({ variant, links }: { variant: 'solid' | 'outline'; links: Record<string, string> }) {
+  const items = socialLinks(links);
+  if (items.length === 0) return null;
   return (
     <ul className="flex flex-wrap gap-2.5">
-      {SOCIAL.map((s) => (
+      {items.map((s) => (
         <li key={s.key}>
           <a
             href={s.href}
+            target="_blank"
+            rel="noopener noreferrer"
             aria-label={s.label}
             className={
               variant === 'solid'
@@ -67,16 +72,20 @@ export function SocialLinks({ variant }: { variant: 'solid' | 'outline' }) {
   );
 }
 
-export function Sidebar({ quotes }: { quotes: MarketQuote[] }) {
+export async function Sidebar({ quotes }: { quotes: MarketQuote[] }) {
+  const site = await getSite();
+  const hasSocial = socialLinks(site.links).length > 0;
   return (
     <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-7">
       <MarketsWidget quotes={quotes} />
       <NewsletterBox />
-      <section aria-labelledby="follow-title">
-        <SectionHeader id="follow-title" title="עקבו אחרינו" size="sm" rule={false} className="mb-3" />
-        <SocialLinks variant="solid" />
-      </section>
-      <AdSlot />
+      {hasSocial ? (
+        <section aria-labelledby="follow-title">
+          <SectionHeader id="follow-title" title="עקבו אחרינו" size="sm" rule={false} className="mb-3" />
+          <SocialLinks variant="solid" links={site.links} />
+        </section>
+      ) : null}
+      <HousePromo />
     </aside>
   );
 }

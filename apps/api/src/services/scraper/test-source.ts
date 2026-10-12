@@ -7,10 +7,12 @@ import { categoryFor, completeItem, listItems } from './collect';
 export async function testSource(fetch: Fetcher, name: string, input: ConfigureSourceInput): Promise<SourceTestResult> {
   const spec = { name, method: input.method, listUrls: input.listUrls, config: input.selectorConfig };
   const errors: string[] = [];
+  const warnings: string[] = [];
   let items: Awaited<ReturnType<typeof listItems>> = [];
   try {
     items = await listItems(fetch, spec, null);
     if (items.length === 0) errors.push('לא נמצאו כתבות ברשימה. בדקו את הכתובות והסלקטורים.');
+    else if (items.every((i) => !i.title)) warnings.push('לכתבות ברשימה אין כותרות; הכותרת תילקח מעמוד הכתבה.');
   } catch (e) {
     errors.push(`קריאת הרשימה נכשלה: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -22,7 +24,11 @@ export async function testSource(fetch: Fetcher, name: string, input: ConfigureS
       const full = await completeItem(fetch, spec, first);
       article = { url: full.url, title: full.title, intro: full.intro, bodyText: full.bodyText ?? '', imageUrl: full.imageUrl };
       if (!full.title) errors.push('לא זוהתה כותרת בעמוד הכתבה.');
-      if ((full.bodyText ?? '').length < 300) errors.push('גוף הכתבה קצר מדי או לא זוהה. בדקו את סלקטור הגוף.');
+      if (typeof full.raw.pageError === 'string') {
+        warnings.push(`עמוד הכתבה לא נפתח (${full.raw.pageError}). הכתבות ייקלטו עם הכותרת והתקציר מהפיד.`);
+      } else if ((full.bodyText ?? '').length < 300) {
+        warnings.push('גוף הכתבה קצר (אולי חומת תשלום או תוכן שנטען ב-JavaScript). אפשר לאשר; ה-AI יקבל את מה שזמין. סלקטור גוף מדויק ישפר את התוצאה.');
+      }
     } catch (e) {
       errors.push(`קריאת עמוד הכתבה נכשלה: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -40,5 +46,6 @@ export async function testSource(fetch: Fetcher, name: string, input: ConfigureS
     })),
     article,
     errors,
+    warnings,
   };
 }

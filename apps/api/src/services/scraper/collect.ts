@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { ScrapeMethod, SelectorConfig } from '@b4/shared';
 import { decodeText, type FetchResult } from '../../lib/safe-fetch';
 import { type FoundItem, extractArticle, parseFeed, parseHtmlList, parseSitemap } from './parse';
+import type { RobotsCache } from './robots';
 
 export type Fetcher = (url: string, opts?: { accept?: string; allowTypes?: string[]; maxBytes?: number }) => Promise<FetchResult>;
 
@@ -33,18 +34,28 @@ export function contentHash(body: string | null): string | null {
 
 const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5';
 
-async function listPage(fetch: Fetcher, source: SourceSpec, url: string): Promise<FoundItem[]> {
+const looksLikeSitemap = (u: string) => /\.xml(\.gz)?(\?|$)|sitemap/i.test(u);
+
+export async function listPage(fetch: Fetcher, source: SourceSpec, url: string, depth = 0): Promise<FoundItem[]> {
   const res = await fetch(url, { accept: source.method === 'html' ? undefined : FEED_ACCEPT });
   const body = decodeText(res);
   if (source.method === 'rss') return parseFeed(body, res.url);
   if (source.method === 'html') return parseHtmlList(body, res.url, source.config.list);
-  // Sitemap index: follow the first few child sitemaps (newest are usually listed first).
-  if (/<sitemapindex/i.test(body)) {
-    const children = [...body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]!).slice(0, 3);
-    const nested = await Promise.all(children.map((c) => fetch(c, { accept: FEED_ACCEPT }).then((r) => parseSitemap(decodeText(r), r.url))));
+  const isIndex = /<sitemapindex/i.test(body);
+  const items = isIndex ? [] : parseSitemap(body, res.url);
+  // A sitemap index (or a sitemap that mostly lists other sitemaps): follow the newest few children.
+  if (depth < 2 && (isIndex || (items.length > 0 && items.filter((i) => looksLikeSitemap(i.url)).length > items.length / 2))) {
+    const children = isIndex
+      ? [...body.matchAll(/<sitemap>([\s\S]*?)<\/sitemap>/gi)].map((m) => ({
+          url: /<loc>\s*([^<\s]+)\s*<\/loc>/i.exec(m[1]!)?.[1] ?? '',
+          at: Date.parse(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i.exec(m[1]!)?.[1] ?? '') || 0,
+        }))
+      : items.filter((i) => looksLikeSitemap(i.url)).map((i) => ({ url: i.url, at: i.publishedAt?.getTime() ?? 0 }));
+    const newest = children.filter((c) => c.url).sort((a, b) => b.at - a.at).slice(0, 3);
+    const nested = await Promise.all(newest.map((c) => listPage(fetch, source, c.url, depth + 1).catch(() => [])));
     return nested.flat();
   }
-  return parseSitemap(body, res.url);
+  return items;
 }
 
 /** Items listed by the source, newest first, after the delta cut-off. */
@@ -60,29 +71,40 @@ export async function listItems(fetch: Fetcher, source: SourceSpec, since: Date 
     }
   }
   return all
+    .filter((i) => !source.config.list.urlFilter || i.url.includes(source.config.list.urlFilter))
     .filter((i) => !since || !i.publishedAt || i.publishedAt > since)
     .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
     .slice(0, source.config.list.maxItems);
 }
 
-/** Opens the article page when the source is configured for it (or when the listing gave too little). */
-export async function completeItem(fetch: Fetcher, source: SourceSpec, item: FoundItem): Promise<CollectedItem> {
+/**
+ * Opens the article page when the source is configured for it (or when the listing gave too little).
+ * Pages robots.txt disallows are not opened, and a page that can't be read (paywall, bot
+ * protection) falls back to what the feed gave, as long as there is a headline.
+ */
+export async function completeItem(fetch: Fetcher, source: SourceSpec, item: FoundItem, robots?: RobotsCache): Promise<CollectedItem> {
   const canonical = canonicalUrl(item.url);
   const needsPage = Boolean(source.config.article) || !item.title || (!item.bodyText && !item.intro);
   let merged: FoundItem = item;
   let raw: Record<string, unknown> = { listed: item };
   if (needsPage) {
-    const res = await fetch(item.url, { allowTypes: ['text/html', 'application/xhtml'] });
-    const page = extractArticle(decodeText(res), res.url, source.config.article);
-    merged = {
-      url: item.url,
-      title: item.title || page.title,
-      intro: page.intro ?? item.intro,
-      imageUrl: item.imageUrl ?? page.imageUrl,
-      publishedAt: item.publishedAt ?? page.publishedAt,
-      bodyText: page.bodyText || item.bodyText,
-    };
-    raw = { listed: item, page };
+    try {
+      if (robots && !(await robots.allowed(item.url))) throw new Error('robots.txt disallows this page');
+      const res = await fetch(item.url, { allowTypes: ['text/html', 'application/xhtml'] });
+      const page = extractArticle(decodeText(res), res.url, source.config.article);
+      merged = {
+        url: item.url,
+        title: item.title || page.title,
+        intro: page.intro ?? item.intro,
+        imageUrl: item.imageUrl ?? page.imageUrl,
+        publishedAt: item.publishedAt ?? page.publishedAt,
+        bodyText: page.bodyText || item.bodyText,
+      };
+      raw = { listed: item, page };
+    } catch (e) {
+      if (!item.title) throw e;
+      raw = { listed: item, pageError: e instanceof Error ? e.message : String(e) };
+    }
   }
   return { ...merged, bodyText: merged.bodyText ?? merged.intro, canonicalUrl: canonical, urlHash: sha256(canonical), raw };
 }

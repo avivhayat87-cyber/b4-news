@@ -2,6 +2,7 @@
 // match what the backend sends to /api/revalidate after a publish or correction:
 //   home · category:<slug> · article:<id> · article-slug:<slug> · markets
 import 'server-only';
+import type { PublicPage, PublicSite } from '@b4/shared';
 import type { ArticleCard, ArticleFull, CategoryPage, HomeData, MarketQuote, Page } from './types';
 
 const API_URL = (process.env.API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -68,6 +69,21 @@ export async function resolveArticleId(id: string): Promise<string | null> {
   if (!/^\d+$/.test(id)) return null;
   const found = await getJson<{ slug: string }>(`/public/a/${id}`, { tags: [`article:${id}`] });
   return found?.slug ?? null;
+}
+
+const EMPTY_SITE: PublicSite = { links: {}, contact: { email: '', phone: '', address: '' }, pages: [] };
+
+/** Links, contact details and info-page titles from the CMS ("site" tag). Never takes the page down. */
+export async function getSite(): Promise<PublicSite> {
+  try {
+    return (await getJson<PublicSite>('/public/site', { tags: ['site'], revalidate: 600 })) ?? EMPTY_SITE;
+  } catch {
+    return EMPTY_SITE;
+  }
+}
+
+export function getPage(slug: string): Promise<PublicPage | null> {
+  return getJson<PublicPage>(`/public/pages/${enc(slug)}`, { tags: ['site'], revalidate: 600 });
 }
 
 export async function listRecentForSitemap(): Promise<ArticleCard[]> {

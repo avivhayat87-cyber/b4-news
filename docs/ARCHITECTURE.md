@@ -41,15 +41,19 @@ config.ts         every environment variable, validated; refuses unsafe producti
 plugins/          security (helmet, CORS allowlist, rate limits, CSRF origin check), auth (sessions)
 routes/           public content, comments, reader/staff auth, audience, admin/* (the CMS)
 services/
-  context.ts      Services = { db, config, ai, storage, fetch, mailer, log }, built once, passed down
-  scraper/        parse (RSS/Atom, sitemap, HTML, article), collect (delta + canonical URLs), run, test-source
+  context.ts      Services = { db, config, settings, ai, storage, fetch, mailer, log }, built once (createServices)
+  settings.ts     SettingsStore: CMS-managed settings and encrypted secrets (30 s cache); integration values = CMS, then env
+  site-settings.ts public links, contact details and info pages (defaults included)
+  connection-tests.ts  the "test connection" calls (Anthropic, OpenAI, SMTP, Telegram, Meta)
+  scraper/        parse (RSS/Atom, sitemap, HTML, article incl. JSON-LD), collect (delta, canonical URLs, sitemap indexes),
+                  robots (robots.txt), autodetect + setup (feed discovery from a link), run, test-source
   drafts.ts       selections → drafts, AI rewrite/refine/images, autosave, finalize/skip, reading models
   social.ts       the social package (headline, 2 sentences, story image, targets, approval)
   social-adapters.ts  Facebook / Instagram / Telegram posting; others prepared for manual posting
   publish.ts      preview, final approval, publish job (site → revalidate → push → social → learning)
   learning.ts     feedback from AI draft vs. final text; distillation into house-style rules
   handlers.ts     job kind → handler (the only place that maps queued work to code)
-  ai/             TextAI / ImageAI interfaces; Anthropic, OpenAI images, local stand-ins; cost tracking
+  ai/             AiHub resolves TextAI / ImageAI per call (CMS key, env key, or dev stand-ins); cost tracking
 lib/              jobs (queue), safe-fetch (SSRF guard), images (renditions), storage, crypto, mailer, …
 dev/              development-only sample news sites and seeds
 ```
@@ -74,9 +78,13 @@ every AI call ─▶ ai_jobs (provider, model, tokens, latency, error)
 Draft status: `queued_ai → ai_processing → editing ⇄ text_final → published`, plus `ai_failed` and `skipped`.
 The social module opens at `text_final`; reopening the text marks the social package stale.
 
+### Adding sites from links
+
+`POST /admin/sources/bulk` creates each site and queues a `source.setup` job: read the page (`<link rel=alternate>` feeds, feed links, usual feed paths), read `robots.txt` for sitemaps, evaluate every candidate by how many dated articles of the last week it lists, prefer live RSS, skip other-language editions, add a section filter when the link was a section (`/economy`) and the best source is a whole-site sitemap, then run the same test a developer would. A passing site waits for approval (`approve-tested`).
+
 ### Discovery and delta fetch
 
-Each active source has a watermark (newest `published_at` seen by its last successful run). A run lists the source (feed, sitemap or listing page), keeps items newer than the watermark, drops URLs already known (`url_hash` of the canonical URL: lower-case host, no `www`, no tracking parameters, no fragment) and bodies already known (`content_hash`), opens the remaining article pages with the developer's selectors (or automatic detection), assigns a section (URL rules → source default → keyword classifier; the AI refines it later), and stores the run's items. The watermark moves only when the source succeeds; five failures in a row mark the source `broken`.
+Each active source has a watermark (newest `published_at` seen by its last successful run). A run lists the source (feed, sitemap or listing page), keeps items newer than the watermark, drops URLs already known (`url_hash` of the canonical URL: lower-case host, no `www`, no tracking parameters, no fragment) and bodies already known (`content_hash`), opens the remaining article pages (only where robots.txt allows) with the developer's selectors or automatic detection (schema.org JSON-LD first, then the largest text block); a page that can't be opened falls back to the feed's headline and summary, assigns a section (URL rules → source default → keyword classifier; the AI refines it later), and stores the run's items. The watermark moves only when the source succeeds; five failures in a row mark the source `broken`.
 
 ### AI
 
@@ -109,8 +117,7 @@ Uploads and AI images are validated (type by content, at least 400×225, max 50 
 - **CSRF**: cookie-authenticated writes must carry an `Origin` from `CORS_ORIGINS`.
 - **SSRF**: every outbound fetch of a user- or source-supplied URL goes through `lib/safe-fetch.ts`: http/https only, no credentials, standard ports, every resolved address must be public (checked at connect time, so DNS rebinding can't bypass it), redirects re-checked hop by hop, size and time limits.
 - **Content**: the published HTML is generated from a whitelisted document; scraped text is shown in the CMS through the same path. The CMS sets a strict CSP, `X-Frame-Options: DENY` and `noindex`; the API sends `default-src 'none'`.
-- **Secrets**: social tokens live only in the environment (`SOCIAL_SECRET_<NAME>`); the database stores the name. Production refuses to start with development fallbacks (pepper, AI stand-ins, sample sites, missing SMTP or revalidate secret).
-- **Rate limits**: global 300/min per IP, plus tighter limits on login, codes, comments, uploads, AI requests and source tests.
+- **Secrets**: API keys and social tokens entered in the CMS are encrypted with AES-256-GCM under `SECRETS_KEY` (environment only), bound to their name, never returned to the browser (only `••••last4`), and changes are audited without values. Environment variables (`ANTHROPIC_API_KEY`, `SOCIAL_SECRET_<NAME>`, …) remain a fallback. Production refuses to start without `SECRETS_KEY`, with development fallbacks (pepper, AI stand-ins, sample sites) or a missing revalidate secret; email without SMTP fails rather than logging sign-in codes.- **Rate limits**: global 300/min per IP, plus tighter limits on login, codes, comments, uploads, AI requests and source tests.
 
 ## Testing
 

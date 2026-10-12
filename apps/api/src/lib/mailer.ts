@@ -25,6 +25,30 @@ export class MemoryMailer implements Mailer {
   }
 }
 
+/**
+ * Sends through the SMTP server configured in the CMS (or SMTP_URL). Without one,
+ * development prints to the console; production refuses, so sign-in codes never land in a log.
+ */
+export class ConfiguredMailer implements Mailer {
+  private transport: { url: string; t: ReturnType<typeof nodemailer.createTransport> } | null = null;
+  private readonly fallback = new ConsoleMailer();
+
+  constructor(
+    private readonly resolve: () => Promise<{ url?: string; from?: string }>,
+    private readonly allowConsole: boolean,
+  ) {}
+
+  async send(mail: Mail): Promise<void> {
+    const { url, from } = await this.resolve();
+    if (!url) {
+      if (this.allowConsole) return this.fallback.send(mail);
+      throw new Error('outgoing email is not configured (CMS > settings > connections)');
+    }
+    if (this.transport?.url !== url) this.transport = { url, t: nodemailer.createTransport(url) };
+    await this.transport.t.sendMail({ from, ...mail });
+  }
+}
+
 export class SmtpMailer implements Mailer {
   private readonly transport;
   constructor(

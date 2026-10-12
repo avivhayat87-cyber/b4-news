@@ -72,8 +72,7 @@ async function instagram(graph: string, token: string, igUserId: string, p: Soci
   return { status: 'posted', postId: media.id, commentId: comment.id };
 }
 
-export async function publishToNetwork(config: Config, account: SocialAccountRef, payload: SocialPayload): Promise<PostResult> {
-  const token = config.socialSecret(account.secretRef);
+export async function publishToNetwork(config: Config, account: SocialAccountRef, token: string | undefined, payload: SocialPayload): Promise<PostResult> {
   if (!token) return { status: 'prepared', reason: 'החשבון לא מחובר (אין טוקן בשרת). הפוסט הוכן לפרסום ידני.' };
   const graph = `https://graph.facebook.com/${config.metaGraphVersion}`;
   switch (account.platform) {

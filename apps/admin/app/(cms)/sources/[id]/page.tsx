@@ -20,6 +20,7 @@ type Form = {
   title: string;
   publishedAt: string;
   maxItems: number;
+  urlFilter: string;
   readArticle: boolean;
   aTitle: string;
   aIntro: string;
@@ -43,6 +44,7 @@ function toForm(s: SourceDto): Form {
     title: c?.list.title ?? '',
     publishedAt: c?.list.publishedAt ?? '',
     maxItems: c?.list.maxItems ?? 40,
+    urlFilter: c?.list.urlFilter ?? '',
     readArticle: Boolean(c?.article) || !c,
     aTitle: c?.article?.title ?? '',
     aIntro: c?.article?.intro ?? '',
@@ -64,7 +66,7 @@ function toInput(f: Form): ConfigureSourceInput {
     scrapeIntervalMin: f.scrapeIntervalMin,
     devNotes: f.devNotes || null,
     selectorConfig: {
-      list: { item: opt(f.item), link: opt(f.link), title: opt(f.title), publishedAt: opt(f.publishedAt), maxItems: f.maxItems },
+      list: { item: opt(f.item), link: opt(f.link), title: opt(f.title), publishedAt: opt(f.publishedAt), maxItems: f.maxItems, urlFilter: opt(f.urlFilter) },
       article: f.readArticle
         ? { title: opt(f.aTitle), intro: opt(f.aIntro), body: opt(f.aBody), image: opt(f.aImage), publishedAt: opt(f.aDate), remove: f.aRemove.split(',').map((x) => x.trim()).filter(Boolean) }
         : undefined,
@@ -81,6 +83,13 @@ function TestResults({ r }: { r: SourceTestResult }) {
         <ul className="list-disc space-y-1 pr-5 text-sm text-brand-deep">
           {r.errors.map((e) => (
             <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
+      {r.warnings.length > 0 && (
+        <ul className="list-disc space-y-1 rounded-lg bg-warn-soft py-2 pl-3 pr-7 text-sm text-warn">
+          {r.warnings.map((w) => (
+            <li key={w}>{w}</li>
           ))}
         </ul>
       )}
@@ -117,7 +126,12 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
   const qc = useQueryClient();
   const toast = useToast();
   const isDev = useCan('developer');
-  const sources = useQuery({ queryKey: ['sources'], queryFn: () => admin.get<SourceDto[]>('/sources') });
+  const [detecting, setDetecting] = useState(false);
+  const sources = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => admin.get<SourceDto[]>('/sources'),
+    refetchInterval: (q) => (detecting || q.state.data?.find((s) => s.id === id)?.setupRunning ? 2000 : false),
+  });
   const source = sources.data?.find((s) => s.id === id);
   const [form, setForm] = useState<Form | null>(null);
   const [result, setResult] = useState<SourceTestResult | null>(null);
@@ -131,6 +145,26 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
   const save = useMutation({ mutationFn: () => admin.put<SourceDto>(`/sources/${id}/config`, toInput(form!)), onSuccess: () => { toast('ההגדרה נשמרה. הריצו בדיקה לפני האישור.'); refresh(); }, onError });
   const test = useMutation({ mutationFn: () => admin.post<SourceTestResult>(`/sources/${id}/test`, toInput(form!)), onSuccess: (r) => { setResult(r); refresh(); }, onError });
   const approve = useMutation({ mutationFn: () => admin.post<SourceDto>(`/sources/${id}/approve`), onSuccess: () => { toast('האתר אושר ופעיל באיתור.'); refresh(); }, onError });
+  const detect = useMutation({
+    mutationFn: () => admin.post(`/sources/${id}/autodetect`),
+    onSuccess: () => {
+      setDetecting(true);
+      refresh();
+    },
+    onError,
+  });
+  // When the automatic setup finishes, load what it found into the form.
+  useEffect(() => {
+    if (detecting && source && !source.setupRunning) {
+      const t = setTimeout(() => {
+        setForm(toForm(source));
+        setResult(null);
+        setDetecting(false);
+        toast(source.method ? 'ההגדרה האוטומטית הסתיימה. בדקו את התוצאה ואשרו.' : 'לא נמצא פיד אוטומטית. ראו את ההערות.', source.method ? 'ok' : 'danger');
+      }, 600);
+      return () => clearTimeout(t);
+    }
+  }, [detecting, source, toast]);
   const status = useMutation({ mutationFn: (s: 'active' | 'paused' | 'archived') => admin.post<SourceDto>(`/sources/${id}/status`, { status: s }), onSuccess: refresh, onError });
 
   if (sources.isPending) return <Loading />;
@@ -218,6 +252,10 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
                 <textarea id="lu" dir="ltr" rows={3} value={form.listUrls} onChange={(e) => set('listUrls', e.target.value)} className={cx(inputClass, 'font-mono text-sm')} />
               </Field>
 
+              <Field label="רק כתבות שהכתובת שלהן מכילה (לא חובה)" htmlFor="uf" hint='למשל /economy, כשהרשימה כוללת את כל האתר ורוצים רק מדור אחד.'>
+                <input id="uf" dir="ltr" value={form.urlFilter} placeholder="/economy" onChange={(e) => set('urlFilter', e.target.value)} className={cx(inputClass, 'font-mono text-sm')} />
+              </Field>
+
               {form.method === 'html' && (
                 <fieldset className="grid gap-3 rounded-lg bg-stone p-4 md:grid-cols-2">
                   <legend className="mb-1 font-bold">סלקטורים בעמוד הרשימה</legend>
@@ -296,6 +334,9 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
               </div>
 
               <div className="flex flex-wrap gap-2 border-t border-line-soft pt-4">
+                <Button busy={detect.isPending || detecting || source.setupRunning} onClick={() => detect.mutate()}>
+                  זיהוי אוטומטי
+                </Button>
                 <Button busy={test.isPending} onClick={() => test.mutate()}>
                   בדיקה על האתר
                 </Button>

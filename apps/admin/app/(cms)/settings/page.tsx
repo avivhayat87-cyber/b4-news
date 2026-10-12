@@ -1,12 +1,14 @@
 'use client';
-// Settings: my password (everyone), staff and social accounts (admins).
-import { SOCIAL_PLATFORMS, STAFF_ROLES, type SocialAccountDto, type SocialPlatform, type StaffRole, type StaffUserDto } from '@b4/shared';
+// Settings: connections (AI, email, social), site details, team, my password.
+import { STAFF_ROLES, type StaffRole, type StaffUserDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { Badge, Button, Card, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
+import { Connections } from '@/components/settings/connections';
+import { SiteDetails } from '@/components/settings/site-details';
+import { Button, Card, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
 import { useCan, useStaff } from '@/lib/auth';
-import { PLATFORM, ROLE, timeAgo } from '@/lib/labels';
+import { ROLE, timeAgo } from '@/lib/labels';
 
 function PasswordCard() {
   const toast = useToast();
@@ -167,94 +169,40 @@ function StaffCard() {
   );
 }
 
-function SocialCard() {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const accounts = useQuery({ queryKey: ['social-accounts'], queryFn: () => admin.get<SocialAccountDto[]>('/social-accounts') });
-  const [platform, setPlatform] = useState<SocialPlatform>('facebook');
-  const [displayName, setDisplayName] = useState('');
-  const [externalId, setExternalId] = useState('');
-  const [secretRef, setSecretRef] = useState('');
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['social-accounts'] });
-  const onError = (e: unknown) => toast(errorMessage(e), 'danger');
-  const create = useMutation({
-    mutationFn: () => admin.post('/social-accounts', { platform, displayName, externalId, secretRef }),
-    onSuccess: () => {
-      setDisplayName('');
-      setExternalId('');
-      setSecretRef('');
-      refresh();
-    },
-    onError,
-  });
-  const toggle = useMutation({ mutationFn: (a: SocialAccountDto) => admin.patch(`/social-accounts/${a.id}`, { isActive: !a.isActive }), onSuccess: refresh, onError });
-
-  return (
-    <Card title="חשבונות ברשתות החברתיות">
-      <p className="mb-4 text-sm text-muted">
-        הטוקנים לא נשמרים במסד הנתונים: הם מוגדרים בשרת כמשתנה סביבה <code dir="ltr">SOCIAL_SECRET_&lt;שם&gt;</code>. חשבון בלי טוקן מכין את הפוסט לפרסום ידני.
-      </p>
-      <ul className="space-y-2">
-        {accounts.data?.map((a) => (
-          <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 ring-1 ring-line">
-            <b>{PLATFORM[a.platform]}</b>
-            <span>{a.displayName}</span>
-            <span className="text-xs text-muted" dir="ltr">
-              {a.externalId}
-            </span>
-            {a.linkInFirstComment && <Badge tone="info">קישור בתגובה הראשונה</Badge>}
-            <Badge tone={a.connected ? 'ok' : 'warn'}>{a.connected ? 'מחובר' : 'לא מחובר'}</Badge>
-            <Button size="sm" variant="ghost" className="mr-auto" onClick={() => toggle.mutate(a)}>
-              {a.isActive ? 'השבתה' : 'הפעלה'}
-            </Button>
-          </li>
-        ))}
-      </ul>
-      <form
-        className="mt-5 grid gap-3 border-t border-line-soft pt-5 md:grid-cols-5"
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          create.mutate();
-        }}
-      >
-        <Field label="רשת" htmlFor="sa-p">
-          <select id="sa-p" value={platform} onChange={(e) => setPlatform(e.target.value as SocialPlatform)} className={inputClass}>
-            {SOCIAL_PLATFORMS.map((p) => (
-              <option key={p} value={p}>
-                {PLATFORM[p]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="שם לתצוגה" htmlFor="sa-n">
-          <input id="sa-n" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="מזהה (עמוד / ערוץ)" htmlFor="sa-e">
-          <input id="sa-e" dir="ltr" required value={externalId} onChange={(e) => setExternalId(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="שם הסוד בשרת" htmlFor="sa-s">
-          <input id="sa-s" dir="ltr" required placeholder="FACEBOOK_PAGE" value={secretRef} onChange={(e) => setSecretRef(e.target.value.toUpperCase())} className={inputClass} />
-        </Field>
-        <div className="flex items-end">
-          <Button type="submit" variant="dark" busy={create.isPending}>
-            הוספת חשבון
-          </Button>
-        </div>
-      </form>
-    </Card>
-  );
-}
+type Tab = 'connections' | 'site' | 'team' | 'password';
 
 export default function SettingsPage() {
   const isAdmin = useCan();
+  const tabs: { id: Tab; label: string; show: boolean }[] = [
+    { id: 'connections', label: 'חיבורים', show: isAdmin },
+    { id: 'site', label: 'פרטי האתר', show: true },
+    { id: 'team', label: 'צוות', show: isAdmin },
+    { id: 'password', label: 'הסיסמה שלי', show: true },
+  ];
+  const visible = tabs.filter((t) => t.show);
+  const [tab, setTab] = useState<Tab>(visible[0]!.id);
+
   return (
     <>
-      <PageHeader title="הגדרות" />
-      <div className="space-y-6">
-        <PasswordCard />
-        {isAdmin && <StaffCard />}
-        {isAdmin && <SocialCard />}
+      <PageHeader title="הגדרות" subtitle={isAdmin ? 'חיבור ה-AI, הדואר והרשתות החברתיות, פרטי האתר והצוות.' : undefined} />
+      <div className="mb-6 inline-flex flex-wrap rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
+        {visible.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`rounded-md px-4 py-2 font-bold ${tab === t.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-stone'}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
+      {tab === 'connections' && isAdmin && <Connections />}
+      {tab === 'site' && <SiteDetails canEdit={isAdmin} />}
+      {tab === 'team' && isAdmin && <StaffCard />}
+      {tab === 'password' && <PasswordCard />}
     </>
   );
 }

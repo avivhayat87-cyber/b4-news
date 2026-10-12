@@ -92,11 +92,12 @@ export async function runSocialGenerate(s: Services, job: JobRow) {
   const [pkg] = await s.db.select().from(socialPackages).where(eq(socialPackages.draftId, draftId)).limit(1);
   if (!pkg) throw new PermanentJobError('no social package');
   const prompt = await activePrompt(s.db, 'social.caption');
+  const textAi = await s.ai.text();
   const { result } = await tracked(
     s.db,
-    { type: 'social_caption', provider: s.ai.text.provider, draftId, requestedBy: job.createdBy, promptKey: 'social.caption', promptVersion: prompt.version },
+    { type: 'social_caption', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey: 'social.caption', promptVersion: prompt.version },
     () =>
-      s.ai.text.social({
+      textAi.social({
         systemPrompt: prompt.body,
         article: { title: draft.title, subtitle: draft.subtitle, body: draft.bodyText },
         current: pkg.caption ? { headline: pkg.headline, caption: pkg.caption } : undefined,

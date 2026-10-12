@@ -4,3 +4,4 @@ export * from './comments';
 export * from './auth';
 export * from './doc';
 export * from './cms';
+export * from './settings';

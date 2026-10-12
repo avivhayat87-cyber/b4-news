@@ -45,10 +45,6 @@ export async function seedDevSources(db: Db, publicApiUrl: string): Promise<void
       .values({ ...r, status: 'active', approvedAt: now, lastTestPassedAt: now, devNotes: 'אתר לדוגמה לפיתוח מקומי' })
       .onConflictDoNothing({ target: sources.baseUrl });
   }
-  await db
-    .insert(sources)
-    .values({ name: 'אתר חדש שממתין למפתח', baseUrl: 'https://example.org/news/', status: 'pending_dev', devNotes: 'דוגמה לבקשה של עורך: שם וכתובת בלבד.' })
-    .onConflictDoNothing({ target: sources.baseUrl });
 
   const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)::int` }).from(socialAccounts);
   if (n === 0) {
