@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
-import { COLOR, RUN_STATUS, categoryName, formatDateTime, timeAgo } from '@/lib/labels';
+import { COLOR, MISC_FOLDER, RUN_STATUS, categoryName, formatDateTime, timeAgo } from '@/lib/labels';
 import { Badge, Button, ColorDot, Empty, Thumb, cx, inputClass, useToast } from './ui';
 
 const ORDER = [...CATEGORIES.map((c) => c.slug as string), ''];
@@ -18,7 +18,9 @@ export function RunHeader({ detail }: { detail: RunDetail }) {
   return (
     <div className="mb-5 rounded-xl bg-white p-5 ring-1 ring-line">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-extrabold">איתור מ-{formatDateTime(r.createdAt)}</h2>
+        <h2 className="text-lg font-extrabold">
+          {r.region === 'international' ? 'איתור מחו״ל' : 'איתור'} מ-{formatDateTime(r.createdAt)}
+        </h2>
         <Badge tone={status?.tone}>{status?.label}</Badge>
         {detail.isLatest && <Badge tone="ink">האיתור האחרון</Badge>}
         <span className="text-[15px] text-muted">
@@ -55,11 +57,26 @@ function ItemCard({ item, selected, onToggle, action }: { item: RunItemDto; sele
           <span>{timeAgo(item.publishedAt)}</span>
           {item.origin === 'pulled' && <Badge tone="info">הועבר מאיתור קודם</Badge>}
           {taken && <Badge tone="warn">כבר בעריכה</Badge>}
+          {item.language && (
+            <Badge tone={item.titleHe ? 'muted' : 'info'}>
+              {item.language.toUpperCase()} · {item.titleHe ? 'תורגם' : 'מתרגם…'}
+            </Badge>
+          )}
         </div>
+        {/* Foreign articles: the Hebrew translation first, the original headline under it. */}
         <label htmlFor={onToggle ? id : undefined} id={`${id}-title`} className="mt-1 block cursor-pointer font-display text-[16px] font-bold leading-snug">
-          {item.title}
+          {item.titleHe ?? item.title}
         </label>
-        {item.intro && <p className="mt-1 line-clamp-2 text-sm text-ink-2">{item.intro}</p>}
+        {item.titleHe && (
+          <p className="mt-0.5 text-xs text-muted" dir="auto">
+            {item.title}
+          </p>
+        )}
+        {(item.introHe ?? item.intro) && (
+          <p className="mt-1 line-clamp-2 text-sm text-ink-2" dir="auto">
+            {item.introHe ?? item.intro}
+          </p>
+        )}
         <div className="mt-1.5 flex items-center gap-3">
           <a href={item.url} target="_blank" rel="noopener noreferrer nofollow" className="text-xs font-semibold text-muted hover:text-ink hover:underline">
             למקור ↗
@@ -83,7 +100,10 @@ export function RunBoard({ detail }: { detail: RunDetail }) {
   const pickable = detail.isLatest;
 
   const items = useMemo(
-    () => detail.items.filter((i) => (!source || i.source.name === source) && (!query || `${i.title} ${i.intro ?? ''}`.includes(query))),
+    () =>
+      detail.items.filter(
+        (i) => (!source || i.source.name === source) && (!query || `${i.title} ${i.intro ?? ''} ${i.titleHe ?? ''} ${i.introHe ?? ''}`.toLowerCase().includes(query.toLowerCase())),
+      ),
     [detail.items, source, query],
   );
   const groups = useMemo(() => {
@@ -157,9 +177,10 @@ export function RunBoard({ detail }: { detail: RunDetail }) {
           <section key={slug} aria-labelledby={`cat-${slug}`}>
             <div className="mb-3 flex items-center gap-3 border-b-2 border-ink pb-2">
               <h3 id={`cat-${slug}`} className="text-lg font-extrabold">
-                {slug ? categoryName(slug) : 'ללא קטגוריה'}
+                {slug ? categoryName(slug) : MISC_FOLDER.name}
               </h3>
               <span className="text-sm text-muted">{list.length}</span>
+              {!slug && <span className="text-sm text-muted">· {MISC_FOLDER.hint}</span>}
               {pickable && (
                 <button type="button" onClick={() => toggleGroup(list)} className="mr-auto text-sm font-semibold text-brand hover:underline">
                   סימון כל הקטגוריה

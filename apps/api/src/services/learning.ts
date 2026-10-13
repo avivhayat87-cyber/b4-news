@@ -1,13 +1,36 @@
 // The learning loop: every published article's AI draft is compared with the
-// editor's final text; from time to time the AI distills those corrections
-// into house-style rules, which go into every future rewrite prompt.
-import type { LearningOverview } from '@b4/shared';
-import { type Db, aiJobs, and, articles, categories, desc, eq, inArray, jobs, sql, styleFeedback, styleProfiles, users } from '@b4/db';
+// editor's final text. After each publish batch, all of its articles (source
+// excerpt, the AI-to-final diff, the image choice) go to the AI in one call,
+// which updates the house-style rules used in every future rewrite and writes
+// a short report of what it learned. A manual "learn now" distills whatever is pending.
+import type { LearningOverview, LearningReportDto } from '@b4/shared';
+import {
+  type Db,
+  aiJobs,
+  and,
+  articleDrafts,
+  articles,
+  categories,
+  desc,
+  eq,
+  imageBatches,
+  inArray,
+  jobs,
+  learningReports,
+  mediaAssets,
+  publishJobs,
+  scrapedItems,
+  sql,
+  styleFeedback,
+  styleProfiles,
+  users,
+} from '@b4/db';
 import { alias } from 'drizzle-orm/pg-core';
 import { errors } from '../errors';
 import { enqueue, type JobRow } from '../lib/jobs';
 import { editRatio, unifiedDiff } from '../lib/text-diff';
-import { activeStyleRules, tracked } from './ai';
+import { activePrompt, activeStyleRules, tracked } from './ai';
+import { editorGuidelinesFor } from './agent/editor';
 import type { Services } from './context';
 import type { DraftRow } from './drafts';
 
@@ -80,6 +103,118 @@ export async function runDistill(s: Services, job: JobRow) {
     await tx.update(styleFeedback).set({ status: 'distilled' }).where(inArray(styleFeedback.id, pending.map((f) => f.id)));
   });
   return { learnedFrom: pending.length };
+}
+
+// ---------------------------------------------------------------------------
+// Learning per publish batch: one report, one AI call
+// ---------------------------------------------------------------------------
+export const BATCH_LEARNING_JOB = 'learning.batch';
+
+/** After a publish job: every article it published is learned from together, in a single call. */
+export async function queueBatchLearning(s: Services, publishJobId: string, staffId: string | null) {
+  return enqueue(s.db, BATCH_LEARNING_JOB, { publishJobId }, { createdBy: staffId, maxAttempts: 2 });
+}
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+
+export async function runBatchLearning(s: Services, job: JobRow) {
+  const publishJobId = String(job.payload.publishJobId);
+  const [pj] = await s.db.select().from(publishJobs).where(eq(publishJobs.id, publishJobId)).limit(1);
+  if (!pj) return { skipped: 'publish job not found' };
+  const [done] = await s.db.select({ id: learningReports.id }).from(learningReports).where(eq(learningReports.publishJobId, publishJobId)).limit(1);
+  if (done) return { skipped: 'already learned' };
+
+  const draftIds = pj.magazineId
+    ? (await s.db.select({ id: articleDrafts.id }).from(articleDrafts).where(eq(articleDrafts.magazineId, pj.magazineId))).map((d) => d.id)
+    : pj.draftId
+      ? [pj.draftId]
+      : [];
+  const rows = draftIds.length
+    ? await s.db
+        .select({
+          feedback: styleFeedback,
+          section: categories.name,
+          sourceTitle: scrapedItems.title,
+          sourceBody: scrapedItems.bodyText,
+          sourceBodyHe: scrapedItems.bodyHe,
+          sourceIntro: scrapedItems.intro,
+          heroKind: mediaAssets.kind,
+          heroPrompt: mediaAssets.aiPrompt,
+        })
+        .from(styleFeedback)
+        .innerJoin(articleDrafts, eq(styleFeedback.draftId, articleDrafts.id))
+        .leftJoin(categories, eq(styleFeedback.categoryId, categories.id))
+        .leftJoin(scrapedItems, eq(articleDrafts.scrapedItemId, scrapedItems.id))
+        .leftJoin(mediaAssets, eq(articleDrafts.heroMediaId, mediaAssets.id))
+        .where(and(inArray(styleFeedback.draftId, draftIds), eq(styleFeedback.status, 'pending')))
+    : [];
+
+  if (rows.length === 0) {
+    await s.db.insert(learningReports).values({ publishJobId, articleCount: 0, status: 'skipped', summary: 'בקבוצה הזו לא היו שינויים של עורכים ללמוד מהם.' }).onConflictDoNothing();
+    return { learnedFrom: 0 };
+  }
+
+  const batches = await s.db
+    .select({ draftId: imageBatches.draftId, n: sql<number>`count(*)::int` })
+    .from(imageBatches)
+    .where(and(inArray(imageBatches.draftId, rows.map((r) => r.feedback.draftId)), eq(imageBatches.purpose, 'article')))
+    .groupBy(imageBatches.draftId);
+  const imageNote = (r: (typeof rows)[number]) => {
+    const tries = batches.find((b) => b.draftId === r.feedback.draftId)?.n ?? 0;
+    const chosen = !r.heroKind ? 'no main image' : r.heroKind === 'upload' ? 'the editor uploaded their own image' : r.heroKind === 'scraped_original' ? "the source's image" : `an AI image (prompt: ${clip(r.heroPrompt ?? '', 200)})`;
+    return `${chosen}; ${tries} AI image round(s) requested`;
+  };
+
+  // Compact on purpose: an excerpt of the source and the diff, not three full copies of every article.
+  const articles = rows.map((r) => ({
+    section: r.section ?? 'ללא קטגוריה',
+    source: clip([r.sourceTitle, r.sourceIntro, r.sourceBodyHe ?? r.sourceBody].filter(Boolean).join('\n'), 1500),
+    diff: clip(r.feedback.unifiedDiff, 3000),
+    editRatio: r.feedback.editRatio,
+    images: imageNote(r),
+  }));
+  const currentRules = await activeStyleRules(s.db);
+  const settings = await editorGuidelinesFor(s.db);
+  const prompt = await activePrompt(s.db, 'learning.batch');
+  const textAi = await s.ai.text();
+  const { result, aiJobId } = await tracked(
+    s.db,
+    { type: 'style_distill', provider: textAi.provider, requestedBy: job.createdBy, promptKey: 'learning.batch', promptVersion: prompt.version },
+    () => textAi.learnBatch({ systemPrompt: prompt.body, currentRules, settings, articles }),
+  );
+  const ids = rows.map((r) => r.feedback.id);
+  await s.db.transaction(async (tx) => {
+    await tx.update(styleProfiles).set({ isActive: false }).where(eq(styleProfiles.isActive, true));
+    const [profile] = await tx
+      .insert(styleProfiles)
+      .values({ rules: result.data.rules, exampleIds: ids, feedbackCount: ids.length, isActive: true, aiJobId })
+      .returning({ id: styleProfiles.id });
+    await tx.update(styleFeedback).set({ status: 'distilled' }).where(inArray(styleFeedback.id, ids));
+    await tx.insert(learningReports).values({
+      publishJobId,
+      articleCount: ids.length,
+      status: 'succeeded',
+      summary: result.data.summary,
+      profileId: profile!.id,
+      aiJobId,
+      inputTokens: result.usage.inputTokens,
+    });
+  });
+  return { learnedFrom: ids.length };
+}
+
+export async function learningReportsList(s: Services): Promise<LearningReportDto[]> {
+  const rows = await s.db.select().from(learningReports).orderBy(desc(learningReports.createdAt)).limit(30);
+  return rows.map((r) => ({
+    id: r.id,
+    publishJobId: r.publishJobId,
+    articleCount: r.articleCount,
+    status: r.status as LearningReportDto['status'],
+    summary: r.summary,
+    profileId: r.profileId,
+    inputTokens: r.inputTokens,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 export async function learningOverview(s: Services): Promise<LearningOverview> {

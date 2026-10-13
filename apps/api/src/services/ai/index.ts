@@ -3,14 +3,21 @@ import type { Config } from '../../config';
 import { PermanentJobError } from '../../lib/jobs';
 import type { SettingsStore } from '../settings';
 import { AnthropicText } from './anthropic';
-import { FakeText, PlaceholderImages } from './fake';
+import { FakeText, PlaceholderImages, PlaceholderVideo } from './fake';
 import { GeminiImages, type ImageSize } from './gemini-images';
-import type { ImageAI, TextAI, Usage } from './types';
+import { GeminiVideo } from './gemini-video';
+import type { ImageAI, ImageTier, TextAI, Usage, VideoAI } from './types';
+
+/** Drafts are drawn at the lowest resolution every image model supports. */
+const DRAFT_SIZE: ImageSize = '1K';
 
 /** Resolves the AI providers per call, so a key entered in the CMS takes effect immediately. */
 export interface AiHub {
   text(): Promise<TextAI>;
-  image(): Promise<ImageAI>;
+  /** final (default): full quality; draft: the quick, cheap options the editor chooses from. */
+  image(tier?: ImageTier): Promise<ImageAI>;
+  /** Reel videos (Google Veo); model overrides the one set in Settings. */
+  video(model?: string): Promise<VideoAI>;
   status(): Promise<{ text: string; image: string; live: boolean }>;
 }
 
@@ -25,15 +32,20 @@ export class AiNotConnectedError extends PermanentJobError {
 }
 
 /** Fixed providers (tests). */
-export function fixedAi(text: TextAI, image: ImageAI): AiHub {
-  return { text: async () => text, image: async () => image, status: async () => ({ text: text.provider, image: image.provider, live: text.live && image.live }) };
+export function fixedAi(text: TextAI, image: ImageAI, draftImage: ImageAI = image, video: VideoAI = new PlaceholderVideo()): AiHub {
+  return {
+    text: async () => text,
+    image: async (tier = 'final') => (tier === 'draft' ? draftImage : image),
+    video: async () => video,
+    status: async () => ({ text: text.provider, image: image.provider, live: text.live && image.live }),
+  };
 }
 
 export function createAiHub(config: Config, settings: SettingsStore): AiHub {
   const fakeText = new FakeText();
-  const placeholder = new PlaceholderImages();
+  const placeholders: Record<ImageTier, ImageAI> = { draft: new PlaceholderImages('draft'), final: new PlaceholderImages('final') };
   let textCache: { key: string; ai: TextAI } | null = null;
-  let imageCache: { key: string; ai: ImageAI } | null = null;
+  const imageCache = new Map<ImageTier, { key: string; ai: ImageAI }>();
 
   const text = async (): Promise<TextAI> => {
     if (config.ai.text === 'fake') return fakeText;
@@ -47,21 +59,33 @@ export function createAiHub(config: Config, settings: SettingsStore): AiHub {
     throw new AiNotConnectedError('text');
   };
 
-  const image = async (): Promise<ImageAI> => {
-    if (config.ai.image === 'placeholder') return placeholder;
+  const image = async (tier: ImageTier = 'final'): Promise<ImageAI> => {
+    if (config.ai.image === 'placeholder') return placeholders[tier];
     const v = await settings.integration('gemini');
     if (v.apiKey) {
-      const key = `${v.apiKey}|${v.imageModel}|${v.imageSize}`;
-      if (imageCache?.key !== key) imageCache = { key, ai: new GeminiImages(v.apiKey, v.imageModel!, v.imageSize as ImageSize) };
-      return imageCache.ai;
+      const [model, size] = tier === 'draft' ? [v.previewModel!, DRAFT_SIZE] : [v.imageModel!, v.imageSize as ImageSize];
+      const key = `${v.apiKey}|${model}|${size}`;
+      let hit = imageCache.get(tier);
+      if (hit?.key !== key) imageCache.set(tier, (hit = { key, ai: new GeminiImages(v.apiKey, model, size) }));
+      return hit.ai;
     }
-    if (config.ai.allowStandIns) return placeholder;
+    if (config.ai.allowStandIns) return placeholders[tier];
+    throw new AiNotConnectedError('image');
+  };
+
+  const placeholderVideo = new PlaceholderVideo();
+  const video = async (model?: string): Promise<VideoAI> => {
+    if (config.ai.image === 'placeholder') return placeholderVideo;
+    const v = await settings.integration('gemini');
+    if (v.apiKey) return new GeminiVideo(v.apiKey, model || v.videoModel!);
+    if (config.ai.allowStandIns) return placeholderVideo;
     throw new AiNotConnectedError('image');
   };
 
   return {
     text,
     image,
+    video,
     status: async () => {
       const [t, i] = await Promise.all([text().catch(() => null), image().catch(() => null)]);
       return { text: t?.provider ?? 'none', image: i?.provider ?? 'none', live: Boolean(t?.live && i?.live) };

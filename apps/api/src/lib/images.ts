@@ -37,6 +37,10 @@ export type IngestMeta = {
   createdBy?: string | null;
   focalX?: number;
   focalY?: number;
+  /** A preview that only needs these renditions (all of them are cut if it is chosen and refocused). */
+  renditions?: (keyof typeof RENDITIONS)[];
+  /** The draft this image was redrawn from. */
+  derivedFromId?: string | null;
 };
 
 type SharpImage = ReturnType<typeof sharp>;
@@ -60,10 +64,11 @@ async function renderCrop(source: Buffer, srcW: number, srcH: number, w: number,
 }
 
 /** Rendition file names carry a fresh tag, so a CDN never serves an old crop after a refocus. */
-async function renderAll(storage: MediaStorage, base: string, master: Buffer, width: number, height: number, fx: number, fy: number) {
+async function renderAll(storage: MediaStorage, base: string, master: Buffer, width: number, height: number, fx: number, fy: number, only?: readonly string[]) {
   const variants: Record<string, string> = {};
   const tag = randomUUID().slice(0, 6);
   for (const [name, [w, h, format]] of Object.entries(RENDITIONS)) {
+    if (only && !only.includes(name)) continue;
     const key = `${base}/${name}-${tag}.${format}`;
     await storage.put(key, await renderCrop(master, width, height, w, h, fx, fy, format), format === 'webp' ? 'image/webp' : 'image/jpeg');
     variants[name] = key;
@@ -98,7 +103,7 @@ export async function ingestImage(db: Db, storage: MediaStorage, input: Buffer, 
   await storage.put(masterKey, master.data, 'image/webp');
   const fx = meta.focalX ?? 0.5;
   const fy = meta.focalY ?? 0.5;
-  const variants = await renderAll(storage, base, master.data, width, height, fx, fy);
+  const variants = await renderAll(storage, base, master.data, width, height, fx, fy, meta.renditions);
 
   const [row] = await db
     .insert(mediaAssets)
@@ -119,6 +124,7 @@ export async function ingestImage(db: Db, storage: MediaStorage, input: Buffer, 
       isAiGenerated: meta.isAiGenerated ?? false,
       aiPrompt: meta.aiPrompt ?? null,
       generationBatchId: meta.batchId ?? null,
+      derivedFromId: meta.derivedFromId ?? null,
       createdBy: meta.createdBy ?? null,
     })
     .returning();

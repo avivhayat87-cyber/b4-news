@@ -11,6 +11,8 @@ import { AppError, errors } from '../errors';
 import { audit } from '../lib/audit';
 import { moderateComment } from '../lib/moderation';
 import { requireReader } from '../plugins/auth';
+import type { Services } from '../services/context';
+import { legalVersion } from '../services/site-settings';
 
 const PAGE_SIZE = 20;
 const DAILY_LIMIT = 50;
@@ -111,7 +113,8 @@ export const publicCommentRoutes: FastifyPluginAsyncZod<{ db: Db }> = async (app
   );
 };
 
-export const commentRoutes: FastifyPluginAsyncZod<{ db: Db }> = async (app, { db }) => {
+export const commentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
+  const { db } = s;
   app.post(
     '/articles/:id/comments',
     {
@@ -120,6 +123,7 @@ export const commentRoutes: FastifyPluginAsyncZod<{ db: Db }> = async (app, { db
     },
     async (req, reply) => {
       const reader = requireReader(req);
+      if (reader.termsVersion !== (await legalVersion(s))) throw errors.termsRequired();
       const article = await commentableArticle(db, req.params.id);
       if (!article.commentsEnabled) throw new AppError(403, 'comments_closed', 'התגובות לכתבה הזאת סגורות');
 

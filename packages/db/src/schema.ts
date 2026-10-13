@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, type SelectorConfig } from '@b4/shared';
+import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelPlan, type SelectorConfig } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -58,19 +58,25 @@ export const draftColor = pgEnum('draft_color', ['red', 'orange', 'yellow', 'gre
 export const homepagePlacement = pgEnum('homepage_placement', ['main', 'trending', 'none']);
 export const homepageZone = pgEnum('homepage_zone', ['main', 'trending']);
 export const revisionSource = pgEnum('revision_source', ['ai_initial', 'ai_refine', 'human_autosave', 'human_checkpoint', 'restore']);
-export const mediaKind = pgEnum('media_kind', ['upload', 'scraped_original', 'ai_article', 'ai_social']);
+/** ai_preview: a quick, low-resolution AI draft to choose from; the chosen one is redrawn as an ai_article. */
+export const mediaKind = pgEnum('media_kind', ['upload', 'scraped_original', 'ai_article', 'ai_social', 'ai_preview']);
 export const imagePurpose = pgEnum('image_purpose', ['article', 'social']);
-export const aiJobType = pgEnum('ai_job_type', ['rewrite', 'refine', 'article_images', 'social_caption', 'social_image', 'style_distill', 'classify']);
+export const aiJobType = pgEnum('ai_job_type', ['rewrite', 'refine', 'article_images', 'social_caption', 'social_image', 'style_distill', 'classify', 'translate', 'agent_turn', 'social_video']);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
 export const articleStatus = pgEnum('article_status', ['published', 'scheduled', 'unpublished']);
 export const commentStatus = pgEnum('comment_status', COMMENT_STATUSES);
 export const reportReason = pgEnum('report_reason', REPORT_REASONS);
+export const sourceRegion = pgEnum('source_region', ['local', 'international']);
 export const socialPlatform = pgEnum('social_platform', ['facebook', 'instagram', 'telegram', 'whatsapp', 'x', 'tiktok']);
-export const socialFormat = pgEnum('social_format', ['feed', 'story', 'message']);
+export const socialFormat = pgEnum('social_format', ['feed', 'story', 'message', 'reel']);
 export const socialPostStatus = pgEnum('social_post_status', ['draft', 'queued', 'posting', 'posted', 'comment_failed', 'failed', 'skipped']);
 export const feedbackStatus = pgEnum('feedback_status', ['pending', 'distilled', 'excluded']);
 export const devicePlatform = pgEnum('device_platform', ['ios', 'android', 'web']);
+export const consentSubject = pgEnum('consent_subject', ['reader', 'subscriber', 'visitor']);
+export const consentChannel = pgEnum('consent_channel', ['web', 'app']);
+export const takedownKind = pgEnum('takedown_kind', TAKEDOWN_KINDS);
+export const takedownStatus = pgEnum('takedown_status', TAKEDOWN_STATUSES);
 
 // ---------------------------------------------------------------------------
 // People & sessions
@@ -95,6 +101,9 @@ export const readers = pgTable('readers', {
   displayName: text().notNull(),
   status: readerStatus().notNull().default('active'),
   bannedReason: text(),
+  /** The terms version this reader last accepted (every acceptance is also in `consents`). */
+  termsVersion: text(),
+  termsAcceptedAt: tstz(),
   createdAt: createdAt(),
   lastLoginAt: tstz(),
 });
@@ -178,6 +187,8 @@ export const mediaAssets = pgTable('media_assets', {
   isAiGenerated: boolean().notNull().default(false),
   aiPrompt: text(),
   generationBatchId: uuid().references((): AnyPgColumn => imageBatches.id, { onDelete: 'set null' }),
+  /** A final AI image: the draft (ai_preview) it was redrawn from at full quality. */
+  derivedFromId: uuid().references((): AnyPgColumn => mediaAssets.id, { onDelete: 'set null' }),
   createdBy: uuid().references(() => users.id),
   createdAt: createdAt(),
 });
@@ -211,6 +222,10 @@ export const sources = pgTable(
     method: scrapeMethod(),
     selectorConfig: jsonb().$type<SelectorConfig>(),
     defaultCategoryId: smallint().references(() => categories.id),
+    /** Israeli sites and sites from abroad are found and scanned separately. */
+    region: sourceRegion().notNull().default('local'),
+    /** The site's language (ISO 639-1, from <html lang>); non-Hebrew articles are translated. */
+    language: text(),
     status: sourceStatus().notNull().default('pending_dev'),
     scrapeIntervalMin: integer().notNull().default(30),
     /** Delta fetch: newest published_at committed by the last successful run. */
@@ -238,6 +253,8 @@ export const scrapeRuns = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     trigger: runTrigger().notNull(),
+    /** Which sites this run scans: Israeli or international. */
+    region: sourceRegion().notNull().default('local'),
     triggeredBy: uuid().references(() => users.id),
     status: runStatus().notNull().default('queued'),
     startedAt: tstz(),
@@ -290,6 +307,12 @@ export const scrapedItems = pgTable(
     publishedAt: tstz(),
     categoryId: smallint().references(() => categories.id),
     status: scrapedItemStatus().notNull().default('new'),
+    /** ISO 639-1; null = Hebrew / unknown (no translation needed). */
+    language: text(),
+    /** Hebrew translation of a foreign article: headline and intro after discovery, body when it is edited. */
+    titleHe: text(),
+    introHe: text(),
+    bodyHe: text(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -409,13 +432,15 @@ export const articleDrafts = pgTable(
     categoryId: smallint().references(() => categories.id),
     /** What the AI classified it as; the editor's choice goes in categoryId. */
     suggestedCategoryId: smallint().references(() => categories.id),
-    /** Image prompt the AI wrote with the rewrite; the default for "4 images". */
+    /** Image prompt the AI wrote with the rewrite; the default brief for the image drafts. */
     imagePrompt: text(),
     placement: homepagePlacement().notNull().default('none'),
     authorId: uuid().references(() => authors.id),
     heroMediaId: uuid().references(() => mediaAssets.id),
     tagNames: text().array().notNull().default(sql`'{}'::text[]`),
     sendPush: boolean().notNull().default(false),
+    /** The writer's disclosure of interests ("גילוי נאות"); empty = none. */
+    disclosure: text().notNull().default(''),
 
     /** Optimistic lock for autosave */
     version: integer().notNull().default(1),
@@ -481,7 +506,7 @@ export const aiChatMessages = pgTable(
   (t) => [index('ai_chat_messages_draft_idx').on(t.draftId, t.id)],
 );
 
-/** Each "generate" click = one batch of 4 options. */
+/** Each "generate" click = one batch of options (article: 3 quick drafts; story: 2 images). */
 export const imageBatches = pgTable(
   'image_batches',
   {
@@ -526,6 +551,7 @@ export const articles = pgTable(
     seoDescription: text(),
     readingMinutes: smallint().notNull().default(3),
     commentsEnabled: boolean().notNull().default(true),
+    disclosure: text(),
     draftId: uuid()
       .unique()
       .references((): AnyPgColumn => articleDrafts.id),
@@ -634,8 +660,68 @@ export const commentReports = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Legal: consents and content-removal requests
+// ---------------------------------------------------------------------------
+/**
+ * Every acceptance of the terms, kept as evidence: a signed-in reader, a newsletter
+ * subscriber, or an anonymous visitor (consent banner / app welcome screen, keyed by a
+ * random id from the browser or device). Deleting a reader deletes their rows.
+ */
+export const consents = pgTable(
+  'consents',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    subject: consentSubject().notNull(),
+    readerId: uuid().references(() => readers.id, { onDelete: 'cascade' }),
+    subscriberId: uuid().references(() => newsletterSubscribers.id, { onDelete: 'cascade' }),
+    visitorId: uuid(),
+    termsVersion: text().notNull(),
+    /** Third-party advertising cookies (visitors only; null = not asked). */
+    ads: boolean(),
+    channel: consentChannel().notNull(),
+    ipHash: text(),
+    userAgent: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('consents_reader_idx').on(t.readerId, t.createdAt.desc()),
+    index('consents_visitor_idx').on(t.visitorId, t.createdAt.desc()),
+    check(
+      'consents_one_subject',
+      sql`(${t.subject} = 'reader' and ${t.readerId} is not null)
+       or (${t.subject} = 'subscriber' and ${t.subscriberId} is not null)
+       or (${t.subject} = 'visitor' and ${t.visitorId} is not null)`,
+    ),
+  ],
+);
+
+/** "Notice and takedown": a request from anyone to remove a comment or other content, with the decision. */
+export const takedownRequests = pgTable(
+  'takedown_requests',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    kind: takedownKind().notNull(),
+    status: takedownStatus().notNull().default('new'),
+    url: text().notNull(),
+    commentId: uuid().references(() => comments.id, { onDelete: 'set null' }),
+    name: text().notNull(),
+    email: text().notNull(),
+    details: text().notNull(),
+    ipHash: text(),
+    decisionNote: text(),
+    decidedBy: uuid().references(() => users.id),
+    decidedAt: tstz(),
+    /** Answer-by time shown in the CMS (TAKEDOWN_RESPONSE_HOURS after it arrived). */
+    dueAt: tstz().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('takedown_requests_queue_idx').on(t.status, t.createdAt.desc())],
+);
+
+// ---------------------------------------------------------------------------
 // Social distribution
 // ---------------------------------------------------------------------------
+/** One account per network (enforced in services/social-accounts.ts); deleting one removes its posts. */
 export const socialAccounts = pgTable(
   'social_accounts',
   {
@@ -678,9 +764,10 @@ export const socialPosts = pgTable(
     draftId: uuid()
       .notNull()
       .references(() => socialPackages.draftId, { onDelete: 'cascade' }),
+    /** Deleting an account removes its posts here too: nothing is sent to it, and it is no longer offered. */
     socialAccountId: uuid()
       .notNull()
-      .references(() => socialAccounts.id),
+      .references(() => socialAccounts.id, { onDelete: 'cascade' }),
     articleId: bigint({ mode: 'number' }).references(() => articles.id),
     format: socialFormat().notNull().default('feed'),
     enabled: boolean().notNull().default(true),
@@ -698,6 +785,69 @@ export const socialPosts = pgTable(
     unique('social_posts_unique').on(t.draftId, t.socialAccountId, t.format),
     index('social_posts_status_idx').on(t.status),
   ],
+);
+
+/**
+ * The social page: a branded post + story for an article that is already on the
+ * site. Text by the AI, edited by the newsroom; the designs are rendered by the server.
+ */
+export const articleShares = pgTable('article_shares', {
+  articleId: bigint({ mode: 'number' })
+    .primaryKey()
+    .references(() => articles.id, { onDelete: 'cascade' }),
+  /** Design frame: headline | breaking | quote | explainer */
+  template: text().notNull().default('headline'),
+  /** Label above the headline on the image (the section, "מבזק", "מדריך"…) */
+  kicker: text().notNull().default(''),
+  headline: text().notNull().default(''),
+  /** The opening sentence: on the image under the headline, and the first line of the post. */
+  hook: text().notNull().default(''),
+  caption: text().notNull().default(''),
+  hashtags: text().array().notNull().default(sql`'{}'::text[]`),
+  /** Background photo; null = the article's main image. */
+  imageMediaId: uuid().references(() => mediaAssets.id, { onDelete: 'set null' }),
+  /** Rendered designs: { feed, story, reel (mp4), reelPoster } -> storage key */
+  rendered: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /** What the editor wants for this article: feed | story | reel. Only these are rendered. */
+  formats: text().array().notNull().default(sql`'{feed,story}'::text[]`),
+  /** The reel's own picture: a new Gemini image in the spirit of the article's, never the same one. */
+  reelImageMediaId: uuid().references(() => mediaAssets.id, { onDelete: 'set null' }),
+  /** { model, durationSeconds, resolution, motion, instruction } for the video model */
+  reelSettings: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+  /** Unused since 2026-10-13: Instagram's API can't attach a track from its music library (kept, migrations only add). */
+  reelAudio: jsonb().$type<{ id: string; title: string; artist: string | null } | null>(),
+  /** The reel's steps, each approved by the editor: { stage, imagePrompt, videoPrompt (Hebrew), approvedAt }; null = not started. */
+  reelPlan: jsonb().$type<ReelPlan | null>(),
+  /** The AI's first version, kept to compare with what the editors published. */
+  aiBaseline: jsonb(),
+  version: integer().notNull().default(1),
+  createdBy: uuid().references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const articleSharePosts = pgTable(
+  'article_share_posts',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    articleId: bigint({ mode: 'number' })
+      .notNull()
+      .references(() => articleShares.articleId, { onDelete: 'cascade' }),
+    /** As in social_posts: a deleted account takes its posts with it. */
+    socialAccountId: uuid()
+      .notNull()
+      .references(() => socialAccounts.id, { onDelete: 'cascade' }),
+    format: socialFormat().notNull(),
+    status: socialPostStatus().notNull().default('queued'),
+    externalPostId: text(),
+    externalCommentId: text(),
+    attempts: smallint().notNull().default(0),
+    lastError: text(),
+    postedAt: tstz(),
+    requestedBy: uuid().references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [unique('article_share_posts_unique').on(t.articleId, t.socialAccountId, t.format), index('article_share_posts_status_idx').on(t.status)],
 );
 
 // ---------------------------------------------------------------------------
@@ -738,6 +888,86 @@ export const styleProfiles = pgTable('style_profiles', {
   isActive: boolean().notNull().default(false),
   aiJobId: uuid().references(() => aiJobs.id),
   approvedBy: uuid().references(() => users.id),
+  createdAt: createdAt(),
+});
+
+/**
+ * One learning pass per publish batch: every article of the batch (source, AI
+ * draft, final text, images) in a single AI call that updates the house style.
+ */
+export const learningReports = pgTable(
+  'learning_reports',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    publishJobId: uuid()
+      .unique()
+      .references((): AnyPgColumn => publishJobs.id, { onDelete: 'set null' }),
+    articleCount: integer().notNull(),
+    /** succeeded | skipped | failed */
+    status: text().notNull(),
+    /** What was learned, in Hebrew, for the newsroom. */
+    summary: text().notNull().default(''),
+    /** The style profile this pass produced (null if nothing changed). */
+    profileId: integer().references(() => styleProfiles.id),
+    aiJobId: uuid().references(() => aiJobs.id),
+    inputTokens: integer(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('learning_reports_created_idx').on(t.createdAt.desc())],
+);
+
+// ---------------------------------------------------------------------------
+// The newsroom agent (chat in the CMS, and the Claude app through MCP)
+// ---------------------------------------------------------------------------
+export const agentConversations = pgTable(
+  'agent_conversations',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text().notNull().default(''),
+    /** The model family running it (claude; gemini later). */
+    engine: text().notNull().default('claude'),
+    /** idle | working | awaiting_approval | failed */
+    status: text().notNull().default('idle'),
+    /** The Messages API history as sent and received (append-only, so cached and thinking blocks stay valid). */
+    history: jsonb().$type<unknown[]>().notNull().default([]),
+    lastError: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('agent_conversations_user_idx').on(t.userId, t.updatedAt.desc())],
+);
+
+/** What the chat shows: messages, actions (with their approval state) and notices. */
+export const agentMessages = pgTable(
+  'agent_messages',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    conversationId: uuid()
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: 'cascade' }),
+    /** user | assistant | action | notice */
+    kind: text().notNull(),
+    text: text().notNull().default(''),
+    /** action: { toolUseId, tool, input, write, status, result } */
+    data: jsonb(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('agent_messages_conversation_idx').on(t.conversationId, t.id)],
+);
+
+/** Personal access tokens for the Claude app (MCP). Only a hash is stored. */
+export const staffApiTokens = pgTable('staff_api_tokens', {
+  id: uuid().primaryKey().defaultRandom(),
+  userId: uuid()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  tokenHash: text().notNull().unique(),
+  lastUsedAt: tstz(),
+  revokedAt: tstz(),
   createdAt: createdAt(),
 });
 
@@ -853,7 +1083,8 @@ export const auditLog = pgTable(
   {
     id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     actorUserId: uuid().references(() => users.id),
-    actorReaderId: uuid().references(() => readers.id),
+    /** Kept when the reader deletes their account; only the link to them goes. */
+    actorReaderId: uuid().references(() => readers.id, { onDelete: 'set null' }),
     entity: text().notNull(),
     entityId: text().notNull(),
     action: text().notNull(),

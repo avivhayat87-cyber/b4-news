@@ -72,6 +72,46 @@
   }
 }
 
+/* TradingView's attribution under each market widget: required by their terms, so it stays
+   visible; only the face and color follow the site (their own styles are !important). */
+.tradingview-widget-container .tradingview-widget-copyright {
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  text-align: end !important;
+}
+.tradingview-widget-container .tradingview-widget-copyright .blue-text {
+  color: var(--color-muted) !important;
+}
+.tradingview-widget-container .tradingview-widget-copyright a:hover .blue-text {
+  color: var(--color-ink) !important;
+  text-decoration: underline;
+}
+/* One-line widgets (the ticker): the attribution sits at the end of the line, not under it. */
+.tv-inline-credit .tradingview-widget-container {
+  display: flex;
+  align-items: center;
+  height: 100% !important;
+}
+.tv-inline-credit .tradingview-widget-container iframe {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100% !important;
+}
+.tv-inline-credit .tradingview-widget-container .tradingview-widget-copyright {
+  flex: none;
+  padding-inline: 12px;
+  border-inline-start: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .tv-inline-credit .tradingview-widget-container .tradingview-widget-copyright {
+    padding-inline: 8px;
+  }
+  .tv-inline-credit .tv-credit-label {
+    display: none;
+  }
+}
+
 /* Article body: rendered from sanitized CMS HTML */
 .article-body {
   font-size: 1.1875rem;

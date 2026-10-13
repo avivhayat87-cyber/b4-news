@@ -1,6 +1,7 @@
 import { Hero } from '@/components/hero';
 import { CapitalGrid, CategoryBlock, ColumnsSection, CompactCategory, PodcastBand, TourismFeature } from '@/components/sections';
 import { Sidebar } from '@/components/sidebar';
+import { MarketTicker } from '@/components/tradingview';
 import { TrendingCarousel } from '@/components/trending-carousel';
 import { wrap } from '@/components/ui';
 import { getHome, getMarkets } from '@/lib/api';
@@ -23,6 +24,9 @@ export default async function HomePage() {
 
   return (
     <>
+      <section aria-label="מדדים מובילים" className="border-b border-line">
+        <MarketTicker />
+      </section>
       <Hero articles={home.main} latest={home.latest} />
       <TrendingCarousel articles={home.trending} />
 
@@ -32,7 +36,7 @@ export default async function HomePage() {
             <CategoryBlock key={section.category.slug} section={section} withByline />
           ))}
         </div>
-        <Sidebar quotes={markets} />
+        <Sidebar quotes={markets} marketOverview />
       </div>
 
       {capital ? <CapitalGrid section={capital} /> : null}

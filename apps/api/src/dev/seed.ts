@@ -38,6 +38,16 @@ export async function seedDevSources(db: Db, publicApiUrl: string): Promise<void
       selectorConfig: { list: { maxItems: 40 }, article, categoryRules: [] },
       defaultCategoryId: world?.id ?? null,
     },
+    {
+      name: SAMPLE_SITES.global.name,
+      baseUrl: `${base}/global/`,
+      listUrls: [`${base}/global/feed.xml`],
+      method: 'rss' as const,
+      selectorConfig: { list: { maxItems: 40 }, article, categoryRules: [] },
+      defaultCategoryId: null,
+      region: 'international' as const,
+      language: 'en',
+    },
   ];
   for (const r of rows) {
     await db

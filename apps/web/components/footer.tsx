@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSite } from '@/lib/api';
 import { CATEGORIES, SITE, categoryHref, socialLinks } from '@/lib/site';
+import { ManageConsentButton } from './consent-banner';
 import { NewsletterForm } from './newsletter-form';
 import { SocialLinks } from './sidebar';
 import { wrap } from './ui';
@@ -26,7 +27,7 @@ export async function SiteFooter() {
               <h2 id="app-title" className="text-[26px] font-extrabold leading-tight md:text-[32px]">
                 המבזקים של {SITE.short}, ישר אליכם
               </h2>
-              <p className="text-base leading-relaxed text-brand-soft">
+              <p className="text-base leading-relaxed text-white">
                 {appLink ? 'הורידו את האפליקציה וקבלו התראה על כל מבזק, או הצטרפו לערוצים שלנו.' : 'הצטרפו לניוזלטר ולערוצים שלנו, ותהיו הראשונים לדעת.'}
               </p>
             </div>
@@ -125,6 +126,15 @@ export async function SiteFooter() {
           <span>
             © {new Date().getFullYear()} {SITE.name}. כל הזכויות שמורות.
           </span>
+          <nav aria-label="חשבון ופרטיות" className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link href="/account" className="hover:text-white">
+              החשבון שלי
+            </Link>
+            <Link href="/report" className="hover:text-white">
+              דיווח על תוכן
+            </Link>
+            <ManageConsentButton className="hover:text-white" />
+          </nav>
           <span>איורים המסומנים ״AI״ נוצרו בכלי בינה מלאכותית</span>
         </div>
       </div>

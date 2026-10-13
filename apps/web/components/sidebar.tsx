@@ -1,8 +1,11 @@
+import Link from 'next/link';
 import { getSite } from '@/lib/api';
+import { marketsHref } from '@/lib/markets';
 import { socialLinks } from '@/lib/site';
 import type { MarketQuote } from '@/lib/types';
 import { SocialIcon } from './icons';
 import { NewsletterForm } from './newsletter-form';
+import { MarketOverview } from './tradingview';
 import { HousePromo, SectionHeader } from './ui';
 
 const changeStyle: Record<MarketQuote['direction'], string> = {
@@ -72,11 +75,26 @@ export function SocialLinks({ variant, links }: { variant: 'solid' | 'outline'; 
   );
 }
 
-export async function Sidebar({ quotes }: { quotes: MarketQuote[] }) {
+/** Indices, commodities, currencies and crypto in tabs (TradingView), with a way into /markets. */
+export function MarketOverviewBox() {
+  return (
+    <section aria-labelledby="overview-title" className="rounded-[10px] border border-line px-3 pt-[18px]">
+      <SectionHeader id="overview-title" title="שווקים" size="sm" rule={false} className="mb-1 px-2">
+        <Link href={marketsHref()} className="ms-auto whitespace-nowrap text-[13px] font-extrabold text-brand hover:text-brand-deep">
+          לכל נתוני השווקים
+        </Link>
+      </SectionHeader>
+      <MarketOverview />
+    </section>
+  );
+}
+
+export async function Sidebar({ quotes, marketOverview = false }: { quotes: MarketQuote[]; marketOverview?: boolean }) {
   const site = await getSite();
   const hasSocial = socialLinks(site.links).length > 0;
   return (
     <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-7">
+      {marketOverview ? <MarketOverviewBox /> : null}
       <MarketsWidget quotes={quotes} />
       <NewsletterBox />
       {hasSocial ? (

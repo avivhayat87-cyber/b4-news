@@ -3,8 +3,8 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AiResult, DistillRequest, ImageAI, ImageShape, RefineRequest, RewriteRequest, SocialRequest, TextAI } from './types';
-import type { DistillOutput, RefineOutput, RewriteOutput, SocialOutput } from './types';
+import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, RewriteRequest, ShareKitRequest, SocialRequest, TextAI, TranslateRequest } from './types';
+import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 
 const usage = () => ({ model: 'fake', inputTokens: null, outputTokens: null, latencyMs: 1 });
 const sentences = (text: string) => text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
@@ -59,6 +59,37 @@ export class FakeText implements TextAI {
     };
   }
 
+  async shareKit(req: ShareKitRequest): Promise<AiResult<ShareKitOutput>> {
+    const a = req.article;
+    const template = /מדריך|איך|כך |טיפים|זכויות|מה צריך|המדריך/.test(a.title)
+      ? 'explainer'
+      : /מבזק|עכשיו|הודיע|החליט|זינק|צנח|נחתך/.test(a.title)
+        ? 'breaking'
+        : /\d+%/.test(a.title)
+          ? 'quote'
+          : 'headline';
+    const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, s.lastIndexOf(' ', n - 1)).replace(/[,:;.\-–]+$/, '')}…`);
+    const [first = a.title, second = ''] = sentences(`${a.subtitle} ${a.body}`.replace(/\s+/g, ' ').trim());
+    const short = req.instruction && /קצר|תקצר|קיצור/.test(req.instruction);
+    return {
+      data: {
+        template: req.current ? 'headline' : template,
+        kicker: template === 'breaking' ? 'מבזק' : template === 'explainer' ? 'מדריך' : a.section,
+        headline: clip(a.title, 70),
+        hook: clip(first, short ? 70 : 130),
+        caption: `${second ? `${clip(second, 200)} ` : ''}ספרו לנו בתגובות: איך זה משפיע עליכם?`,
+        hashtags: [a.section.replace(/["'״׳]/g, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, ''), 'כלכלה'].filter(Boolean),
+      },
+      usage: usage(),
+    };
+  }
+
+  /** Marks the text instead of translating it, so the flow is visible without an AI key. */
+  async translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>> {
+    const mark = (t: string | null | undefined) => (t ? `(תרגום לדוגמה) ${t}` : '');
+    return { data: { items: req.items.map((i) => ({ id: i.id, title: mark(i.title), intro: mark(i.intro), body: mark(i.body) })) }, usage: usage() };
+  }
+
   async distill(req: DistillRequest): Promise<AiResult<DistillOutput>> {
     const avg = req.examples.reduce((sum, e) => sum + e.editRatio, 0) / Math.max(1, req.examples.length);
     const shorter = req.examples.filter((e) => e.finalText.length < e.aiText.length * 0.9).length;
@@ -71,18 +102,54 @@ export class FakeText implements TextAI {
       .join('\n');
     return { data: { rules }, usage: usage() };
   }
+
+  async learnBatch(req: LearnBatchRequest): Promise<AiResult<LearnBatchOutput>> {
+    const avg = req.articles.reduce((sum, a) => sum + a.editRatio, 0) / Math.max(1, req.articles.length);
+    const sections = [...new Set(req.articles.map((a) => a.section))].join(', ');
+    const rules = [req.currentRules.trim(), `- (ספק לדוגמה) נלמד מקבוצה של ${req.articles.length} כתבות (${sections}); העורכים שינו בממוצע ${Math.round(avg * 100)}% מהטקסט.`]
+      .filter(Boolean)
+      .join('\n');
+    return {
+      data: { rules, summary: `(ספק לדוגמה) נקראו ${req.articles.length} כתבות מהמדורים ${sections} בקריאה אחת. העורכים שינו בממוצע ${Math.round(avg * 100)}% מהטקסט.` },
+      usage: usage(),
+    };
+  }
+
+  async reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>> {
+    const subject = req.article.title;
+    const direction = req.instruction ? ` ${req.instruction}.` : '';
+    return {
+      data: {
+        image_prompt: `צילום חדשותי אנכי לכתבה "${subject}": מקום וחפצים שקשורים לנושא, אור טבעי רך, בלי טקסט ובלי אנשים מזוהים.${direction}`,
+        video_prompt: `המצלמה מתקרבת לאט ובאופן אחיד, תנועה טבעית עדינה בסצנה, אווירה רגועה ורצינית של חדשות.${direction}`,
+      },
+      usage: usage(),
+    };
+  }
+
+  /** The stand-in doesn't translate; the image stand-in only guesses a section from the words. */
+  async toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>> {
+    return { data: { texts }, usage: usage() };
+  }
 }
 
 const SECTION_ORDER = ['israeli-economy', 'global-economy', 'capital-market', 'real-estate', 'insurance', 'hi-tech', 'health', 'automotive', 'entertainment', 'consumerism', 'tourism'];
 
-/** Section-themed illustrations (the same art as the sample articles); no text. */
+/** Section-themed illustrations (the same art as the sample articles); no text. Drafts are drawn smaller. */
 export class PlaceholderImages implements ImageAI {
   readonly provider = 'placeholder';
   readonly model = 'placeholder';
   readonly live = false;
 
+  constructor(private readonly tier: ImageTier = 'final') {}
+
+  private size(shape: ImageShape): [number, number] {
+    const [w, h] = shape === 'portrait' ? [1080, 1920] : [1600, 900];
+    return this.tier === 'draft' ? [Math.round(w * 0.64), Math.round(h * 0.64)] : [w, h];
+  }
+
   async generate(prompt: string, opts: { count: number; shape: ImageShape }): Promise<Buffer[]> {
-    const [w, h] = opts.shape === 'portrait' ? [1080, 1920] : [1600, 900];
+    const [w, h] = this.size(opts.shape);
     const guessed = classifyHeadline(prompt);
     const out: Buffer[] = [];
     for (let i = 0; i < opts.count; i++) {
@@ -93,5 +160,22 @@ export class PlaceholderImages implements ImageAI {
       out.push(await sharp(Buffer.from(svg)).png().toBuffer());
     }
     return out;
+  }
+
+  /** The same picture, enlarged: what the editor chose is what they get. */
+  async finish(_prompt: string, draft: ImageReference, shape: ImageShape): Promise<Buffer> {
+    const [w, h] = this.size(shape);
+    return sharp(draft.data).resize(w, h, { fit: 'cover' }).png().toBuffer();
+  }
+}
+
+/** No video model without a key: the reel keeps its designed first frame, and the CMS says no video was made. */
+export class PlaceholderVideo implements VideoAI {
+  readonly provider = 'placeholder';
+  readonly model = 'placeholder';
+  readonly live = false;
+
+  async generate(_req: VideoRequest): Promise<AiResult<{ video: Buffer | null; mimeType: string }>> {
+    return { data: { video: null, mimeType: 'video/mp4' }, usage: usage() };
   }
 }

@@ -17,6 +17,9 @@ const CategorySlugField = z.enum(CATEGORY_SLUGS);
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
+/** Israeli sites and sites from abroad: listed, found and scanned separately. */
+export const SOURCE_REGIONS = ['local', 'international'] as const;
+export type SourceRegion = (typeof SOURCE_REGIONS)[number];
 export const SOURCE_STATUSES = ['pending_dev', 'in_development', 'active', 'paused', 'broken', 'archived'] as const;
 export type SourceStatus = (typeof SOURCE_STATUSES)[number];
 /** Methods the scraper implements. ("html_js", headless rendering, is reserved for later.) */
@@ -60,6 +63,7 @@ export const SelectorConfig = z.object({
       publishedAt: CssSelector.optional(),
       maxItems: z.number().int().min(1).max(200).default(40),
       /** Keep only articles whose address contains this (e.g. "/economy" on a whole-site sitemap). */
+      /** Keep only addresses containing this; several parts separated by spaces must all appear ("/economy/ /article-"). */
       urlFilter: z.string().trim().min(1).max(200).optional(),
     })
     .default({}),
@@ -87,6 +91,9 @@ export const SourceDto = z.object({
   method: z.enum(SCRAPE_METHODS).nullable(),
   selectorConfig: SelectorConfig.nullable(),
   defaultCategory: z.string().nullable(),
+  region: z.enum(SOURCE_REGIONS),
+  /** ISO 639-1 (e.g. "en"); null = Hebrew or not detected yet. */
+  language: z.string().nullable(),
   status: z.enum(SOURCE_STATUSES),
   scrapeIntervalMin: z.number().int(),
   lastSuccessAt: iso.nullable(),
@@ -108,12 +115,14 @@ export const CreateSourceInput = z.object({
   baseUrl: HttpUrl,
   defaultCategory: CategorySlugField.nullable().optional(),
   notes: z.string().trim().max(1000).optional(),
+  region: z.enum(SOURCE_REGIONS).default('local'),
 });
 
 /** Several sites at once (one link per site); each gets an automatic setup attempt. */
 export const BulkSourcesInput = z.object({
   urls: z.array(HttpUrl).min(1, 'הוסיפו לפחות קישור אחד').max(50, 'עד 50 אתרים בבת אחת'),
   defaultCategory: CategorySlugField.nullable().optional(),
+  region: z.enum(SOURCE_REGIONS).default('local'),
 });
 export const BulkSourcesResult = z.object({
   created: z.array(z.object({ id, baseUrl: z.string() })),
@@ -149,6 +158,7 @@ export type SourceTestResult = z.infer<typeof SourceTestResult>;
 export const RunDto = z.object({
   id,
   trigger: z.enum(['manual', 'schedule']),
+  region: z.enum(SOURCE_REGIONS),
   status: z.enum(RUN_STATUSES),
   triggeredBy: z.string().nullable(),
   startedAt: iso.nullable(),
@@ -173,6 +183,10 @@ export const RunItemDto = z.object({
   category: z.string().nullable(),
   status: z.enum(['new', 'in_draft', 'ignored']),
   origin: z.enum(['found', 'pulled']),
+  /** Foreign articles: the language, and the Hebrew headline and intro (null until translated). */
+  language: z.string().nullable(),
+  titleHe: z.string().nullable(),
+  introHe: z.string().nullable(),
 });
 export type RunItemDto = z.infer<typeof RunItemDto>;
 
@@ -292,6 +306,8 @@ export const DraftDetail = z.object({
   tags: z.array(z.string()),
   authorId: z.string().nullable(),
   sendPush: z.boolean(),
+  /** The writer's disclosure of interests, printed at the end of the article. */
+  disclosure: z.string(),
   hero: MediaDto.nullable(),
   original: z
     .object({
@@ -302,6 +318,9 @@ export const DraftDetail = z.object({
       url: z.string(),
       sourceName: z.string(),
       publishedAt: iso.nullable(),
+      /** A foreign original: its language and the Hebrew translation (null while it is being translated). */
+      language: z.string().nullable(),
+      translation: z.object({ title: z.string(), intro: z.string().nullable(), bodyText: z.string().nullable() }).nullable(),
     })
     .nullable(),
   hasAiBaseline: z.boolean(),
@@ -334,7 +353,18 @@ export const DraftMetaInput = z.object({
   colorLabel: z.enum(DRAFT_COLORS).nullable().optional(),
   sendPush: z.boolean().optional(),
   heroMediaId: id.nullable().optional(),
+  disclosure: z.string().trim().max(300).optional(),
 });
+
+/** How much of the draft repeats the original's wording (copyright check before publishing). */
+export const SimilarityDto = z.object({
+  /** Share of the draft's 6-word sequences that also appear in the original, 0..1. */
+  ratio: z.number(),
+  level: z.enum(['ok', 'warn', 'high']),
+  /** Longest passages copied word for word (8 words or more), longest first. */
+  passages: z.array(z.string()),
+});
+export type SimilarityDto = z.infer<typeof SimilarityDto>;
 
 export const RefineInput = z.object({
   instruction: z.string().trim().min(2, 'כתבו מה לשנות').max(2000),
@@ -345,10 +375,37 @@ export const RefineInput = z.object({
 export const ChatMessageDto = z.object({ id: z.number().int(), role: z.enum(['user', 'assistant']), content: z.string(), createdAt: iso });
 export type ChatMessageDto = z.infer<typeof ChatMessageDto>;
 
-export const ImageBatchDto = z.object({ id, prompt: z.string(), createdAt: iso, images: z.array(MediaDto) });
+export const ImageBatchDto = z.object({
+  id,
+  prompt: z.string(),
+  createdAt: iso,
+  images: z.array(MediaDto),
+  /** working: the AI is still drawing; failed: nothing came back (error says why, for the editor). */
+  status: z.enum(['working', 'done', 'failed']),
+  error: z.string().nullable(),
+  /** Something the editor should know about a batch that did work. */
+  note: z.string().nullable(),
+});
 export type ImageBatchDto = z.infer<typeof ImageBatchDto>;
 
-export const GenerateImagesInput = z.object({ prompt: z.string().trim().max(1000).optional() });
+/** The article's image options: quick drafts to choose from; the chosen one is redrawn at full quality. */
+export const DraftImagesDto = z.object({
+  batches: z.array(ImageBatchDto),
+  /** Drafts being drawn. */
+  activeJob: JobRef.nullable(),
+  heroId: id.nullable(),
+  /** The option shown as chosen: the main image, or the draft it was redrawn from. */
+  chosenId: id.nullable(),
+  /** The chosen draft while its full-quality version is being made (or that failed); null once it is done. */
+  upgrade: z.object({ status: z.enum(['working', 'failed']), error: z.string().nullable() }).nullable(),
+});
+export type DraftImagesDto = z.infer<typeof DraftImagesDto>;
+
+export const GenerateImagesInput = z.object({
+  prompt: z.string().trim().max(1000).optional(),
+  /** Let the generator look at the original's photo (as inspiration, never copied). */
+  useSourceImage: z.boolean().optional(),
+});
 
 export const SkipInput = z.object({ reason: z.string().trim().max(300).optional() });
 
@@ -405,12 +462,41 @@ export const SocialAccountDto = z.object({
 });
 export type SocialAccountDto = z.infer<typeof SocialAccountDto>;
 
-export const CreateSocialAccountInput = z.object({
-  platform: z.enum(SOCIAL_PLATFORMS),
-  displayName: z.string().trim().min(2).max(80),
-  externalId: z.string().trim().min(1).max(200),
-  /** Name of the server secret holding the token: SOCIAL_SECRET_<secretRef> */
-  secretRef: z.string().trim().regex(/^[A-Z0-9_]{2,60}$/, 'אותיות גדולות באנגלית, ספרות וקו תחתון'),
+/**
+ * Why a value can't be the account's ID on that network (null when it can). The APIs take the
+ * numeric Page / IG User ID, never the @username, and a Telegram channel by @name or -100… ID.
+ */
+export function socialAccountIdProblem(platform: SocialPlatform, externalId: string): string | null {
+  const v = externalId.trim();
+  if (platform === 'facebook' && !/^\d{5,30}$/.test(v)) {
+    return 'מזהה עמוד פייסבוק הוא מספר בלבד (Page ID), למשל 1424305327424928. הוא מופיע מתחת לשם העמוד כשנותנים לאפליקציה גישה, וב-Graph API Explorer.';
+  }
+  if (platform === 'instagram' && !/^\d{5,30}$/.test(v)) {
+    return 'מזהה אינסטגרם הוא מספר (IG User ID), לא שם המשתמש. מוצאים אותו ב-Graph API Explorer, בשדה instagram_business_account של העמוד.';
+  }
+  if (platform === 'telegram' && !/^(@[A-Za-z][A-Za-z0-9_]{4,31}|-100\d{5,20})$/.test(v)) {
+    return 'בטלגרם: @ ושם הערוץ (למשל @b4news_il), או לערוץ פרטי המספר שמתחיל ב-‎-100.';
+  }
+  return null;
+}
+
+export const CreateSocialAccountInput = z
+  .object({
+    platform: z.enum(SOCIAL_PLATFORMS),
+    displayName: z.string().trim().min(2).max(80),
+    externalId: z.string().trim().min(1).max(200),
+    /** Name of the server secret holding the token: SOCIAL_SECRET_<secretRef> */
+    secretRef: z.string().trim().regex(/^[A-Z0-9_]{2,60}$/, 'אותיות גדולות באנגלית, ספרות וקו תחתון'),
+  })
+  .superRefine((v, ctx) => {
+    const problem = socialAccountIdProblem(v.platform, v.externalId);
+    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['externalId'], message: problem });
+  });
+
+/** Turn an account on or off, or correct its ID (the token stays). */
+export const UpdateSocialAccountInput = z.object({
+  isActive: z.boolean().optional(),
+  externalId: z.string().trim().min(1).max(200).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -426,6 +512,8 @@ export const PreviewItem = z.object({
   social: z.object({ ready: z.boolean(), platforms: z.array(z.enum(SOCIAL_PLATFORMS)) }),
   /** Why it can't be published yet (empty = ready). */
   problems: z.array(z.string()),
+  /** Worth a look before publishing, but not blocking (e.g. wording close to the original). */
+  warnings: z.array(z.string()),
 });
 export type PreviewItem = z.infer<typeof PreviewItem>;
 
@@ -449,6 +537,41 @@ export const PublishJobDto = z.object({
   finishedAt: iso.nullable(),
 });
 export type PublishJobDto = z.infer<typeof PublishJobDto>;
+
+// ---------------------------------------------------------------------------
+// Published articles ("כתבות באתר"): edit in place, remove, restore, delete
+// ---------------------------------------------------------------------------
+/** "published": on the site (also scheduled ones); "unpublished": removed, can be put back. */
+export const ARTICLE_LIST_STATUSES = ['published', 'unpublished'] as const;
+
+export const ArticleListQuery = z.object({
+  status: z.enum(ARTICLE_LIST_STATUSES).default('published'),
+  q: z.string().trim().max(100).optional(),
+  category: z.enum(CATEGORY_SLUGS).optional(),
+  cursor: z.string().max(200).optional(),
+});
+
+export const PublishedArticleDto = z.object({
+  id: z.number().int(),
+  slug: z.string(),
+  title: z.string(),
+  status: z.enum(['published', 'scheduled', 'unpublished']),
+  category: z.string(),
+  publishedAt: iso,
+  updatedAt: iso,
+  thumbUrl: z.string().nullable(),
+  author: z.string().nullable(),
+  commentCount: z.number().int(),
+  onHomepage: z.enum(['main', 'trending']).nullable(),
+  /** The draft that edits this article (null until it is first opened for editing). */
+  draftId: id.nullable(),
+  /** Changes are being made in the editor and are not on the site yet. */
+  editing: z.boolean(),
+});
+export type PublishedArticleDto = z.infer<typeof PublishedArticleDto>;
+
+export const PublishedArticleList = z.object({ items: z.array(PublishedArticleDto), nextCursor: z.string().nullable() });
+export type PublishedArticleList = z.infer<typeof PublishedArticleList>;
 
 // ---------------------------------------------------------------------------
 // Learning loop
@@ -493,6 +616,8 @@ export const DashboardDto = z.object({
   lastRun: RunDto.nullable(),
   sources: z.object({ active: z.number().int(), waitingForDeveloper: z.number().int(), broken: z.number().int() }),
   comments: z.object({ toReview: z.number().int(), reported: z.number().int() }),
+  /** Content-removal requests not decided yet. */
+  takedowns: z.object({ open: z.number().int(), overdue: z.number().int() }),
   failedJobs: z.number().int(),
   ai: z.object({ text: z.string(), image: z.string(), live: z.boolean() }),
 });

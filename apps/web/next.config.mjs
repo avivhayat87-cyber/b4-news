@@ -33,9 +33,11 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Next.js inlines its bootstrap scripts and styles.
-              "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
+              // Next.js inlines its bootstrap scripts and styles. TradingView: the market widgets'
+              // loader script, and the iframes it creates (with s.tradingview.com as its fallback).
+              "script-src 'self' 'unsafe-inline' https://s3.tradingview.com" + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
               "style-src 'self' 'unsafe-inline'",
+              'frame-src https://www.tradingview-widget.com https://s.tradingview.com',
               `img-src 'self' data: blob: ${media.origin} ${imageHosts.map((h) => `https://${h}`).join(' ')}`.trim(),
               "font-src 'self'",
               `connect-src 'self' ${apiOrigin}`,

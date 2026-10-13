@@ -38,6 +38,12 @@ function InfoFooter() {
         </>
       ) : null}
       <Text style={styles.footerTitle}>B4 NEW&apos;S</Text>
+      <Pressable onPress={() => router.push('/account')} style={styles.infoRow} accessibilityRole="link">
+        <Text style={styles.infoText}>החשבון שלי</Text>
+      </Pressable>
+      <Pressable onPress={() => void Linking.openURL(`${SITE_URL}/report`)} style={styles.infoRow} accessibilityRole="link">
+        <Text style={styles.infoText}>דיווח על תוכן</Text>
+      </Pressable>
       {site.data.pages.map((p) => (
         <Pressable key={p.slug} onPress={() => void Linking.openURL(`${SITE_URL}/${p.slug}`)} style={styles.infoRow} accessibilityRole="link">
           <Text style={styles.infoText}>{p.title}</Text>

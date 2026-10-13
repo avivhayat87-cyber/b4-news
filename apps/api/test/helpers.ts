@@ -84,7 +84,7 @@ export async function signInReader(ctx: Ctx, email: string, displayName: string)
   const verified = await ctx.app.inject({
     method: 'POST',
     url: '/api/v1/auth/reader/verify',
-    payload: { email, code: codeFrom(ctx, email), displayName },
+    payload: { email, code: codeFrom(ctx, email), displayName, acceptTerms: true },
     remoteAddress,
   });
   if (verified.statusCode !== 200) throw new Error(`verify ${verified.statusCode}: ${verified.body}`);
@@ -123,6 +123,7 @@ export function staffClient(ctx: Ctx, cookie: string) {
     post: <T = any>(url: string, payload: unknown = {}) => call<T>('POST', url, payload),
     put: <T = any>(url: string, payload: unknown) => call<T>('PUT', url, payload),
     patch: <T = any>(url: string, payload: unknown) => call<T>('PATCH', url, payload),
+    del: <T = any>(url: string) => call<T>('DELETE', url),
   };
 }
 

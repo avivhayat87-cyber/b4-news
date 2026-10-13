@@ -22,6 +22,76 @@
       "when": 1791793001407,
       "tag": "0002_settings_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791819776556,
+      "tag": "0003_legal_consents",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791824689223,
+      "tag": "0004_social_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791825890556,
+      "tag": "0005_international_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791825960348,
+      "tag": "0006_translate_ai_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791834892752,
+      "tag": "0007_image_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791835917843,
+      "tag": "0008_newsroom_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791877423557,
+      "tag": "0009_agent_ai_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791883820027,
+      "tag": "0010_social_reels",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791892854595,
+      "tag": "0011_social_account_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791914670779,
+      "tag": "0012_reel_plan",
+      "breakpoints": true
     }
   ]
 }

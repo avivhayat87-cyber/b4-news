@@ -49,6 +49,8 @@ export const ArticleFull = ArticleCard.extend({
   readingMinutes: z.number().int(),
   source: z.object({ name: z.string(), url: z.string() }).nullable().optional(),
   commentsEnabled: z.boolean(),
+  /** The writer's disclosure of interests ("גילוי נאות"), when there is one. */
+  disclosure: z.string().nullable().optional(),
 });
 export type ArticleFull = z.infer<typeof ArticleFull>;
 

@@ -17,6 +17,7 @@ import { contentRoutes } from './routes/content';
 import { readerAuthRoutes } from './routes/reader-auth';
 import { siteRoutes } from './routes/site';
 import { staffAuthRoutes } from './routes/staff-auth';
+import { publicTakedownRoutes } from './routes/takedowns';
 import type { AiHub } from './services/ai';
 import { type Services, createServices } from './services/context';
 import type { Fetcher } from './services/scraper/collect';
@@ -105,9 +106,10 @@ export async function buildApp({ config, db, logger = true, ...overrides }: AppD
       await v1.register(contentRoutes, { prefix: '/public', db, config });
       await v1.register(siteRoutes, { prefix: '/public', s: services });
       await v1.register(publicCommentRoutes, { prefix: '/public', db });
-      await v1.register(audienceRoutes, { prefix: '/public', db, config, mailer });
-      await v1.register(commentRoutes, { db });
-      await v1.register(readerAuthRoutes, { prefix: '/auth/reader', db, config, mailer });
+      await v1.register(audienceRoutes, { prefix: '/public', s: services });
+      await v1.register(publicTakedownRoutes, { prefix: '/public', s: services });
+      await v1.register(commentRoutes, { s: services });
+      await v1.register(readerAuthRoutes, { prefix: '/auth/reader', s: services });
       await v1.register(staffAuthRoutes, { prefix: '/auth/staff', db, config });
       await v1.register(adminRoutes, { prefix: '/admin', s: services });
     },

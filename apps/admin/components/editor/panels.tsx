@@ -1,39 +1,109 @@
 'use client';
 // The editor's side panels: the read-only original, the AI writing partner,
-// the 4-image picker, and the publishing settings.
-import { CATEGORIES, DRAFT_COLORS, PLACEMENTS, textToDoc, docToHtml, type AuthorDto, type ChatMessageDto, type DraftDetail, type ImageBatchDto, type JobRef, type MediaDto } from '@b4/shared';
+// the image picker, and the publishing settings.
+import {
+  CATEGORIES,
+  DRAFT_COLORS,
+  PLACEMENTS,
+  textToDoc,
+  docToHtml,
+  needsInvestmentNotice,
+  type AuthorDto,
+  type ChatMessageDto,
+  type DraftDetail,
+  type DraftImagesDto,
+  type JobRef,
+  type MediaDto,
+  type SimilarityDto,
+} from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
 import { COLOR, PLACEMENT, categoryName, formatDateTime, formatTime } from '@/lib/labels';
 import { FocalPicker, UploadButton } from '../image-upload';
+import { FactCheck } from './fact-check';
 import { Badge, Button, ColorDot, Field, Spinner, cx, inputClass, useToast } from '../ui';
+import { HighlightedText } from './highlight';
 
 // --- The original (left pane) ------------------------------------------------
-export function OriginalPane({ draft }: { draft: DraftDetail }) {
+export function OriginalPane({ draft, onQueued }: { draft: DraftDetail; onQueued(): void }) {
   const o = draft.original;
+  // A foreign original opens in its Hebrew translation; the original is one click away.
+  const [showOriginal, setShowOriginal] = useState(false);
+  const written = draft.status !== 'queued_ai' && draft.status !== 'ai_processing';
+  const check = useQuery({
+    queryKey: ['similarity', draft.id, draft.version],
+    queryFn: () => admin.get<SimilarityDto>(`/drafts/${draft.id}/similarity`),
+    enabled: !!o && written,
+  });
   if (!o) {
     return <p className="p-6 text-muted">הכתבה נכתבה ידנית, אין מקור להשוואה.</p>;
   }
+  const t = o.language && !showOriginal ? o.translation : null;
+  const shown = { title: t?.title ?? o.title, intro: t ? t.intro : o.intro, bodyText: t ? t.bodyText : o.bodyText };
+  const foreignDir = o.language && !t ? 'auto' : undefined;
   // The scraped text is untrusted: rendered through the same safe text-to-HTML path as everything else.
-  const html = docToHtml(textToDoc(o.bodyText ?? ''));
+  const html = docToHtml(textToDoc(shown.bodyText ?? ''));
+  // The copied wording is marked in the text it was compared with (the Hebrew one for a foreign original).
+  const passages = check.data && check.data.level !== 'ok' && (!o.language || t) ? check.data.passages : [];
   return (
     <article className="p-6">
+      {written && (
+        <div className="mb-4 space-y-3">
+          <CopyCheck draft={draft} onQueued={onQueued} />
+          <FactCheck draftId={draft.id} version={draft.version} />
+        </div>
+      )}
+      {o.language && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-info-soft px-3 py-2 text-sm text-info">
+          <span className="font-bold">כתבה מחו״ל ({o.language.toUpperCase()})</span>
+          {o.translation ? (
+            <span className="mr-auto inline-flex rounded-md bg-white p-0.5 ring-1 ring-info/20" role="tablist" aria-label="שפת התצוגה">
+              <button type="button" role="tab" aria-selected={!showOriginal} onClick={() => setShowOriginal(false)} className={cx('rounded px-2.5 py-1 text-xs font-bold', !showOriginal ? 'bg-info text-white' : 'text-info')}>
+                תרגום לעברית
+              </button>
+              <button type="button" role="tab" aria-selected={showOriginal} onClick={() => setShowOriginal(true)} className={cx('rounded px-2.5 py-1 text-xs font-bold', showOriginal ? 'bg-info text-white' : 'text-info')}>
+                המקור
+              </button>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <Spinner small /> מתרגם את המקור לעברית…
+            </span>
+          )}
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted">
-        <Badge tone="muted">מקור · לקריאה בלבד</Badge>
+        <Badge tone="muted">{t ? 'תרגום המקור · לקריאה בלבד' : 'מקור · לקריאה בלבד'}</Badge>
         <span className="font-bold text-ink-2">{o.sourceName}</span>
         {o.publishedAt && <span>{formatDateTime(o.publishedAt)}</span>}
-        <a href={o.url} target="_blank" rel="noopener noreferrer nofollow" className="font-semibold hover:text-ink hover:underline">
-          פתיחת המקור ↗
+        <a
+          href={o.url}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="mr-auto rounded-lg bg-white px-3 py-1.5 font-bold text-ink ring-1 ring-line hover:bg-stone"
+        >
+          לכתבה המקורית באתר ↗
         </a>
       </div>
       {o.imageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element -- third-party source image
-        <img src={o.imageUrl} alt="" referrerPolicy="no-referrer" className="mb-4 aspect-video w-full rounded-lg bg-stone object-cover" />
+        <figure className="mb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element -- third-party source image */}
+          <img src={o.imageUrl} alt="" referrerPolicy="no-referrer" className="aspect-video w-full rounded-lg bg-stone object-cover" />
+          <figcaption className="mt-1 text-xs text-muted">התמונה מאתר המקור. היא לא תפורסם אצלנו; בלשונית &quot;תמונות&quot; אפשר ליצור תמונה חדשה בהשראתה.</figcaption>
+        </figure>
       )}
-      <h2 className="font-display text-2xl font-extrabold leading-snug">{o.title}</h2>
-      {o.intro && <p className="mt-2 text-lg font-semibold text-ink-2">{o.intro}</p>}
-      <div className="reading mt-4 text-ink-2" dangerouslySetInnerHTML={{ __html: html }} />
+      <div dir={foreignDir}>
+        <h2 className="font-display text-2xl font-extrabold leading-snug">{shown.title}</h2>
+        {shown.intro && <p className="mt-2 text-lg font-semibold text-ink-2">{shown.intro}</p>}
+        {passages.length > 0 ? (
+          <div className="reading mt-4 text-ink-2">
+            <HighlightedText text={shown.bodyText ?? ''} passages={passages} />
+          </div>
+        ) : (
+          <div className="reading mt-4 text-ink-2" dangerouslySetInnerHTML={{ __html: html }} />
+        )}
+      </div>
     </article>
   );
 }
@@ -143,18 +213,28 @@ export function AiPanel({ draft, selection, busyJob, onQueued }: { draft: DraftD
   );
 }
 
-// --- Images: 4 AI options, "4 new", or upload ---------------------------------
+// --- Images: 3 quick AI drafts (the chosen one is redrawn at full quality), or upload ---
 export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: MediaDto | null): void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const images = useQuery({
     queryKey: ['images', draft.id],
-    queryFn: () => admin.get<{ batches: ImageBatchDto[]; activeJob: JobRef | null }>(`/drafts/${draft.id}/images`),
-    refetchInterval: (q) => (q.state.data?.activeJob ? 2500 : false),
+    queryFn: () => admin.get<DraftImagesDto>(`/drafts/${draft.id}/images`),
+    refetchInterval: (q) => (q.state.data?.activeJob || q.state.data?.upgrade?.status === 'working' ? 2500 : false),
   });
+  const upgrade = images.data?.upgrade ?? null;
+  // The full-quality version took the draft's place on the server: show it.
+  const heroId = images.data?.heroId;
+  useEffect(() => {
+    if (heroId !== undefined && heroId !== (draft.hero?.id ?? null)) void qc.invalidateQueries({ queryKey: ['draft', draft.id] });
+  }, [heroId, draft.hero?.id, draft.id, qc]);
   const [prompt, setPrompt] = useState<string | null>(null);
+  const [useSource, setUseSource] = useState(false);
+  const sourceImage = draft.original?.imageUrl ?? null;
   const generate = useMutation({
-    mutationFn: () => admin.post(`/drafts/${draft.id}/images`, { prompt: prompt?.trim() || undefined }),
+    // A retry passes the failed batch's own brief.
+    mutationFn: (again: string | undefined) =>
+      admin.post(`/drafts/${draft.id}/images`, { prompt: (again ?? prompt)?.trim() || undefined, useSourceImage: useSource && !!sourceImage }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['images', draft.id] }),
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
@@ -166,9 +246,24 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
       <div>
         <h3 className="mb-2 font-extrabold">התמונה הראשית</h3>
         {draft.hero ? (
-          <FocalPicker media={draft.hero} onChange={onHero} />
+          // The focal point is saved on the image itself; the draft only needs to show the new crops.
+          <FocalPicker media={draft.hero} onChange={() => void qc.invalidateQueries({ queryKey: ['draft', draft.id] })} />
         ) : (
           <p className="rounded-lg bg-warn-soft px-3 py-2 text-sm font-semibold text-warn">עוד לא נבחרה תמונה ראשית. בחרו אחת מהאפשרויות או העלו תמונה.</p>
+        )}
+        {upgrade?.status === 'working' && (
+          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-info" role="status">
+            <Spinner small /> מכין את התמונה שבחרתם באיכות מלאה…
+          </p>
+        )}
+        {upgrade?.status === 'failed' && draft.hero && (
+          <div className="mt-2 rounded-lg bg-brand-soft px-3 py-2.5 text-sm text-brand-deep" role="alert">
+            <p className="font-bold">התמונה באיכות מלאה לא נוצרה, ובינתיים מוצגת הטיוטה.</p>
+            <p className="mt-0.5">{upgrade.error}</p>
+            <Button size="sm" className="mt-2" disabled={locked} onClick={() => onHero(draft.hero)}>
+              לנסות שוב
+            </Button>
+          </div>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
           <UploadButton onUploaded={(m) => onHero(m)} label="העלאת תמונה משלי" />
@@ -183,11 +278,26 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
       <div className="border-t border-line-soft pt-5">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="font-extrabold">תמונות AI לבחירה</h3>
-          <Button size="sm" variant="dark" busy={generate.isPending || busy} disabled={locked} onClick={() => generate.mutate()}>
-            {images.data?.batches.length ? '4 תמונות חדשות' : 'יצירת 4 תמונות'}
+          <Button size="sm" variant="dark" busy={generate.isPending || busy} disabled={locked} onClick={() => generate.mutate(undefined)}>
+            {images.data?.batches.some((b) => b.images.length) ? '3 טיוטות חדשות' : 'יצירת 3 טיוטות'}
           </Button>
         </div>
-        <Field label="תיאור לתמונה (אפשר לשנות לפני יצירה)" htmlFor="img-prompt">
+        <p className="mb-3 text-xs text-muted">טיוטות מהירות ברזולוציה נמוכה. רק התמונה שתבחרו תיווצר מחדש באיכות מלאה ותעבור עיבוד סופי.</p>
+        {sourceImage && (
+          <div className="mb-3 flex gap-3 rounded-lg bg-white p-3 ring-1 ring-line">
+            {/* eslint-disable-next-line @next/next/no-img-element -- third-party source image */}
+            <img src={sourceImage} alt="" referrerPolicy="no-referrer" className="aspect-video w-32 shrink-0 rounded-md bg-stone object-cover" />
+            <div className="min-w-0 text-sm">
+              <p className="font-bold">תמונת המקור · {draft.original?.sourceName}</p>
+              <p className="mt-0.5 text-xs text-muted">שייכת לאתר המקור ולא תפורסם אצלנו. ה-AI יכול להיעזר בה כדי להבין מה מצולם, וליצור תמונה אחרת משלו.</p>
+              <label className="mt-2 flex items-center gap-2 font-semibold">
+                <input type="checkbox" checked={useSource} onChange={(e) => setUseSource(e.target.checked)} disabled={locked} className="size-4" />
+                ליצור בהשראת תמונת המקור
+              </label>
+            </div>
+          </div>
+        )}
+        <Field label="תיאור לתמונה (אפשר לשנות לפני יצירה)" htmlFor="img-prompt" hint="התמונות נוצרות לפי התיאור ולפי תוכן הכתבה: הכותרת, כותרת המשנה והפתיחה.">
           <textarea
             id="img-prompt"
             rows={2}
@@ -199,16 +309,25 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
         </Field>
         {busy && (
           <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-info" role="status">
-            <Spinner small /> יוצר 4 תמונות…
+            <Spinner small /> יוצר 3 טיוטות…
           </p>
         )}
         <div className="mt-3 space-y-4">
           {images.data?.batches.map((b) => (
             <div key={b.id}>
               <p className="mb-1.5 text-xs text-muted">{formatDateTime(b.createdAt)}</p>
-              <div className="grid grid-cols-2 gap-2">
+              {b.status === 'failed' && b.images.length === 0 && (
+                <div className="rounded-lg bg-brand-soft px-3 py-2.5 text-sm text-brand-deep" role="alert">
+                  <p className="font-semibold">{b.error}</p>
+                  <Button size="sm" className="mt-2" busy={generate.isPending} disabled={locked || busy} onClick={() => generate.mutate(b.prompt)}>
+                    לנסות שוב
+                  </Button>
+                </div>
+              )}
+              {b.note && <p className="mb-1.5 text-xs font-semibold text-warn">{b.note}</p>}
+              <div className="grid grid-cols-3 gap-2">
                 {b.images.map((m) => {
-                  const chosen = draft.hero?.id === m.id;
+                  const chosen = images.data?.chosenId === m.id;
                   return (
                     <button
                       key={m.id}
@@ -219,7 +338,7 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
                       className={cx('group relative overflow-hidden rounded-lg ring-offset-2', chosen ? 'ring-4 ring-brand' : 'hover:ring-2 hover:ring-ink')}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element -- API-hosted image */}
-                      <img src={m.thumbUrl} alt="" className="aspect-video w-full object-cover" />
+                      <img src={m.url} alt="" className="aspect-video w-full object-cover" />
                       {chosen && <span className="absolute right-1.5 top-1.5 rounded bg-brand px-1.5 py-0.5 text-[11px] font-bold text-white">נבחרה</span>}
                     </button>
                   );
@@ -233,8 +352,87 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
   );
 }
 
+// --- Legal checks: disclosure of interests, wording copied from the original -------
+function DisclosureField({ draft, onSave }: { draft: DraftDetail; onSave(value: string): void }) {
+  const [value, setValue] = useState(draft.disclosure);
+  const finance = draft.category ? needsInvestmentNotice(draft.category) : false;
+  return (
+    <Field
+      label="גילוי נאות (לא חובה)"
+      htmlFor="disclosure"
+      hint={
+        finance
+          ? 'כתבת שוק הון: אם לכותב/ת יש החזקות או עניין בחברות שבכתבה, ציינו זאת. הכתבה תסתיים גם בהבהרה שאינה ייעוץ השקעות.'
+          : 'יופיע בסוף הכתבה, למשל: "לכותב אין החזקות בחברות הנזכרות בכתבה".'
+      }
+    >
+      <textarea
+        id="disclosure"
+        rows={2}
+        maxLength={300}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => value.trim() !== draft.disclosure && onSave(value.trim())}
+        className={inputClass}
+      />
+    </Field>
+  );
+}
+
+/**
+ * How much of the draft repeats the original word for word (rechecked after every save),
+ * with the recommendation as one click: the AI rewords those passages on the canvas.
+ */
+function CopyCheck({ draft, onQueued, onShowSource }: { draft: DraftDetail; onQueued(): void; onShowSource?: () => void }) {
+  const toast = useToast();
+  const check = useQuery({ queryKey: ['similarity', draft.id, draft.version], queryFn: () => admin.get<SimilarityDto>(`/drafts/${draft.id}/similarity`) });
+  const fix = useMutation({
+    mutationFn: () => admin.post(`/drafts/${draft.id}/rewrite-copied`),
+    onSuccess: () => {
+      toast('ה-AI מנסח מחדש את הקטעים. הכתבה תתעדכן בעוד רגע.');
+      onQueued();
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  if (!check.data) return null;
+  const { level, ratio, passages } = check.data;
+  const tone = level === 'ok' ? 'bg-ok-soft text-ok' : level === 'warn' ? 'bg-warn-soft text-warn' : 'bg-brand-soft text-brand-deep';
+  const locked = draft.status === 'text_final' || draft.status === 'published' || draft.status === 'skipped';
+  const aiBusy = !!draft.activeJob || draft.status === 'queued_ai' || draft.status === 'ai_processing';
+  return (
+    <div className={cx('rounded-lg px-3 py-2.5 text-sm', tone)}>
+      <p className="font-bold">
+        {level === 'ok' ? 'הנוסח שונה מהמקור' : level === 'warn' ? 'יש קטעים שחוזרים על נוסח המקור' : 'הנוסח קרוב מאוד למקור'} ({Math.round(ratio * 100)}% חזרה)
+      </p>
+      {passages.length > 0 && (
+        <ul className="mt-1.5 list-disc space-y-1 pr-4 text-xs">
+          {passages.slice(0, 3).map((p) => (
+            <li key={p}>
+              <q>{p}</q>
+            </li>
+          ))}
+        </ul>
+      )}
+      {level !== 'ok' && <p className="mt-1.5 text-xs">עובדות מותר להביא; ניסוח של אחרים מוגן. ההמלצה: לנסח מחדש את הקטעים האלה, בלי לשנות את העובדות.</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {level !== 'ok' && (
+          <Button size="sm" variant="dark" busy={fix.isPending || aiBusy} disabled={locked} onClick={() => fix.mutate()}>
+            קבלת ההמלצה: ה-AI ינסח מחדש
+          </Button>
+        )}
+        {onShowSource && (
+          <Button size="sm" variant="ghost" onClick={onShowSource}>
+            השוואה מול כתבת המקור המלאה
+          </Button>
+        )}
+      </div>
+      {level !== 'ok' && locked && draft.status !== 'published' && <p className="mt-1.5 text-xs">הטקסט נעול. פתחו אותו לעריכה כדי לקבל את ההמלצה.</p>}
+    </div>
+  );
+}
+
 // --- Publishing settings: placement, category, tags, byline -----------------------
-export function MetaPanel({ draft, onSaved }: { draft: DraftDetail; onSaved(): void }) {
+export function MetaPanel({ draft, onSaved, onShowSource }: { draft: DraftDetail; onSaved(): void; onShowSource(): void }) {
   const toast = useToast();
   const authors = useQuery({ queryKey: ['authors'], queryFn: () => admin.get<AuthorDto[]>('/authors'), staleTime: 5 * 60_000 });
   const [tag, setTag] = useState('');
@@ -326,10 +524,14 @@ export function MetaPanel({ draft, onSaved }: { draft: DraftDetail; onSaved(): v
           </select>
         </Field>
 
+        <DisclosureField key={draft.id} draft={draft} onSave={(disclosure) => save.mutate({ disclosure })} />
+
         <label className="flex items-center gap-3 rounded-lg bg-stone px-3 py-2.5 text-sm font-semibold">
           <input type="checkbox" checked={draft.sendPush} onChange={(e) => save.mutate({ sendPush: e.target.checked })} className="size-4" />
           לשלוח התראת פוש באפליקציה עם הפרסום (מבזק)
         </label>
+
+        {draft.original && <CopyCheck draft={draft} onQueued={onSaved} onShowSource={onShowSource} />}
 
         {!draft.magazine && (
           <div>

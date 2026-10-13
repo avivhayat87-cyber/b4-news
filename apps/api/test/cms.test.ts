@@ -119,7 +119,7 @@ describe('the editorial process', () => {
     expect(latest.body.items.find((i: { id: string }) => i.id === item.id)?.origin).toBe('pulled');
   });
 
-  it('saves a selection as a magazine and the AI writes the first drafts with 4 images', async () => {
+  it('saves a selection as a magazine and the AI writes the first drafts with 3 image drafts', async () => {
     const run = await editor.get(`/discovery/runs/${runId}`);
     const picked = run.body.items.slice(0, 3).map((i: { id: string }) => i.id);
     const saved = await editor.post('/discovery/save', { itemIds: picked, mode: 'magazine', title: 'מגזין בדיקה' });
@@ -139,7 +139,7 @@ describe('the editorial process', () => {
     expect(draft.body.nav).toMatchObject({ index: 0, total: 3 });
 
     const images = await editor.get(`/drafts/${draftId}/images`);
-    expect(images.body.batches[0].images).toHaveLength(4);
+    expect(images.body.batches[0].images).toHaveLength(3);
 
     const savedEdits = await editor.get('/saved');
     expect(savedEdits.body.magazines.find((m: { id: string }) => m.id === magazineId)?.counts.total).toBe(3);
@@ -200,9 +200,14 @@ describe('the editorial process', () => {
     expect(pkg.posts.length).toBe(4); // the sample accounts
 
     const images = (await editor.get(`/drafts/${draftId}/images`)).body.batches[0].images;
-    await editor.patch(`/drafts/${draftId}`, { heroMediaId: images[0].id, placement: 'main', tags: ['ריבית', 'בנק ישראל'] });
+    await editor.patch(`/drafts/${draftId}`, { heroMediaId: images[0].id, placement: 'main', tags: ['ריבית', 'בנק ישראל'], disclosure: 'לכותב אין החזקות בחברות הנזכרות.' });
     const same = await editor.put(`/drafts/${draftId}/social`, { version: pkg.version, headline: pkg.headline, caption: pkg.caption, imageMediaId: images[0].id });
     expect(same.status).toBe(422);
+    // The chosen draft is redrawn at full quality and takes its place as the main image.
+    await ctx.drain();
+    const chosen = (await editor.get(`/drafts/${draftId}/images`)).body;
+    expect(chosen).toMatchObject({ chosenId: images[0].id, upgrade: null });
+    expect(chosen.heroId).not.toBe(images[0].id);
     const story = pkg.batches[0].images[0].id;
     const updated = await editor.put(`/drafts/${draftId}/social`, { version: pkg.version, headline: pkg.headline, caption: 'משפט ראשון. משפט שני. משפט שלישי.', imageMediaId: story });
     expect(updated.status).toBe(200);
@@ -219,6 +224,9 @@ describe('the editorial process', () => {
     const preview = (await editor.get(`/magazines/${magazineId}/preview`)).body;
     expect(preview.editorName).toBe('Test editor');
     expect(preview.items.find((i: { draft: { id: string } }) => i.draft.id === second.id).problems).toContain('הטקסט עוד לא סומן כסופי');
+    expect(preview.items.every((i: { warnings: string[] }) => Array.isArray(i.warnings))).toBe(true);
+    const similarity = (await editor.get(`/drafts/${second.id}/similarity`)).body;
+    expect(['ok', 'warn', 'high']).toContain(similarity.level);
     expect((await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-1' })).status).toBe(422);
 
     // Finish the second article: final text + an uploaded hero image.
@@ -245,6 +253,8 @@ describe('the editorial process', () => {
     const [article] = await ctx.db.select().from(articles).where(eq(articles.draftId, draftId));
     expect(article!.bodyHtml).toContain('<p>');
     expect(article!.editorId).toBeTruthy();
+    const full = await ctx.app.inject({ method: 'GET', url: `/api/v1/public/articles/${article!.slug}` });
+    expect(full.json().disclosure).toBe('לכותב אין החזקות בחברות הנזכרות.');
     const main = await ctx.db.select().from(homepageSlots).where(eq(homepageSlots.zone, 'main'));
     expect(main.find((m) => m.position === 1)?.articleId).toBe(article!.id);
 
@@ -264,6 +274,11 @@ describe('the editorial process', () => {
     const feedback = await ctx.db.select().from(styleFeedback);
     expect(feedback.length).toBeGreaterThanOrEqual(1);
     expect(Math.max(...feedback.map((f) => f.editRatio))).toBeGreaterThan(0.1);
+    // The publish batch was learned from in one pass, with a report for the newsroom.
+    const reports = (await editor.get('/agent/learning-reports')).body;
+    // (an article the editor left almost untouched has nothing to teach and is excluded)
+    expect(reports[0]).toMatchObject({ status: 'succeeded', articleCount: feedback.filter((f) => f.status !== 'excluded').length });
+    expect(reports[0].summary).toContain('בקריאה אחת');
     const queued = await editor.post('/learning/distill');
     expect(queued.status).toBe(202);
     await ctx.drain();

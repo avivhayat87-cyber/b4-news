@@ -1,3 +1,4 @@
+import { INVESTMENT_NOTICE, needsInvestmentNotice } from '@b4/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -5,7 +6,7 @@ import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
 import { ArticleImage, HousePromo, RankBadge, SectionHeader, wrap } from '@/components/ui';
-import { getArticle, getHome, getRelated } from '@/lib/api';
+import { getArticle, getHome, getRelated, getSite } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { SITE, articleHref, categoryHref } from '@/lib/site';
 
@@ -48,7 +49,7 @@ export default async function ArticlePage({ params }: Props) {
   const article = await getArticle(safeDecode((await params).slug));
   if (!article) notFound();
 
-  const [related, home] = await Promise.all([getRelated(article), getHome()]);
+  const [related, home, site] = await Promise.all([getRelated(article), getHome(), getSite()]);
   const url = new URL(articleHref(article), SITE.url).toString();
 
   const jsonLd = {
@@ -123,6 +124,20 @@ export default async function ArticlePage({ params }: Props) {
           <div className="article-body mx-auto mt-8 max-w-[68ch]" dangerouslySetInnerHTML={{ __html: article.bodyHtml }} />
 
           <footer className="mx-auto mt-10 flex max-w-[68ch] flex-col gap-5">
+            {article.disclosure ? (
+              <p className="text-[15px] text-ink-2">
+                <strong className="font-extrabold text-ink">גילוי נאות: </strong>
+                {article.disclosure}
+              </p>
+            ) : null}
+            {needsInvestmentNotice(article.category.slug) ? (
+              <aside aria-label="הבהרה" className="rounded-[10px] border border-line bg-stone px-4 py-3 text-[14px] leading-relaxed text-ink-2">
+                {INVESTMENT_NOTICE}{' '}
+                <Link href="/terms" className="font-bold text-ink underline underline-offset-2">
+                  לתנאי השימוש
+                </Link>
+              </aside>
+            ) : null}
             {article.tags.length > 0 ? (
               <ul className="flex flex-wrap gap-2" aria-label="תגיות">
                 {article.tags.map((tag) => (
@@ -148,7 +163,13 @@ export default async function ArticlePage({ params }: Props) {
             </div>
           </footer>
 
-          <Comments articleId={article.id} enabled={article.commentsEnabled} initialCount={article.commentCount ?? 0} />
+          <Comments
+            articleId={article.id}
+            articleUrl={url}
+            enabled={article.commentsEnabled}
+            initialCount={article.commentCount ?? 0}
+            termsVersion={site.consent.version}
+          />
         </article>
 
         <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-7 lg:sticky lg:top-6 lg:self-start">

@@ -2,11 +2,13 @@
 
 import { useState, type FormEvent } from 'react';
 import { newsletterApi } from '@/lib/client-api';
+import { TermsCheckbox } from './terms-checkbox';
 
 type State = 'idle' | 'sending' | 'done' | 'error';
 
 export function NewsletterForm({ id, layout }: { id: string; layout: 'stacked' | 'inline' }) {
   const [state, setState] = useState<State>('idle');
+  const [accepted, setAccepted] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,12 +45,13 @@ export function NewsletterForm({ id, layout }: { id: string; layout: 'stacked' |
   const button = (
     <button
       type="submit"
-      disabled={state === 'sending'}
+      disabled={state === 'sending' || !accepted}
       className="h-11 shrink-0 rounded-md bg-brand px-[18px] text-[15px] font-extrabold text-white hover:bg-brand-deep disabled:opacity-70"
     >
       {state === 'sending' ? 'שולח…' : 'הרשמה'}
     </button>
   );
+  const terms = <TermsCheckbox id={`${id}-terms`} checked={accepted} onChange={setAccepted} tone="dark" />;
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-2.5">
@@ -58,6 +61,7 @@ export function NewsletterForm({ id, layout }: { id: string; layout: 'stacked' |
             כתובת מייל
           </label>
           {input}
+          {terms}
           {button}
         </>
       ) : (
@@ -69,6 +73,7 @@ export function NewsletterForm({ id, layout }: { id: string; layout: 'stacked' |
             {input}
             {button}
           </div>
+          {terms}
         </>
       )}
       {state === 'error' ? (

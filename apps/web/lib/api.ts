@@ -2,7 +2,7 @@
 // match what the backend sends to /api/revalidate after a publish or correction:
 //   home · category:<slug> · article:<id> · article-slug:<slug> · markets
 import 'server-only';
-import type { PublicPage, PublicSite } from '@b4/shared';
+import { LEGAL_VERSION_DEFAULT, type PublicPage, type PublicSite } from '@b4/shared';
 import type { ArticleCard, ArticleFull, CategoryPage, HomeData, MarketQuote, Page } from './types';
 
 const API_URL = (process.env.API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -71,7 +71,12 @@ export async function resolveArticleId(id: string): Promise<string | null> {
   return found?.slug ?? null;
 }
 
-const EMPTY_SITE: PublicSite = { links: {}, contact: { email: '', phone: '', address: '' }, pages: [] };
+const EMPTY_SITE: PublicSite = {
+  links: {},
+  contact: { email: '', phone: '', address: '' },
+  pages: [],
+  consent: { version: LEGAL_VERSION_DEFAULT, adsCookies: false },
+};
 
 /** Links, contact details and info-page titles from the CMS ("site" tag). Never takes the page down. */
 export async function getSite(): Promise<PublicSite> {

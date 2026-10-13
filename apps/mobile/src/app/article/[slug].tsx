@@ -1,4 +1,4 @@
-import type { ArticleFull } from '@b4/shared';
+import { INVESTMENT_NOTICE, needsInvestmentNotice, type ArticleFull } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
@@ -79,6 +79,14 @@ export default function ArticleScreen() {
             <ArticleBody html={a.bodyHtml} />
           </View>
 
+          {a.disclosure ? (
+            <Text style={styles.disclosure}>
+              <Text style={{ fontFamily: fonts.textBold, color: colors.ink }}>גילוי נאות: </Text>
+              {a.disclosure}
+            </Text>
+          ) : null}
+          {needsInvestmentNotice(a.category.slug) ? <Text style={styles.notice}>{INVESTMENT_NOTICE}</Text> : null}
+
           {a.tags.length ? (
             <View style={styles.tags}>
               {a.tags.map((t) => (
@@ -90,7 +98,7 @@ export default function ArticleScreen() {
           ) : null}
 
           <View style={{ marginTop: space.xl }}>
-            <Comments articleId={a.id} enabled={a.commentsEnabled} />
+            <Comments articleId={a.id} articleSlug={a.slug} enabled={a.commentsEnabled} />
           </View>
 
           {related.data?.length ? (
@@ -123,5 +131,18 @@ const styles = StyleSheet.create({
   credit: { fontFamily: fonts.text, fontSize: 12, color: colors.muted, paddingHorizontal: space.lg, paddingTop: 6 },
   body: { paddingHorizontal: space.lg, paddingTop: space.lg },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.lg },
+  disclosure: { fontFamily: fonts.text, fontSize: 15, lineHeight: 22, color: colors.ink2, paddingHorizontal: space.lg, paddingTop: space.lg },
+  notice: {
+    fontFamily: fonts.text,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.ink2,
+    backgroundColor: colors.stone,
+    borderRadius: 12,
+    padding: space.md,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    overflow: 'hidden',
+  },
   tag: { fontFamily: fonts.textBold, fontSize: 14, color: colors.ink, backgroundColor: colors.stone, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6, overflow: 'hidden' },
 });

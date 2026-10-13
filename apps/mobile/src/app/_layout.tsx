@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
+import { ConsentOverlay } from '@/components/welcome';
 import { colors } from '@/lib/theme';
 
 void SplashScreen.preventAutoHideAsync();
@@ -46,7 +47,9 @@ export default function RootLayout() {
         <Stack.Screen name="article/[slug]" />
         <Stack.Screen name="category/[slug]" />
         <Stack.Screen name="a/[id]" options={{ animation: 'none' }} />
+        <Stack.Screen name="account" />
       </Stack>
+      <ConsentOverlay />
     </QueryClientProvider>
   );
 }

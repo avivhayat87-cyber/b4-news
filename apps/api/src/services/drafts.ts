@@ -2,11 +2,13 @@
 // magazine), the AI writes a first version, editors refine it on the canvas.
 import {
   type DraftDetail,
+  type DraftImagesDto,
   type DraftSummary,
   type JobRef,
   type MagazineDetail,
   type MagazineSummary,
   type SavedEdits,
+  type SimilarityDto,
   InvalidDocError,
   docToText,
   sanitizeDoc,
@@ -43,10 +45,14 @@ import { AppError, errors } from '../errors';
 import { ingestImage, toMediaDto } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import { decodeText } from '../lib/safe-fetch';
+import { compareWording } from '../lib/similarity';
+import { editorGuidelinesFor } from './agent/editor';
 import { activePrompt, activeStyleRules, tracked } from './ai';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
+import { draftReference, finalBrief, imageBrief, imageErrorMessage, sourceImageReference } from './image-brief';
+import { detectLanguage, translateFullItem } from './translate';
 
 export type DraftRow = typeof articleDrafts.$inferSelect;
 type Staff = { id: string; fullName: string };
@@ -179,6 +185,8 @@ export async function createFromUrl(s: Services, staff: Staff, input: z.infer<ty
         imageUrl: page.imageUrl,
         publishedAt: page.publishedAt,
         status: 'in_draft',
+        // A foreign article is translated for the editor before the rewrite.
+        language: detectLanguage(`${page.title} ${page.intro ?? ''} ${page.bodyText.slice(0, 2000)}`),
       })
       .returning({ id: scrapedItems.id, title: scrapedItems.title, categoryId: scrapedItems.categoryId });
   }
@@ -250,7 +258,7 @@ export async function runRewrite(s: Services, job: JobRow) {
   if (!draft.scrapedItemId) throw new PermanentJobError('draft has no original to rewrite');
   if (draft.status === 'published') return { skipped: 'published' };
   const [item] = await s.db
-    .select({ title: scrapedItems.title, intro: scrapedItems.intro, body: scrapedItems.bodyText, url: scrapedItems.url, sourceName: sources.name })
+    .select({ title: scrapedItems.title, intro: scrapedItems.intro, body: scrapedItems.bodyText, url: scrapedItems.url, sourceName: sources.name, language: scrapedItems.language })
     .from(scrapedItems)
     .leftJoin(sources, eq(scrapedItems.sourceId, sources.id))
     .where(eq(scrapedItems.id, draft.scrapedItemId))
@@ -258,14 +266,21 @@ export async function runRewrite(s: Services, job: JobRow) {
   if (!item) throw new PermanentJobError('original not found');
 
   await s.db.update(articleDrafts).set({ status: 'ai_processing' }).where(eq(articleDrafts.id, draftId));
+  // A foreign original: the editor gets it in Hebrew beside the new article. A failed translation doesn't stop the rewrite.
+  if (item.language) {
+    await translateFullItem(s, draft.scrapedItemId, job.createdBy, draftId).catch((e) =>
+      s.log.warn({ draftId, err: e instanceof Error ? e.message : e }, 'translating the original failed'),
+    );
+  }
   const prompt = await activePrompt(s.db, 'rewrite.system');
-  const systemPrompt = prompt.body.replace('{{style_rules}}', await activeStyleRules(s.db));
+  // Learned house style, then the editor agent's settings (divergence, length, voice; facts always kept).
+  const systemPrompt = prompt.body.replace('{{style_rules}}', `${await activeStyleRules(s.db)}\n${await editorGuidelinesFor(s.db)}`);
   const sourceName = item.sourceName ?? new URL(item.url).hostname.replace(/^www\./, '');
   const textAi = await s.ai.text();
   const { result, aiJobId } = await tracked(
     s.db,
     { type: 'rewrite', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey: 'rewrite.system', promptVersion: prompt.version },
-    () => textAi.rewrite({ systemPrompt, source: { title: item.title, intro: item.intro, body: item.body ?? item.intro ?? '', sourceName, url: item.url } }),
+    () => textAi.rewrite({ systemPrompt, source: { title: item.title, intro: item.intro, body: item.body ?? item.intro ?? '', sourceName, url: item.url, language: item.language } }),
   );
   const out = result.data;
   const doc = sanitizeDoc(textToDoc(out.paragraphs));
@@ -283,7 +298,9 @@ export async function runRewrite(s: Services, job: JobRow) {
       aiBaselineText: bodyText,
       aiBaselineJobId: aiJobId,
       suggestedCategoryId,
-      categoryId: draft.categoryId ?? suggestedCategoryId,
+      // An item discovery left without a section ("פוליטיקה ושונות") gets one from the editor, not the
+      // AI (its guess is shown as a hint). A link added by hand still takes the AI's section.
+      categoryId: draft.categoryId ?? (draft.origin === 'scraped' ? null : suggestedCategoryId),
       tagNames: draft.tagNames.length ? draft.tagNames : out.suggested_tags,
       imagePrompt: out.image_prompt,
       status: 'editing',
@@ -390,37 +407,56 @@ export async function markRefineFailed(s: Services, job: JobRow, error: Error) {
   });
 }
 
-export async function requestImages(s: Services, staffId: string | null, draftId: string, purpose: 'article' | 'social', prompt?: string) {
+export async function requestImages(
+  s: Services,
+  staffId: string | null,
+  draftId: string,
+  purpose: 'article' | 'social',
+  prompt?: string,
+  opts: { useSourceImage?: boolean } = {},
+) {
   const draft = await loadDraft(s.db, draftId);
   if (await activeJob(s.db, draftId, ['draft.images'])) throw new AppError(409, 'images_busy', 'התמונות עוד נוצרות. חכו רגע.');
   const finalPrompt = (prompt?.trim() || (purpose === 'article' ? draft.imagePrompt : null) || `Editorial news image for: ${draft.title}`).slice(0, 1000);
   const [batch] = await s.db.insert(imageBatches).values({ draftId, purpose, prompt: finalPrompt, createdBy: staffId }).returning({ id: imageBatches.id });
-  return enqueue(s.db, 'draft.images', { draftId, batchId: batch!.id, purpose }, { draftId, createdBy: staffId, maxAttempts: 2 });
+  const useSourceImage = Boolean(opts.useSourceImage && draft.scrapedItemId);
+  return enqueue(s.db, 'draft.images', { draftId, batchId: batch!.id, purpose, useSourceImage }, { draftId, createdBy: staffId, maxAttempts: 2 });
 }
+
+/** Article image options are quick drafts; the one the editor chooses is redrawn at full quality (runFinalImage). */
+const ARTICLE_DRAFTS = 3;
+/** A draft is shown in the CMS only: its master and a list thumbnail are enough. */
+const DRAFT_RENDITIONS = ['thumb'] as const;
+export const FINAL_IMAGE_JOB = 'draft.image-final';
 
 export async function runImages(s: Services, job: JobRow) {
   const batchId = String(job.payload.batchId);
   const purpose = job.payload.purpose === 'social' ? 'social' : 'article';
   const [batch] = await s.db.select().from(imageBatches).where(eq(imageBatches.id, batchId)).limit(1);
   if (!batch) throw new PermanentJobError('batch not found');
-  const count = purpose === 'social' ? 2 : 4;
-  const imageAi = await s.ai.image();
+  const count = purpose === 'social' ? 2 : ARTICLE_DRAFTS;
+  const imageAi = await s.ai.image(purpose === 'social' ? 'final' : 'draft');
+  // The images follow the article itself, not only the brief; the original's photo is used only when the editor asked.
+  const draft = await loadDraft(s.db, batch.draftId);
+  const reference = job.payload.useSourceImage ? await sourceImageReference(s, draft) : null;
+  const prompt = imageBrief(draft, batch.prompt, Boolean(reference));
   const { result, aiJobId } = await tracked(
     s.db,
     { type: purpose === 'social' ? 'social_image' : 'article_images', provider: imageAi.provider, model: imageAi.model, draftId: batch.draftId, requestedBy: job.createdBy, imageCount: count },
-    async () => ({ images: await imageAi.generate(batch.prompt, { count, shape: purpose === 'social' ? 'portrait' : 'landscape' }) }),
+    async () => ({ images: await imageAi.generate(prompt, { count, shape: purpose === 'social' ? 'portrait' : 'landscape', references: reference ? [reference] : [] }) }),
   );
   await s.db.update(imageBatches).set({ aiJobId }).where(eq(imageBatches.id, batchId));
   const ids: string[] = [];
   for (const buffer of result.images) {
     const media = await ingestImage(s.db, s.storage, buffer, {
-      kind: purpose === 'social' ? 'ai_social' : 'ai_article',
+      kind: purpose === 'social' ? 'ai_social' : 'ai_preview',
       isAiGenerated: true,
       aiPrompt: batch.prompt,
       batchId,
       createdBy: job.createdBy,
       credit: 'איור: AI',
       focalY: purpose === 'social' ? 0.5 : 0.45,
+      renditions: purpose === 'social' ? undefined : [...DRAFT_RENDITIONS],
     });
     ids.push(media.id);
   }
@@ -431,7 +467,56 @@ export async function runImages(s: Services, job: JobRow) {
       .set({ imageMediaId: ids[0], approvedAt: null, version: sql`${socialPackages.version} + 1` })
       .where(and(eq(socialPackages.draftId, batch.draftId), sql`${socialPackages.imageMediaId} is null`));
   }
-  return { mediaIds: ids };
+  return { mediaIds: ids, sourceImageMissing: Boolean(job.payload.useSourceImage) && !reference };
+}
+
+/** Queues the full-quality version of a chosen draft, unless it is already being made. */
+async function requestFinalImage(s: Services, staffId: string, draftId: string, previewId: string) {
+  const [pending] = await s.db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.draftId, draftId), eq(jobs.kind, FINAL_IMAGE_JOB), inArray(jobs.status, ['queued', 'running']), sql`${jobs.payload}->>'previewId' = ${previewId}`))
+    .limit(1);
+  if (!pending) await enqueue(s.db, FINAL_IMAGE_JOB, { draftId, previewId }, { draftId, createdBy: staffId, maxAttempts: 2 });
+}
+
+/** The chosen draft, redrawn by the full-quality model and cut into every rendition; it then replaces the draft as the main image. */
+export async function runFinalImage(s: Services, job: JobRow) {
+  const draftId = String(job.payload.draftId);
+  const previewId = String(job.payload.previewId);
+  const [preview] = await s.db.select().from(mediaAssets).where(eq(mediaAssets.id, previewId)).limit(1);
+  if (!preview) throw new PermanentJobError('draft image not found');
+  // Chosen again after it was made (e.g. on a retry): reuse it rather than pay twice.
+  let [final] = await s.db.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.derivedFromId, previewId)).limit(1);
+  if (!final) {
+    const imageAi = await s.ai.image('final');
+    const reference = await draftReference(s, preview.storageKey);
+    const { result } = await tracked(
+      s.db,
+      { type: 'article_images', provider: imageAi.provider, model: imageAi.model, draftId, requestedBy: job.createdBy, imageCount: 1 },
+      async () => ({ image: await imageAi.finish(finalBrief(preview.aiPrompt ?? ''), reference, 'landscape') }),
+    );
+    // The editor may have moved the focal point on the draft while this ran.
+    const [focal] = await s.db.select({ x: mediaAssets.focalX, y: mediaAssets.focalY }).from(mediaAssets).where(eq(mediaAssets.id, previewId)).limit(1);
+    final = await ingestImage(s.db, s.storage, result.image, {
+      kind: 'ai_article',
+      isAiGenerated: true,
+      aiPrompt: preview.aiPrompt,
+      batchId: preview.generationBatchId,
+      derivedFromId: previewId,
+      createdBy: job.createdBy,
+      alt: preview.altText,
+      credit: preview.credit,
+      focalX: focal?.x ?? preview.focalX,
+      focalY: focal?.y ?? preview.focalY,
+    });
+  }
+  // Only while the draft is still the chosen image: the editor may have picked another one meanwhile.
+  await s.db
+    .update(articleDrafts)
+    .set({ heroMediaId: final.id })
+    .where(and(eq(articleDrafts.id, draftId), eq(articleDrafts.heroMediaId, previewId), ne(articleDrafts.status, 'published')));
+  return { mediaId: final.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -489,13 +574,30 @@ export async function updateMeta(
   s: Services,
   staff: Staff,
   draftId: string,
-  input: { category?: string | null; placement?: 'main' | 'trending' | 'none'; tags?: string[]; authorId?: string | null; colorLabel?: DraftRow['colorLabel']; sendPush?: boolean; heroMediaId?: string | null },
+  input: {
+    category?: string | null;
+    placement?: 'main' | 'trending' | 'none';
+    tags?: string[];
+    authorId?: string | null;
+    colorLabel?: DraftRow['colorLabel'];
+    sendPush?: boolean;
+    heroMediaId?: string | null;
+    disclosure?: string;
+  },
 ) {
   const draft = await loadDraft(s.db, draftId);
   if (draft.status === 'published') throw draftErrors.published();
-  if (input.heroMediaId) {
-    const [m] = await s.db.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.id, input.heroMediaId)).limit(1);
+  let heroMediaId = input.heroMediaId;
+  let finishPreview: string | null = null;
+  if (heroMediaId) {
+    const [m] = await s.db.select({ id: mediaAssets.id, kind: mediaAssets.kind }).from(mediaAssets).where(eq(mediaAssets.id, heroMediaId)).limit(1);
     if (!m) throw errors.notFound('התמונה');
+    if (m.kind === 'ai_preview') {
+      // A quick draft: its full-quality version if that was made already; otherwise the draft stands in until it is.
+      const [final] = await s.db.select({ id: mediaAssets.id }).from(mediaAssets).where(eq(mediaAssets.derivedFromId, m.id)).limit(1);
+      if (final) heroMediaId = final.id;
+      else finishPreview = m.id;
+    }
   }
   const set: Partial<typeof articleDrafts.$inferInsert> = { updatedBy: staff.id };
   if (input.category !== undefined) set.categoryId = await categoryIdOf(s.db, input.category);
@@ -504,8 +606,41 @@ export async function updateMeta(
   if (input.authorId !== undefined) set.authorId = input.authorId;
   if (input.colorLabel !== undefined) set.colorLabel = input.colorLabel;
   if (input.sendPush !== undefined) set.sendPush = input.sendPush;
-  if (input.heroMediaId !== undefined) set.heroMediaId = input.heroMediaId;
+  if (heroMediaId !== undefined) set.heroMediaId = heroMediaId;
+  if (input.disclosure !== undefined) set.disclosure = input.disclosure;
   await s.db.update(articleDrafts).set(set).where(eq(articleDrafts.id, draftId));
+  if (finishPreview) await requestFinalImage(s, staff.id, draftId, finishPreview);
+}
+
+/** The original's wording to compare with (manual drafts have none). */
+async function originalWording(s: Services, draft: DraftRow): Promise<string | null> {
+  if (!draft.scrapedItemId) return null;
+  const [item] = await s.db.select({ body: scrapedItems.bodyText, intro: scrapedItems.intro, bodyHe: scrapedItems.bodyHe }).from(scrapedItems).where(eq(scrapedItems.id, draft.scrapedItemId)).limit(1);
+  // A translated original is compared in Hebrew: copying the translation is copying.
+  return item?.bodyHe ?? item?.body ?? item?.intro ?? '';
+}
+
+/** Word-for-word overlap with the original (manual drafts have none to compare with). */
+export async function similarityToOriginal(s: Services, draftId: string): Promise<SimilarityDto> {
+  const draft = await loadDraft(s.db, draftId);
+  const original = await originalWording(s, draft);
+  if (original === null) return { ratio: 0, level: 'ok', passages: [] };
+  return compareWording(draft.bodyText, original);
+}
+
+/** "Accept the recommendation": the AI rewords only the passages that repeat the original, keeping the facts. */
+export async function requestCopyRewrite(s: Services, staff: Staff, draftId: string) {
+  const draft = await loadDraft(s.db, draftId);
+  const original = await originalWording(s, draft);
+  const check = original === null ? null : compareWording(draft.bodyText, original, { fullPassages: true });
+  if (!check || check.level === 'ok' || check.passages.length === 0) throw new AppError(409, 'nothing_to_rewrite', 'אין בכתבה קטעים שחוזרים על נוסח המקור.');
+  const instruction = [
+    'נסח מחדש, במילים שלנו, את הקטעים הבאים. הם חוזרים מילה במילה על נוסח המקור.',
+    'שמור על כל העובדות, המספרים והשמות. ציטוט ישיר של אדם נשאר ציטוט, במירכאות ועם ייחוס. שנה את מבנה המשפטים ואת המילים, ואל תשנה את שאר הכתבה.',
+    '',
+    ...check.passages.map((p) => `- "${p}"`),
+  ].join('\n');
+  return requestRefine(s, staff, draftId, instruction);
 }
 
 export async function finalizeText(s: Services, staff: Staff, draftId: string) {
@@ -685,6 +820,10 @@ export async function draftDetail(s: Services, id: string): Promise<DraftDetail>
       itemImage: scrapedItems.imageUrl,
       itemUrl: scrapedItems.url,
       itemPublishedAt: scrapedItems.publishedAt,
+      itemLanguage: scrapedItems.language,
+      itemTitleHe: scrapedItems.titleHe,
+      itemIntroHe: scrapedItems.introHe,
+      itemBodyHe: scrapedItems.bodyHe,
       sourceName: sources.name,
       articleSlug: articles.slug,
     })
@@ -726,6 +865,7 @@ export async function draftDetail(s: Services, id: string): Promise<DraftDetail>
     tags: d.tagNames,
     authorId: d.authorId,
     sendPush: d.sendPush,
+    disclosure: d.disclosure,
     hero: hero ? toMediaDto(s.storage, hero) : null,
     original:
       ctx?.itemUrl && ctx.itemTitle
@@ -737,6 +877,8 @@ export async function draftDetail(s: Services, id: string): Promise<DraftDetail>
             url: ctx.itemUrl,
             sourceName: ctx.sourceName ?? hostOf(ctx.itemUrl) ?? '',
             publishedAt: ctx.itemPublishedAt?.toISOString() ?? null,
+            language: ctx.itemLanguage,
+            translation: ctx.itemLanguage && ctx.itemBodyHe ? { title: ctx.itemTitleHe ?? ctx.itemTitle, intro: ctx.itemIntroHe, bodyText: ctx.itemBodyHe } : null,
           }
         : null,
     hasAiBaseline: Boolean(d.aiBaselineText),
@@ -763,19 +905,56 @@ export async function imageBatchesOf(s: Services, draftId: string, purpose: 'art
     .where(and(eq(imageBatches.draftId, draftId), eq(imageBatches.purpose, purpose)))
     .orderBy(desc(imageBatches.createdAt))
     .limit(10);
-  const media = batches.length
-    ? await s.db.select().from(mediaAssets).where(inArray(mediaAssets.generationBatchId, batches.map((b) => b.id))).orderBy(asc(mediaAssets.createdAt))
-    : [];
-  return batches.map((b) => ({
-    id: b.id,
-    prompt: b.prompt,
-    createdAt: b.createdAt.toISOString(),
-    images: media.filter((m) => m.generationBatchId === b.id).map((m) => toMediaDto(s.storage, m)),
-  }));
+  const ids = batches.map((b) => b.id);
+  const batchId = sql<string>`${jobs.payload}->>'batchId'`;
+  const [media, batchJobs] = ids.length
+    ? await Promise.all([
+        // The options themselves; a chosen draft's full-quality version is shown as the main image instead.
+        s.db
+          .select()
+          .from(mediaAssets)
+          .where(and(inArray(mediaAssets.generationBatchId, ids), sql`${mediaAssets.derivedFromId} is null`))
+          .orderBy(asc(mediaAssets.createdAt)),
+        s.db
+          .select({ batchId, status: jobs.status, error: jobs.lastError, result: jobs.result })
+          .from(jobs)
+          .where(and(eq(jobs.draftId, draftId), eq(jobs.kind, 'draft.images'), inArray(batchId, ids))),
+      ])
+    : [[], []];
+  return batches.map((b) => {
+    const job = batchJobs.find((j) => j.batchId === b.id);
+    const status = job?.status === 'failed' || job?.status === 'cancelled' ? 'failed' : job?.status === 'queued' || job?.status === 'running' ? 'working' : 'done';
+    return {
+      id: b.id,
+      prompt: b.prompt,
+      createdAt: b.createdAt.toISOString(),
+      images: media.filter((m) => m.generationBatchId === b.id).map((m) => toMediaDto(s.storage, m)),
+      status,
+      error: status === 'failed' ? imageErrorMessage(job?.error ?? null) : null,
+      note: (job?.result as { sourceImageMissing?: boolean } | null)?.sourceImageMissing ? 'לא הצלחנו לטעון את תמונת המקור, אז התמונות נוצרו בלי השראה ממנה.' : null,
+    } as const;
+  });
 }
 
-export async function imagesJob(s: Services, draftId: string): Promise<JobRef | null> {
-  return activeJob(s.db, draftId, ['draft.images']);
+/** The article's image options, which one is chosen, and whether its full-quality version is still being made. */
+export async function draftImages(s: Services, draftId: string): Promise<DraftImagesDto> {
+  const draft = await loadDraft(s.db, draftId);
+  const [batches, drawing] = await Promise.all([imageBatchesOf(s, draftId, 'article'), activeJob(s.db, draftId, ['draft.images'])]);
+  const [hero] = draft.heroMediaId
+    ? await s.db.select({ id: mediaAssets.id, kind: mediaAssets.kind, derivedFromId: mediaAssets.derivedFromId }).from(mediaAssets).where(eq(mediaAssets.id, draft.heroMediaId)).limit(1)
+    : [];
+  let upgrade: DraftImagesDto['upgrade'] = null;
+  if (hero?.kind === 'ai_preview') {
+    const [job] = await s.db
+      .select({ status: jobs.status, error: jobs.lastError })
+      .from(jobs)
+      .where(and(eq(jobs.draftId, draftId), eq(jobs.kind, FINAL_IMAGE_JOB), sql`${jobs.payload}->>'previewId' = ${hero.id}`))
+      .orderBy(desc(jobs.createdAt))
+      .limit(1);
+    const working = job?.status === 'queued' || job?.status === 'running';
+    upgrade = working ? { status: 'working', error: null } : { status: 'failed', error: imageErrorMessage(job?.error ?? null) };
+  }
+  return { batches, activeJob: drawing, heroId: hero?.id ?? null, chosenId: hero ? (hero.derivedFromId ?? hero.id) : null, upgrade };
 }
 
 export async function revisions(s: Services, draftId: string) {

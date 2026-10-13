@@ -165,7 +165,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `manual/`, `components/editor/` | | `magazines`, `article_drafts`, `draft_revisions`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent** | `services/agent/*`, `routes/admin/agent.ts`, `mcp/` | `agent/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens` |
-| **Publishing** | `services/publish.ts` | the preview pages | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
+| **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*`, `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
 | **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `services/consent.ts` | `comments/`, `takedowns/` | comments, account, report; app comments and account | `readers`, `comments`, `comment_reports`, `consents`, `takedown_requests` |
@@ -220,7 +220,11 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 - CMS labels for enums live in `apps/admin/lib/labels.ts`.
 - **AI prompts** give English instructions and require Hebrew output. They are stored in
   `prompt_templates` (seeded in `packages/db/src/seed.ts`) so they can be edited without a
-  release. Image prompts are English.
+  release.
+- **Image and video prompts the editor sees are Hebrew.** The editor reads, edits and approves
+  them in Hebrew, and the system sends the model an English translation of the approved text
+  (`TextAI.toEnglish`, the fast model). Changed at the owner's request on 2026-10-13, starting
+  with reels.
 - **Right to left:** "start" is the right side.
   - The site and the CMS set `dir="rtl"` on `<html>`, plus the editor canvas.
   - The app sets direction in its component styles.
@@ -451,3 +455,7 @@ code.
 - `apps/mobile/src/app/article/[slug].tsx` builds its own `SITE_URL` from
   `EXPO_PUBLIC_SITE_URL` instead of importing it from `lib/api.ts`.
 - `brand/` and the `public/brand/` copies in the apps are kept in sync by hand.
+- The article images panel in the editor still shows the AI's image prompt in English (the
+  Hebrew-prompt convention starts with reels).
+- `apps/admin/app/(cms)/comments/page.tsx` declares its comment shape locally instead of in
+  `@b4/shared`.

@@ -20,3 +20,18 @@ export function classifyHeadline(text: string): CategorySlug | null {
   for (const [slug, re] of RULES) if (re.test(text)) return slug;
   return null;
 }
+
+/** Sections of general news sites that aren't economics, by the address (Maariv, Israel Hayom, Kan…). */
+const OUTSIDE_ECONOMY = /\/(politics?|sports?|military|security|defen[cs]e|opinions?|law|crime|weather|viral|judaism|religion|horoscope|astrology|local)(\/|$)/i;
+
+/**
+ * An item from such a section goes to "פוליטיקה ושונות" in discovery, without a keyword guess
+ * (a political story that mentions the budget is still politics); the editor picks the section.
+ */
+export function outsideEconomy(url: string): boolean {
+  try {
+    return OUTSIDE_ECONOMY.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}

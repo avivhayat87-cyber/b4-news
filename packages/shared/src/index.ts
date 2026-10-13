@@ -5,3 +5,6 @@ export * from './auth';
 export * from './doc';
 export * from './cms';
 export * from './settings';
+export * from './legal';
+export * from './social';
+export * from './agent';

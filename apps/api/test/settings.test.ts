@@ -1,6 +1,6 @@
 // Settings > connections and site details: write-only secrets, encrypted at
 // rest, admin-only, applied without a restart.
-import { secrets, socialAccounts } from '@b4/db';
+import { articleDrafts, eq, secrets, socialAccounts, socialPackages, socialPosts, users } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SecretBox } from '../src/lib/secret-box';
 import { createAiHub } from '../src/services/ai';
@@ -72,9 +72,12 @@ describe('connections', () => {
     const res = await admin.put('/integrations/gemini', { values: { apiKey: `AIza${'y'.repeat(35)}`, imageSize: '1K' } });
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(true);
-    const image = await createAiHub({ ...ctx.config, ai: { ...ctx.config.ai, image: 'auto' } }, new SettingsStore(ctx.db, ctx.config)).image();
+    const connected = createAiHub({ ...ctx.config, ai: { ...ctx.config.ai, image: 'auto' } }, new SettingsStore(ctx.db, ctx.config));
+    const image = await connected.image();
     expect(image.provider).toBe('gemini');
     expect(image.model).toBe('gemini-nano-banana-2.1');
+    // The options to choose from come from a cheaper model.
+    expect((await connected.image('draft')).model).toBe('gemini-3.1-flash-lite-image');
     expect((await admin.put('/integrations/gemini', { values: { apiKey: null, imageSize: null } })).body.connected).toBe(false);
   });
 
@@ -85,6 +88,47 @@ describe('connections', () => {
     expect(res.body.connected).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('ABCDEFGHIJ');
     expect((await editor.put(`/social-accounts/${account!.id}/token`, { token: '123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ' })).status).toBe(403);
+  });
+
+  it('takes the numeric Meta IDs, not @usernames, and lets an ID be corrected without losing the token', async () => {
+    const byName = await admin.post('/social-accounts', { platform: 'instagram', displayName: 'אינסטגרם', externalId: '@B4newsB4', secretRef: 'IG_TEST' });
+    expect(byName.status).toBe(400);
+    expect(byName.body.message).toContain('IG User ID');
+    expect((await admin.post('/social-accounts', { platform: 'telegram', displayName: 'ערוץ', externalId: 'b4news', secretRef: 'TG_TEST' })).status).toBe(400);
+
+    // An account saved with a wrong ID before this check existed.
+    const [ig] = await ctx.db.insert(socialAccounts).values({ platform: 'instagram', displayName: 'אינסטגרם', externalId: '@B4newsB4', secretRef: 'IG_OLD', linkInFirstComment: true }).returning();
+    await admin.put(`/social-accounts/${ig!.id}/token`, { token: 'EAAG-test-page-token-0123456789' });
+    expect((await admin.patch(`/social-accounts/${ig!.id}`, { externalId: 'B4newsB4' })).status).toBe(422);
+    const fixed = await admin.patch(`/social-accounts/${ig!.id}`, { externalId: '17841400000000001' });
+    expect(fixed.status).toBe(200);
+    expect(fixed.body).toMatchObject({ externalId: '17841400000000001', connected: true, isActive: true });
+    expect((await editor.patch(`/social-accounts/${ig!.id}`, { externalId: '17841400000000002' })).status).toBe(403);
+  });
+
+  it('allows one account per network, and deletes one for good: its token and its posts go too', async () => {
+    const first = await admin.post('/social-accounts', { platform: 'whatsapp', displayName: 'ערוץ וואטסאפ', externalId: 'b4-channel', secretRef: 'WA_ONE' });
+    expect(first.status).toBe(201);
+    const second = await admin.post('/social-accounts', { platform: 'whatsapp', displayName: 'עוד ערוץ', externalId: 'other-channel', secretRef: 'WA_TWO' });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('network_taken');
+
+    // The Instagram account from the test above, with its token and a post waiting in a draft.
+    const ig = (await admin.get('/social-accounts')).body.find((a: { platform: string }) => a.platform === 'instagram');
+    const [author] = await ctx.db.select({ id: users.id }).from(users).limit(1);
+    const [draft] = await ctx.db.insert(articleDrafts).values({ origin: 'manual_write', status: 'text_final', title: 'כתבה', createdBy: author!.id }).returning({ id: articleDrafts.id });
+    await ctx.db.insert(socialPackages).values({ draftId: draft!.id, headline: 'כותרת' });
+    await ctx.db.insert(socialPosts).values({ draftId: draft!.id, socialAccountId: ig.id });
+
+    expect((await editor.del(`/social-accounts/${ig.id}`)).status).toBe(403);
+    expect((await admin.del(`/social-accounts/${ig.id}`)).status).toBe(204);
+    expect((await admin.get('/social-accounts')).body.some((a: { id: string }) => a.id === ig.id)).toBe(false);
+    expect(await ctx.db.select().from(socialPosts).where(eq(socialPosts.socialAccountId, ig.id))).toHaveLength(0);
+    expect(await ctx.db.select().from(secrets).where(eq(secrets.key, `social:${ig.id}:token`))).toHaveLength(0);
+    expect((await admin.del(`/social-accounts/${ig.id}`)).status).toBe(404);
+
+    // The network is free again: add it anew.
+    expect((await admin.post('/social-accounts', { platform: 'instagram', displayName: 'אינסטגרם', externalId: '17841400000000009', secretRef: 'IG_NEW' })).status).toBe(201);
   });
 });
 

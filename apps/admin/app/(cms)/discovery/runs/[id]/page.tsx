@@ -17,8 +17,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         subtitle={run.data && !run.data.isLatest ? 'איתור קודם: כתבה שמעניינת אתכם אפשר להעביר לאיתור האחרון ולבחור אותה שם.' : undefined}
         actions={
           <>
-            <LinkButton href="/discovery/runs">כל האיתורים</LinkButton>
-            <LinkButton href="/discovery" variant="dark">
+            <LinkButton href={run.data?.run.region === 'international' ? '/discovery/runs?region=international' : '/discovery/runs'}>כל האיתורים</LinkButton>
+            <LinkButton href={run.data?.run.region === 'international' ? '/discovery/international' : '/discovery'} variant="dark">
               לאיתור האחרון
             </LinkButton>
           </>

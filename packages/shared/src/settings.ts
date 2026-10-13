@@ -35,8 +35,8 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
     ],
   },
   gemini: {
-    title: 'Gemini: תמונות',
-    description: 'יוצר את 4 התמונות לכל כתבה ואת תמונות הסטורי (Nano Banana של Google).',
+    title: 'Gemini: תמונות וסרטונים',
+    description: 'יוצר 3 טיוטות תמונה מהירות לכל כתבה, את התמונה שנבחרה באיכות מלאה, את תמונות הסטורי (Nano Banana של Google), וסרטוני ריל כשמבקשים (Veo של Google).',
     docsUrl: 'https://aistudio.google.com/apikey',
     fields: [
       {
@@ -48,8 +48,30 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
         pattern: '^[A-Za-z0-9_.\\-]{30,300}$',
         help: 'נוצר ב-aistudio.google.com תחת API Keys. מפתח ישן צריך הגבלה ל-Gemini API בלבד.',
       },
-      { key: 'imageModel', label: 'מודל תמונות', secret: false, defaultValue: 'gemini-nano-banana-2.1' },
-      { key: 'imageSize', label: 'רזולוציה (1K / 2K / 4K)', secret: false, defaultValue: '2K', pattern: '^(1K|2K|4K)$' },
+      {
+        key: 'previewModel',
+        label: 'מודל לטיוטות (זול ומהיר)',
+        secret: false,
+        defaultValue: 'gemini-3.1-flash-lite-image',
+        help: 'יוצר את 3 הטיוטות לבחירה, ברזולוציה נמוכה (1K).',
+      },
+      { key: 'imageModel', label: 'מודל לתמונה הסופית', secret: false, defaultValue: 'gemini-nano-banana-2.1', help: 'מצייר מחדש באיכות מלאה רק את הטיוטה שנבחרה, וגם את תמונות הסטורי.' },
+      {
+        key: 'imageSize',
+        label: 'רזולוציה לתמונה הסופית (1K / 2K / 4K)',
+        secret: false,
+        defaultValue: '2K',
+        pattern: '^(1K|2K|4K)$',
+        help: 'האתר שומר תמונות עד רוחב 2400 פיקסלים, ולכן 2K כבר מספיק. 4K עולה יותר.',
+      },
+      {
+        key: 'videoModel',
+        label: 'מודל לסרטוני ריל (Veo)',
+        secret: false,
+        defaultValue: 'veo-3.1-fast-generate-preview',
+        pattern: '^[a-z0-9][a-z0-9.\\-]{2,80}$',
+        help: 'ברירת המחדל Veo 3.1 Fast. אפשר לרשום מודל אחר של Google: veo-3.1-lite-generate-preview (זול יותר) או veo-3.1-generate-preview (איכותי ויקר יותר). סרטון נוצר רק כשמבקשים ריל לכתבה.',
+      },
     ],
   },
   smtp: {
@@ -107,8 +129,61 @@ export const SITE_LINK_LABELS: Record<SiteLinkKey, string> = {
   googlePlay: 'האפליקציה ב-Google Play',
 };
 
-export const PAGE_SLUGS = ['about', 'contact', 'advertise', 'accessibility', 'privacy', 'terms'] as const;
+export const PAGE_SLUGS = ['about', 'contact', 'advertise', 'accessibility', 'privacy', 'terms', 'comment-rules'] as const;
 export type PageSlug = (typeof PAGE_SLUGS)[number];
+
+/**
+ * The version of the terms and privacy policy readers accept. Admins publish a new
+ * one in the CMS after a material change; everyone is then asked to accept again.
+ */
+export const LEGAL_VERSION_DEFAULT = '2026-10-12';
+export const LegalVersion = z.string().regex(/^\d{4}-\d{2}-\d{2}(\.\d{1,2})?$/, 'גרסה בפורמט YYYY-MM-DD');
+
+/**
+ * Placeholders the info pages may contain; the server fills them from the company
+ * details below. An empty value is shown as "[להשלמה: …]" so it is noticed.
+ */
+export const PAGE_TOKENS = {
+  '{שם החברה}': 'name',
+  '{ח.פ.}': 'regNumber',
+  '{כתובת החברה}': 'address',
+  '{מייל לפניות}': 'privacyEmail',
+  '{רכז נגישות}': 'accessibilityContact',
+  '{טלפון נגישות}': 'accessibilityPhone',
+  '{מייל נגישות}': 'accessibilityEmail',
+  '{תאריך בדיקת נגישות}': 'accessibilityReviewedOn',
+} as const satisfies Record<string, keyof CompanyDetails>;
+
+const OptionalEmail = z
+  .string()
+  .trim()
+  .max(254)
+  .refine((v) => v === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'כתובת מייל לא תקינה')
+  .default('');
+
+export const CompanyDetails = z.object({
+  name: z.string().trim().max(120).default(''),
+  regNumber: z.string().trim().max(40).default(''),
+  address: z.string().trim().max(200).default(''),
+  /** Privacy and legal requests; falls back to the newsroom email. */
+  privacyEmail: OptionalEmail,
+  accessibilityContact: z.string().trim().max(120).default(''),
+  accessibilityPhone: z.string().trim().max(40).default(''),
+  accessibilityEmail: OptionalEmail,
+  accessibilityReviewedOn: z.string().trim().max(40).default(''),
+});
+export type CompanyDetails = z.infer<typeof CompanyDetails>;
+
+export const COMPANY_LABELS: Record<keyof CompanyDetails, string> = {
+  name: 'שם החברה המפעילה',
+  regNumber: 'מספר ח.פ.',
+  address: 'כתובת רשומה',
+  privacyEmail: 'מייל לפניות פרטיות ומשפטיות',
+  accessibilityContact: 'רכז/ת נגישות',
+  accessibilityPhone: 'טלפון לפניות נגישות',
+  accessibilityEmail: 'מייל לפניות נגישות',
+  accessibilityReviewedOn: 'תאריך בדיקת הנגישות האחרונה',
+};
 
 export const SitePage = z.object({
   title: z.string().trim().min(2).max(120),
@@ -125,14 +200,23 @@ export const SiteSettings = z.object({
     address: z.string().trim().max(200).default(''),
   }),
   pages: z.object(Object.fromEntries(PAGE_SLUGS.map((s) => [s, SitePage])) as Record<PageSlug, typeof SitePage>),
+  company: CompanyDetails.default({}),
+  /** Set by "publish a new version" in the CMS; a PUT of the whole settings never changes it. */
+  legal: z.object({ version: LegalVersion }).default({ version: LEGAL_VERSION_DEFAULT }),
 });
 export type SiteSettings = z.infer<typeof SiteSettings>;
 
-/** What the site and the app read: links and contact (empty = hidden), page titles. */
+/** What the site and the app read: links and contact (empty = hidden), page titles, consent. */
 export const PublicSite = z.object({
   links: z.record(z.string()),
   contact: z.object({ email: z.string(), phone: z.string(), address: z.string() }),
   pages: z.array(z.object({ slug: z.enum(PAGE_SLUGS), title: z.string() })),
+  consent: z.object({
+    /** The terms version every reader is asked to accept. */
+    version: LegalVersion,
+    /** Third-party advertising cookies are in use, so the banner also asks about them. */
+    adsCookies: z.boolean(),
+  }),
 });
 export type PublicSite = z.infer<typeof PublicSite>;
 

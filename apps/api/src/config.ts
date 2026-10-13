@@ -52,9 +52,12 @@ const Env = z
     AI_MODEL_FAST: z.string().default('claude-haiku-5-5'),
     IMAGE_PROVIDER: z.enum(['gemini', 'placeholder', '']).default(''),
     GEMINI_API_KEY: z.string().optional(),
+    /** The quick, low-resolution drafts the editor chooses from. */
+    IMAGE_PREVIEW_MODEL: z.string().default('gemini-3.1-flash-lite-image'),
+    /** The chosen draft, redrawn at full quality, and the story images. */
     IMAGE_MODEL: z.string().default('gemini-nano-banana-2.1'),
     IMAGE_SIZE: z.enum(['1K', '2K', '4K']).default('2K'),
-    /** Generate the first 4 article images automatically after the AI rewrite. */
+    /** Draw the first article image drafts automatically after the AI rewrite. */
     AUTO_IMAGES: bool(true),
 
     // Scraping
@@ -123,6 +126,7 @@ const Env = z
         model: env.AI_MODEL,
         modelFast: env.AI_MODEL_FAST,
         geminiKey: env.GEMINI_API_KEY,
+        imagePreviewModel: env.IMAGE_PREVIEW_MODEL,
         imageModel: env.IMAGE_MODEL,
         imageSize: env.IMAGE_SIZE,
         autoImages: env.AUTO_IMAGES,

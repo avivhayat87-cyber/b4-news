@@ -66,9 +66,32 @@ function Editor({ id }: { id: string }) {
     },
     onError,
   });
+  // A draft of an article that is already on the site: the site changes only on "שמירה ועדכון באתר".
+  const liveEdit = !!draft?.publishedArticle && draft.status !== 'published';
+  const updateSite = useMutation({
+    mutationFn: async () => {
+      if (editable && !(await autosave.flush(true))) throw new Error('השמירה נכשלה. נסו שוב לפני העדכון באתר.');
+      return admin.post<{ slug: string }>(`/drafts/${id}/update-article`);
+    },
+    onSuccess: () => {
+      toast('הכתבה עודכנה באתר.');
+      refetch();
+      void qc.invalidateQueries({ queryKey: ['articles'] });
+    },
+    onError,
+  });
+  const reopenArticle = useMutation({
+    mutationFn: () => admin.post<{ draftId: string }>(`/articles/${draft!.publishedArticle!.id}/edit`),
+    onSuccess: refetch,
+    onError,
+  });
   const setHero = useMutation({
     mutationFn: (m: MediaDto | null) => admin.patch(`/drafts/${id}`, { heroMediaId: m?.id ?? null }),
-    onSuccess: refetch,
+    // Choosing an AI draft starts its full-quality version, which the images panel follows.
+    onSuccess: () => {
+      refetch();
+      void qc.invalidateQueries({ queryKey: ['images', id] });
+    },
     onError,
   });
 
@@ -123,8 +146,19 @@ function Editor({ id }: { id: string }) {
               לכתבה באתר ↗
             </a>
           )}
+          {canEdit && draft.status === 'published' && draft.publishedArticle && (
+            <Button size="sm" variant="dark" busy={reopenArticle.isPending} onClick={() => reopenArticle.mutate()}>
+              עריכת הכתבה
+            </Button>
+          )}
         </div>
       </header>
+
+      {liveEdit && (
+        <p className="bg-info-soft px-5 py-2 text-sm font-semibold text-info" role="note">
+          זו כתבה שכבר באתר. השינויים נשמרים כאן, ומופיעים באתר רק אחרי &quot;שמירה ועדכון באתר&quot;, באותה כתובת. המיקום בעמוד הבית לא משתנה.
+        </p>
+      )}
 
       {autosave.state === 'conflict' && (
         <div className="flex items-center gap-3 bg-brand-soft px-5 py-2 text-sm font-semibold text-brand-deep" role="alert">
@@ -198,17 +232,26 @@ function Editor({ id }: { id: string }) {
             ))}
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
-            {tab === 'original' && <OriginalPane draft={draft} />}
+            {tab === 'original' && <OriginalPane draft={draft} onQueued={refetch} />}
             {tab === 'ai' && <AiPanel draft={draft} selection={selection} busyJob={draft.activeJob} onQueued={refetch} />}
             {tab === 'images' && <ImagesPanel draft={draft} onHero={(m) => setHero.mutate(m)} />}
-            {tab === 'meta' && <MetaPanel draft={draft} onSaved={refetch} />}
+            {tab === 'meta' && <MetaPanel draft={draft} onSaved={refetch} onShowSource={() => setTab('original')} />}
             {tab === 'social' && <SocialPanel draft={draft} onFinalize={() => action.mutate('finalize')} />}
           </div>
         </section>
       </div>
 
       {/* Actions */}
-      {canEdit && draft.status !== 'published' && (
+      {canEdit && liveEdit && (
+        <footer className="flex flex-wrap items-center gap-2 border-t border-line bg-white px-5 py-3">
+          <span className="text-sm text-muted">באתר מופיעה עדיין הגרסה הקודמת.</span>
+          <span className="mr-auto" />
+          <Button variant="primary" busy={updateSite.isPending} disabled={aiBusy} onClick={() => updateSite.mutate()}>
+            שמירה ועדכון באתר
+          </Button>
+        </footer>
+      )}
+      {canEdit && !liveEdit && draft.status !== 'published' && (
         <footer className="flex flex-wrap items-center gap-2 border-t border-line bg-white px-5 py-3">
           {draft.status === 'skipped' ? (
             <Button busy={action.isPending} onClick={() => action.mutate('unskip')}>

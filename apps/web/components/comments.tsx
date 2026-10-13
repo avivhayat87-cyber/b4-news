@@ -1,9 +1,11 @@
 'use client';
 
 import { COMMENT_LIMITS } from '@b4/shared';
+import Link from 'next/link';
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { ApiFailure, commentsApi, readerApi } from '@/lib/client-api';
 import type { CommentDto, ReaderDto } from '@/lib/types';
+import { TermsCheckbox } from './terms-checkbox';
 import { SectionHeader } from './ui';
 
 type Auth = { state: 'loading' } | { state: 'anonymous' } | { state: 'signed-in'; reader: ReaderDto };
@@ -20,7 +22,19 @@ function relativeTime(iso: string): string {
 
 const message = (err: unknown) => (err instanceof ApiFailure ? err.message : 'משהו השתבש. נסו שוב.');
 
-export function Comments({ articleId, enabled, initialCount }: { articleId: number; enabled: boolean; initialCount: number }) {
+export function Comments({
+  articleId,
+  articleUrl,
+  enabled,
+  initialCount,
+  termsVersion,
+}: {
+  articleId: number;
+  articleUrl: string;
+  enabled: boolean;
+  initialCount: number;
+  termsVersion: string;
+}) {
   const [auth, setAuth] = useState<Auth>({ state: 'loading' });
   const [items, setItems] = useState<CommentDto[]>([]);
   const [total, setTotal] = useState(initialCount);
@@ -96,11 +110,23 @@ export function Comments({ articleId, enabled, initialCount }: { articleId: numb
         <div className="flex flex-col gap-2">
           <p className="text-sm text-muted">
             מגיב/ה בתור <strong className="font-bold text-ink">{auth.reader.displayName}</strong> ·{' '}
+            <Link href="/account" className="font-semibold text-ink-2 underline-offset-2 hover:underline">
+              החשבון שלי
+            </Link>{' '}
+            ·{' '}
             <button type="button" onClick={signOut} className="font-semibold text-brand underline-offset-2 hover:underline">
               התנתקות
             </button>
           </p>
-          <Composer articleId={articleId} onPosted={onPosted} />
+          {auth.reader.termsAccepted ? (
+            <Composer
+              articleId={articleId}
+              onPosted={onPosted}
+              onTermsRequired={() => setAuth({ state: 'signed-in', reader: { ...auth.reader, termsAccepted: false } })}
+            />
+          ) : (
+            <TermsUpdate version={termsVersion} onAccepted={(reader) => setAuth({ state: 'signed-in', reader })} />
+          )}
         </div>
       ) : (
         <SignIn onSignedIn={onSignedIn} />
@@ -112,6 +138,7 @@ export function Comments({ articleId, enabled, initialCount }: { articleId: numb
             key={c.id}
             comment={c}
             articleId={articleId}
+            articleUrl={articleUrl}
             canReply={enabled && auth.state === 'signed-in' && !c.parentId && !c.pending}
             signedIn={auth.state === 'signed-in'}
             onPosted={onPosted}
@@ -148,6 +175,7 @@ export function Comments({ articleId, enabled, initialCount }: { articleId: numb
 function CommentItem({
   comment,
   articleId,
+  articleUrl,
   canReply,
   signedIn,
   onPosted,
@@ -155,6 +183,7 @@ function CommentItem({
 }: {
   comment: CommentDto;
   articleId: number;
+  articleUrl: string;
   canReply: boolean;
   signedIn: boolean;
   onPosted: (c: CommentDto) => void;
@@ -164,6 +193,7 @@ function CommentItem({
   const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const initial = comment.author.displayName.trim().charAt(0) || '?';
+  const takedownHref = `/report?url=${encodeURIComponent(`${articleUrl}#comments`)}&comment=${comment.id}`;
 
   const report = async (reason: 'spam' | 'abuse' | 'misinformation' | 'other') => {
     try {
@@ -214,6 +244,11 @@ function CommentItem({
             <button type="button" onClick={() => setReporting((v) => !v)} className="hover:text-brand" aria-expanded={reporting}>
               דיווח
             </button>
+          ) : !comment.pending ? (
+            // Anyone, signed in or not, can file a formal removal request.
+            <Link href={takedownHref} className="hover:text-brand">
+              דיווח
+            </Link>
           ) : null}
         </div>
         {reporting ? (
@@ -230,6 +265,9 @@ function CommentItem({
                 {label}
               </button>
             ))}
+            <Link href={takedownHref} className="px-1 font-semibold text-ink-2 underline underline-offset-2 hover:text-brand">
+              פוגע בך? בקשת הסרה
+            </Link>
           </div>
         ) : null}
         {notice ? (
@@ -258,11 +296,14 @@ function Composer({
   parentId,
   compact = false,
   onPosted,
+  onTermsRequired,
 }: {
   articleId: number;
   parentId?: string;
   compact?: boolean;
   onPosted: (c: CommentDto) => void;
+  /** The terms changed since this reader accepted them. */
+  onTermsRequired?: () => void;
 }) {
   const id = useId();
   const [body, setBody] = useState('');
@@ -280,7 +321,8 @@ function Composer({
       setHeld(created.pending);
       onPosted(created);
     } catch (err) {
-      setError(message(err));
+      if (err instanceof ApiFailure && err.code === 'terms_required' && onTermsRequired) onTermsRequired();
+      else setError(message(err));
     } finally {
       setSending(false);
     }
@@ -326,19 +368,68 @@ function Composer({
           התגובה התקבלה ותופיע אחרי בדיקה של המערכת.
         </p>
       ) : null}
-      <p className="text-xs text-muted">התגובות נבדקות. תגובות פוגעניות, ספאם או פרטים אישיים יוסרו.</p>
+      <p className="text-xs text-muted">
+        התגובות נבדקות. תגובות פוגעניות, ספאם או פרטים אישיים יוסרו.{' '}
+        <Link href="/comment-rules" className="font-semibold text-ink-2 underline underline-offset-2 hover:text-brand">
+          כללי ההשתתפות
+        </Link>
+      </p>
+    </form>
+  );
+}
+
+/** Shown instead of the composer after a new version of the terms, until the reader accepts it. */
+function TermsUpdate({ version, onAccepted }: { version: string; onAccepted: (reader: ReaderDto) => void }) {
+  const id = useId();
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onAccepted(await readerApi.acceptTerms(version));
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-xl bg-stone p-5">
+      <h3 className="text-lg font-extrabold">עדכנו את תנאי השימוש</h3>
+      <p className="text-[15px] text-ink-2">כדי להמשיך להגיב, קראו ואשרו את הנוסח המעודכן.</p>
+      <TermsCheckbox id={id} checked={checked} onChange={setChecked} />
+      <button type="submit" disabled={!checked || busy} className="h-11 self-start rounded-full bg-brand px-5 font-extrabold text-white hover:bg-brand-deep disabled:opacity-50">
+        {busy ? 'שומר…' : 'אישור והמשך'}
+      </button>
+      {error ? (
+        <p role="alert" className="text-sm font-semibold text-brand-deep">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }
 
 type Step = 'email' | 'code' | 'name';
 
-function SignIn({ onSignedIn }: { onSignedIn: (reader: ReaderDto) => void }) {
+export function SignIn({
+  onSignedIn,
+  title = 'רוצים להגיב?',
+}: {
+  onSignedIn: (reader: ReaderDto) => void;
+  title?: string;
+}) {
   const id = useId();
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -366,12 +457,16 @@ function SignIn({ onSignedIn }: { onSignedIn: (reader: ReaderDto) => void }) {
     e.preventDefault();
     void run(async () => {
       try {
-        const session = await readerApi.verify(email, code, step === 'name' ? name : undefined);
+        const session = await readerApi.verify(email, code, { displayName: step === 'name' ? name : undefined, acceptTerms: accepted });
         onSignedIn(session.reader);
       } catch (err) {
         if (err instanceof ApiFailure && err.code === 'name_required') {
           setStep('name');
           return;
+        }
+        if (err instanceof ApiFailure && err.code === 'terms_required') {
+          setAccepted(false);
+          setStep('email');
         }
         throw err;
       }
@@ -380,7 +475,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (reader: ReaderDto) => void }) {
 
   return (
     <div className="rounded-xl bg-stone p-5">
-      <h3 className="text-lg font-extrabold">רוצים להגיב?</h3>
+      <h3 className="text-lg font-extrabold">{title}</h3>
       <p className="mt-1 text-[15px] text-ink-2">
         {step === 'email'
           ? 'נשלח אליכם קוד חד-פעמי למייל. בלי סיסמאות.'
@@ -390,24 +485,27 @@ function SignIn({ onSignedIn }: { onSignedIn: (reader: ReaderDto) => void }) {
       </p>
 
       {step === 'email' ? (
-        <form onSubmit={requestCode} className="mt-4 flex flex-wrap gap-2">
-          <label htmlFor={`${id}-email`} className="sr-only">
-            כתובת מייל
-          </label>
-          <input
-            id={`${id}-email`}
-            type="email"
-            required
-            autoComplete="email"
-            dir="ltr"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-            className="h-11 min-w-0 flex-[1_1_220px] rounded-full border-[1.5px] border-line bg-white px-4 text-right focus:border-ink focus:outline-none"
-          />
-          <button type="submit" disabled={busy} className="h-11 rounded-full bg-ink px-5 font-extrabold text-white hover:bg-black disabled:opacity-60">
-            {busy ? 'שולח…' : 'שלחו לי קוד'}
-          </button>
+        <form onSubmit={requestCode} className="mt-4 flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            <label htmlFor={`${id}-email`} className="sr-only">
+              כתובת מייל
+            </label>
+            <input
+              id={`${id}-email`}
+              type="email"
+              required
+              autoComplete="email"
+              dir="ltr"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="h-11 min-w-0 flex-[1_1_220px] rounded-full border-[1.5px] border-line bg-white px-4 text-right focus:border-ink focus:outline-none"
+            />
+            <button type="submit" disabled={busy || !accepted} className="h-11 rounded-full bg-ink px-5 font-extrabold text-white hover:bg-black disabled:opacity-60">
+              {busy ? 'שולח…' : 'שלחו לי קוד'}
+            </button>
+          </div>
+          <TermsCheckbox id={`${id}-terms`} checked={accepted} onChange={setAccepted} />
         </form>
       ) : (
         <form onSubmit={verify} className="mt-4 flex flex-col gap-3">

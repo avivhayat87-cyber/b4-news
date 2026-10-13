@@ -119,6 +119,11 @@ export function PublishPreviewScreen({ target, backHref, backLabel }: { target: 
                       )}
                     </p>
                     {i.problems.length > 0 && <p className="mt-2 text-sm font-semibold text-warn">חסר: {i.problems.join(' · ')}</p>}
+                    {i.warnings.map((w) => (
+                      <p key={w} className="mt-2 rounded-md bg-warn-soft px-2.5 py-1.5 text-sm font-semibold text-warn">
+                        לבדיקה: {w}
+                      </p>
+                    ))}
                   </div>
                 </li>
               );

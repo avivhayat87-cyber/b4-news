@@ -1,4 +1,4 @@
-// Automatic trigger setup from a site's address: find its feeds (declared in the
+﻿// Automatic trigger setup from a site's address: find its feeds (declared in the
 // page, at the usual paths) and news sitemaps (from robots.txt), keep the one
 // that lists the most dated articles, and test it end to end.
 import { type ConfigureSourceInput, SelectorConfig, type SourceTestResult } from '@b4/shared';
@@ -16,6 +16,8 @@ type Candidate = { url: string; method: 'rss' | 'sitemap'; items: number; dated:
 
 export type AutodetectResult = {
   name: string | null;
+  /** The page's declared language (ISO 639-1), e.g. "en". */
+  language: string | null;
   config: ConfigureSourceInput | null;
   test: SourceTestResult | null;
   candidates: Candidate[];
@@ -43,16 +45,19 @@ async function evaluate(fetch: Fetcher, url: string, method: 'rss' | 'sitemap'):
     return null;
   }
 }
-export async function autodetect(fetch: Fetcher, siteUrl: string, userAgent: string): Promise<AutodetectResult> {
+/** International sites keep their own-language feeds; Israeli sites skip foreign-language editions. */
+export async function autodetect(fetch: Fetcher, siteUrl: string, userAgent: string, region: 'local' | 'international' = 'local'): Promise<AutodetectResult> {
   const notes: string[] = [];
   const origin = new URL(siteUrl).origin;
   const found = new Map<string, 'rss' | 'sitemap'>();
   let name: string | null = null;
+  let language: string | null = null;
 
   try {
     const res = await fetch(siteUrl, { allowTypes: ['text/html', 'application/xhtml'] });
     const $ = cheerio.load(decodeText(res));
     name = cleanText($('meta[property="og:site_name"]').attr('content') ?? $('title').first().text()).split(/[|\-–—]/)[0]?.trim() || null;
+    language = /^([a-z]{2})\b/i.exec($('html').attr('lang') ?? $('meta[http-equiv="content-language"]').attr('content') ?? '')?.[1]?.toLowerCase() ?? null;
     $('link[rel="alternate"]').each((_, el) => {
       const type = ($(el).attr('type') ?? '').toLowerCase();
       const href = absolute($(el).attr('href'), res.url);
@@ -75,7 +80,7 @@ export async function autodetect(fetch: Fetcher, siteUrl: string, userAgent: str
 
   // Other-language editions (English, Arabic, Russian) are not what a Hebrew site wants.
   const foreign = /([?&](lang|language)=(en|ar|ru))|\/(en|english|ar|arabic|ru)(\/|$)/i;
-  const candidates = (await Promise.all([...found].filter(([url]) => !foreign.test(url)).slice(0, 30).map(([url, method]) => evaluate(fetch, url, method)))).filter(
+  const candidates = (await Promise.all([...found].filter(([url]) => region === 'international' || !foreign.test(url)).slice(0, 30).map(([url, method]) => evaluate(fetch, url, method)))).filter(
     (c): c is Candidate => Boolean(c && c.items > 0),
   );
   // RSS first when it is alive (it carries a summary per article and often one feed per section);
@@ -86,7 +91,7 @@ export async function autodetect(fetch: Fetcher, siteUrl: string, userAgent: str
   const best = candidates[0];
   if (!best) {
     notes.push('לא נמצא פיד RSS או sitemap. האתר צריך הגדרה ידנית של עמוד רשימה וסלקטורים.');
-    return { name, config: null, test: null, candidates, notes };
+    return { name, language, config: null, test: null, candidates, notes };
   }
 
   // Up to three feeds of the same kind (for example a site's economy and real-estate feeds).
@@ -106,5 +111,5 @@ export async function autodetect(fetch: Fetcher, siteUrl: string, userAgent: str
     config.devNotes += ` מסונן לכתובות שמכילות "${section}".`;
   }
   const test = await testSource(fetch, name ?? origin, config);
-  return { name, config, test, candidates, notes };
+  return { name, language, config, test, candidates, notes };
 }

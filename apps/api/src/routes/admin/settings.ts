@@ -1,33 +1,19 @@
-// Settings > connections (AI, email, social tokens) and site details. Admins only
-// for changes; keys are write-only and never leave the server.
-import { ConnectionTest, INTEGRATIONS, INTEGRATION_IDS, IntegrationStatus, SetTokenInput, SiteSettings, SocialAccountDto, UpdateIntegrationInput } from '@b4/shared';
-import { eq, socialAccounts } from '@b4/db';
+// Settings > connections (AI, email) and site details. Admins only for changes;
+// keys are write-only and never leave the server. (Social accounts: ./social-accounts.ts)
+import { ConnectionTest, INTEGRATIONS, INTEGRATION_IDS, IntegrationStatus, SiteSettings, UpdateIntegrationInput } from '@b4/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { AppError, errors } from '../../errors';
+import { AppError } from '../../errors';
 import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
-import { testIntegration, testSocialAccount } from '../../services/connection-tests';
+import { testIntegration } from '../../services/connection-tests';
 import type { Services } from '../../services/context';
 import { revalidateSite } from '../../services/publish';
 import { secretKey } from '../../services/settings';
-import { getSite, saveSite } from '../../services/site-settings';
+import { DEFAULT_PAGES, getSite, publishLegalVersion, saveSite } from '../../services/site-settings';
 
 const idParam = z.object({ id: z.enum(INTEGRATION_IDS) });
-const accountParam = z.object({ id: z.string().uuid() });
 const testLimit = { rateLimit: { max: 10, timeWindow: '1 minute' } };
-
-export async function socialAccountDto(s: Services, a: typeof socialAccounts.$inferSelect): Promise<SocialAccountDto> {
-  return {
-    id: a.id,
-    platform: a.platform,
-    displayName: a.displayName,
-    externalId: a.externalId,
-    linkInFirstComment: a.linkInFirstComment,
-    isActive: a.isActive,
-    connected: Boolean(await s.settings.socialToken(a)),
-  };
-}
 
 export const settingsRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
   // --- Connections ---------------------------------------------------------------
@@ -64,23 +50,6 @@ export const settingsRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     return testIntegration(s, req.params.id);
   });
 
-  // --- Social account tokens --------------------------------------------------------
-  app.put('/social-accounts/:id/token', { schema: { params: accountParam, body: SetTokenInput, response: { 200: SocialAccountDto } } }, async (req) => {
-    const staff = requireStaff(req, 'admin');
-    const [account] = await s.db.select().from(socialAccounts).where(eq(socialAccounts.id, req.params.id)).limit(1);
-    if (!account) throw errors.notFound('החשבון');
-    await s.settings.setSecret(secretKey.socialToken(account.id), req.body.token, staff.id);
-    await audit(s.db, { userId: staff.id, entity: 'social_account', entityId: account.id, action: req.body.token ? 'set_token' : 'remove_token' });
-    return socialAccountDto(s, account);
-  });
-
-  app.post('/social-accounts/:id/test', { schema: { params: accountParam, response: { 200: ConnectionTest } }, config: testLimit }, async (req) => {
-    requireStaff(req, 'admin');
-    const [account] = await s.db.select().from(socialAccounts).where(eq(socialAccounts.id, req.params.id)).limit(1);
-    if (!account) throw errors.notFound('החשבון');
-    return testSocialAccount(s, account);
-  });
-
   // --- Site details ------------------------------------------------------------------
   app.get('/site', { schema: { response: { 200: SiteSettings } } }, async () => getSite(s));
 
@@ -88,6 +57,18 @@ export const settingsRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     const staff = requireStaff(req, 'admin');
     await saveSite(s, staff.id, req.body);
     await audit(s.db, { userId: staff.id, entity: 'site', entityId: 'site', action: 'update' });
+    await revalidateSite(s, ['site']).catch((err) => s.log.warn({ err: err instanceof Error ? err.message : err }, 'site revalidate failed'));
+    return getSite(s);
+  });
+
+  /** The built-in text of each info page, for "restore the default text". */
+  app.get('/site/defaults', { schema: { response: { 200: z.object({ pages: SiteSettings.shape.pages }) } } }, async () => ({ pages: DEFAULT_PAGES }));
+
+  /** After a material change to the terms: every reader is asked to accept them again. */
+  app.post('/site/legal-version', { schema: { response: { 200: SiteSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const version = await publishLegalVersion(s, staff.id);
+    await audit(s.db, { userId: staff.id, entity: 'site', entityId: 'legal', action: 'publish_version', details: { version } });
     await revalidateSite(s, ['site']).catch((err) => s.log.warn({ err: err instanceof Error ? err.message : err }, 'site revalidate failed'));
     return getSite(s);
   });

@@ -1,6 +1,7 @@
 // Image generation through Google Gemini (Nano Banana) with the Interactions API.
-// One image per request, so a batch runs its requests side by side.
-import type { ImageAI, ImageShape } from './types';
+// One image per request, so a batch runs its requests side by side. One instance
+// per model and size: a cheap one for drafts, a full-quality one for finals.
+import type { ImageAI, ImageReference, ImageShape } from './types';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
@@ -25,23 +26,30 @@ export class GeminiImages implements ImageAI {
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
-  async generate(prompt: string, opts: { count: number; shape: ImageShape }): Promise<Buffer[]> {
-    const results = await Promise.allSettled(Array.from({ length: opts.count }, () => this.one(prompt, opts.shape)));
+  async generate(prompt: string, opts: { count: number; shape: ImageShape; references?: ImageReference[] }): Promise<Buffer[]> {
+    const results = await Promise.allSettled(Array.from({ length: opts.count }, () => this.one(prompt, opts.shape, opts.references ?? [])));
     const images = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
     // Some of a batch may fail (a rate limit, a refusal); the editor still gets the rest.
     if (images.length === 0) throw (results[0] as PromiseRejectedResult).reason;
     return images;
   }
 
-  private async one(prompt: string, shape: ImageShape): Promise<Buffer> {
+  finish(prompt: string, draft: ImageReference, shape: ImageShape): Promise<Buffer> {
+    return this.one(prompt, shape, [draft]);
+  }
+
+  private async one(prompt: string, shape: ImageShape, references: ImageReference[]): Promise<Buffer> {
+    const input = references.length
+      ? [{ type: 'text', text: prompt }, ...references.map((r) => ({ type: 'image', mime_type: r.mimeType, data: r.data.toString('base64') }))]
+      : prompt;
     const res = await this.fetchFn(ENDPOINT, {
       method: 'POST',
       headers: { 'x-goog-api-key': this.apiKey, 'content-type': 'application/json' },
       body: JSON.stringify({
         model: this.model,
-        input: prompt,
-        // Article images (16:9) match the hero rendition; story images are 9:16.
-        response_format: { type: 'image', mime_type: 'image/png', aspect_ratio: shape === 'portrait' ? '9:16' : '16:9', image_size: this.size },
+        input,
+        // Article images (16:9) match the hero rendition; story images are 9:16. The image models answer in JPEG only.
+        response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: shape === 'portrait' ? '9:16' : '16:9', image_size: this.size },
         // Nothing to continue later, so the prompt is not kept on Google's side.
         store: false,
       }),

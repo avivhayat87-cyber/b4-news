@@ -9,7 +9,7 @@ import { AppError, errors } from '../../errors';
 import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
-import { queueSourceSetup, sourcesBeingSetUp } from '../../services/scraper/setup';
+import { addSources, approveTestedSources, queueSourceSetup, sourcesBeingSetUp } from '../../services/scraper/setup';
 import { testSource } from '../../services/scraper/test-source';
 
 const params = z.object({ id: z.string().uuid() });
@@ -38,6 +38,8 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
         method: r.method === 'html_js' ? null : r.method,
         selectorConfig: config?.success ? config.data : null,
         defaultCategory: category,
+        region: r.region,
+        language: r.language,
         status: r.status,
         scrapeIntervalMin: r.scrapeIntervalMin,
         lastSuccessAt: r.lastSuccessAt?.toISOString() ?? null,
@@ -73,7 +75,15 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
     if (dup) throw new AppError(409, 'duplicate', 'האתר הזה כבר קיים ברשימה.');
     const [row] = await s.db
       .insert(sources)
-      .values({ name: req.body.name, baseUrl: req.body.baseUrl, defaultCategoryId: await categoryId(req.body.defaultCategory), devNotes: req.body.notes ?? null, requestedBy: staff.id, status: 'pending_dev' })
+      .values({
+        name: req.body.name,
+        baseUrl: req.body.baseUrl,
+        region: req.body.region,
+        defaultCategoryId: await categoryId(req.body.defaultCategory),
+        devNotes: req.body.notes ?? null,
+        requestedBy: staff.id,
+        status: 'pending_dev',
+      })
       .returning({ id: sources.id });
     await audit(s.db, { userId: staff.id, entity: 'source', entityId: row!.id, action: 'request' });
 
@@ -83,7 +93,7 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
       await s.mailer
         .send({
           to: dev.email,
-          subject: `בקשה לאתר חדש: ${req.body.name}`,
+          subject: `בקשה לאתר חדש${req.body.region === 'international' ? ' מחו״ל' : ''}: ${req.body.name}`,
           text: `${staff.fullName} ביקש/ה להוסיף את האתר "${req.body.name}" (${req.body.baseUrl}).\nאפשר להגדיר את הטריגר ב-CMS תחת "הגדרות אתרים".`,
         })
         .catch((err) => s.log.warn({ err }, 'developer notification failed'));
@@ -94,29 +104,16 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
   /** Several sites from a list of links: each is created and gets an automatic setup attempt. */
   app.post('/sources/bulk', { schema: { body: BulkSourcesInput, response: { 201: BulkSourcesResult } } }, async (req, reply) => {
     const staff = requireStaff(req, 'editor', 'developer');
-    const created: { id: string; baseUrl: string }[] = [];
-    const skipped: { url: string; reason: string }[] = [];
-    const seen = new Set<string>();
-    for (const raw of req.body.urls) {
-      const u = new URL(raw);
-      u.hash = '';
-      const baseUrl = u.toString();
-      if (seen.has(baseUrl)) continue;
-      seen.add(baseUrl);
-      const [dup] = await s.db.select({ id: sources.id }).from(sources).where(eq(sources.baseUrl, baseUrl)).limit(1);
-      if (dup) {
-        skipped.push({ url: raw, reason: 'כבר קיים ברשימה' });
-        continue;
-      }
-      const [row] = await s.db
-        .insert(sources)
-        .values({ name: u.hostname.replace(/^www\./, ''), baseUrl, defaultCategoryId: await categoryId(req.body.defaultCategory), requestedBy: staff.id, status: 'pending_dev' })
-        .returning({ id: sources.id });
-      await queueSourceSetup(s, row!.id, staff.id);
-      created.push({ id: row!.id, baseUrl });
-    }
-    await audit(s.db, { userId: staff.id, entity: 'source', entityId: 'bulk', action: 'request', details: { count: created.length } });
-    return reply.status(201).send({ created, skipped });
+    return reply.status(201).send(await addSources(s, staff, req.body.urls, req.body.region, await categoryId(req.body.defaultCategory)));
+  });
+
+  /** The name shown in discovery and credited in articles. */
+  app.patch('/sources/:id', { schema: { params, body: z.object({ name: CreateSourceInput.shape.name }), response: { 200: SourceDto } } }, async (req) => {
+    const staff = requireStaff(req, 'editor', 'developer');
+    await one(req.params.id);
+    await s.db.update(sources).set({ name: req.body.name }).where(eq(sources.id, req.params.id));
+    await audit(s.db, { userId: staff.id, entity: 'source', entityId: req.params.id, action: 'rename' });
+    return one(req.params.id);
   });
 
   app.post('/sources/:id/autodetect', { schema: { params, response: { 202: z.object({ jobId: z.string().uuid() }) } } }, async (req, reply) => {
@@ -128,13 +125,7 @@ export const sourceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
   /** Approves every site whose saved trigger passed its test. */
   app.post('/sources/approve-tested', { schema: { response: { 200: z.object({ approved: z.number().int() }) } } }, async (req) => {
     const staff = requireStaff(req, 'developer');
-    const rows = await s.db
-      .update(sources)
-      .set({ status: 'active', approvedBy: staff.id, approvedAt: new Date(), consecutiveFailures: 0 })
-      .where(and(eq(sources.status, 'in_development'), isNotNull(sources.lastTestPassedAt), isNotNull(sources.method), isNotNull(sources.selectorConfig)))
-      .returning({ id: sources.id });
-    for (const r of rows) await audit(s.db, { userId: staff.id, entity: 'source', entityId: r.id, action: 'approve' });
-    return { approved: rows.length };
+    return { approved: await approveTestedSources(s, staff.id) };
   });
   app.put('/sources/:id/config', { schema: { params, body: ConfigureSourceInput, response: { 200: SourceDto } } }, async (req) => {
     const staff = requireStaff(req, 'developer');

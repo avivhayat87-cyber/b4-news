@@ -1,7 +1,25 @@
 // Hebrew labels for everything the CMS shows.
-import { CATEGORIES, type DraftColor, type DraftStatus, type Placement, type SocialPlatform, type SourceStatus } from '@b4/shared';
+import {
+  type ARTICLE_LENGTHS,
+  CATEGORIES,
+  type Divergence,
+  type DraftColor,
+  type DraftStatus,
+  type Placement,
+  type PublishedArticleDto,
+  type ReelMotion,
+  type ReelStage,
+  type ShareFilter,
+  type ShareFormat,
+  type ShareTemplate,
+  type SocialPlatform,
+  type SourceStatus,
+} from '@b4/shared';
 
 export const categoryName = (slug: string | null | undefined) => CATEGORIES.find((c) => c.slug === slug)?.name ?? 'ללא קטגוריה';
+
+/** Discovery's folder for items without an economic section (politics, sport, general news…). */
+export const MISC_FOLDER = { name: 'פוליטיקה ושונות', hint: 'כתבות שלא שויכו לתחום כלכלי. בוחרים אותן כרגיל, והתחום נקבע ידנית בעורך.' };
 
 export const DRAFT_STATUS: Record<DraftStatus, { label: string; tone: Tone }> = {
   queued_ai: { label: 'ממתין ל-AI', tone: 'info' },
@@ -44,6 +62,20 @@ export const MAGAZINE_STATUS: Record<string, { label: string; tone: Tone }> = {
 
 export const PLACEMENT: Record<Placement, string> = { main: 'כתבה ראשית', trending: 'חדשות חמות', none: 'קטגוריה בלבד' };
 
+/** The reel's steps, as the editor sees them. */
+export const REEL_STAGE: Record<ReelStage, { label: string; tone: Tone }> = {
+  prompts: { label: 'הנחיות מוכנות לאישור', tone: 'info' },
+  image: { label: 'תמונה מחכה לאישור', tone: 'warn' },
+  video: { label: 'סרטון מחכה לאישור', tone: 'warn' },
+  approved: { label: 'מאושר לפרסום', tone: 'ok' },
+};
+
+export const ARTICLE_STATUS: Record<PublishedArticleDto['status'], { label: string; tone: Tone }> = {
+  published: { label: 'באתר', tone: 'ok' },
+  scheduled: { label: 'מתוזמנת', tone: 'info' },
+  unpublished: { label: 'הוסרה מהאתר', tone: 'muted' },
+};
+
 export const COLOR: Record<DraftColor, string> = {
   red: 'אדום',
   orange: 'כתום',
@@ -62,6 +94,49 @@ export const PLATFORM: Record<SocialPlatform, string> = {
   x: 'X',
   tiktok: 'טיקטוק',
 };
+
+// --- Social page -------------------------------------------------------------------
+export const SHARE_TEMPLATE: Record<ShareTemplate, { name: string; use: string }> = {
+  headline: { name: 'כותרת על תמונה', use: 'ברירת המחדל לרוב הכתבות: תמונה מלאה וכותרת חזקה' },
+  breaking: { name: 'מבזק', use: 'חדשות שקרו עכשיו: החלטות, נתונים, תזוזות חדות' },
+  quote: { name: 'משפט מפתח', use: 'כשמשפט אחד או מספר אחד מחזיקים את הסיפור' },
+  explainer: { name: 'מדריך', use: 'כתבות שירות, הסברים ו"מה צריך לדעת"' },
+};
+export const SHARE_FORMAT: Record<ShareFormat, { name: string; size: string }> = {
+  feed: { name: 'פוסט', size: '4:5 · 1080×1350' },
+  story: { name: 'סטורי', size: '9:16 · 1080×1920' },
+  reel: { name: 'ריל', size: 'סרטון 9:16' },
+};
+export const REEL_MOTION: Record<ReelMotion, string> = {
+  zoom_in: 'זום-אין איטי',
+  zoom_out: 'זום-אאוט איטי',
+  pan: 'תנועה איטית לצד',
+  parallax: 'עומק עדין (פרלקסה)',
+};
+/** The Veo models offered by default; any other model id can be set in Settings. */
+export const VIDEO_MODEL: Record<string, string> = {
+  'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast (מומלץ)',
+  'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite (זול)',
+  'veo-3.1-generate-preview': 'Veo 3.1 (הכי איכותי, יקר)',
+};
+export const SHARE_FILTER: Record<ShareFilter, string> = { pending: 'ממתינות לרשתות', shared: 'פורסמו ברשתות', all: 'כל הכתבות' };
+export const SOCIAL_POST_STATUS: Record<string, { label: string; tone: Tone }> = {
+  posted: { label: 'פורסם', tone: 'ok' },
+  skipped: { label: 'מוכן לפרסום ידני', tone: 'warn' },
+  failed: { label: 'נכשל', tone: 'danger' },
+  queued: { label: 'בתור', tone: 'info' },
+  posting: { label: 'מתפרסם', tone: 'info' },
+  draft: { label: 'טיוטה', tone: 'muted' },
+  comment_failed: { label: 'פורסם, התגובה נכשלה', tone: 'warn' },
+};
+
+// --- Editor agent -------------------------------------------------------------------
+export const DIVERGENCE_LABEL: Record<Divergence, { name: string; description: string }> = {
+  light: { name: 'קרוב למקור', description: 'אותו מבנה וסדר, ניסוח חדש בלבד' },
+  medium: { name: 'שכתוב מלא', description: 'ניסוח ומבנה חדשים, אותה זווית' },
+  strong: { name: 'כתבה אחרת', description: 'זווית, פתיחה ומבנה חדשים לגמרי, עם כל הנתונים של המקור' },
+};
+export const ARTICLE_LENGTH: Record<(typeof ARTICLE_LENGTHS)[number], string> = { shorter: 'קצר מהמקור', same: 'כמו המקור', longer: 'ארוך מהמקור' };
 
 export const ROLE: Record<string, string> = { admin: 'מנהל/ת', editor: 'עורך/ת', developer: 'מפתח/ת', viewer: 'צפייה בלבד' };
 

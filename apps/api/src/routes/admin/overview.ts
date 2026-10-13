@@ -1,16 +1,5 @@
-// Dashboard, learning loop, staff, social accounts, authors.
-import {
-  AuthorDto,
-  ChangePasswordInput,
-  CreateSocialAccountInput,
-  CreateStaffInput,
-  DashboardDto,
-  LINK_IN_FIRST_COMMENT,
-  LearningOverview,
-  SocialAccountDto,
-  StaffUserDto,
-  UpdateStaffInput,
-} from '@b4/shared';
+// Dashboard, learning loop, staff, authors. (Social accounts: ./social-accounts.ts)
+import { AuthorDto, ChangePasswordInput, CreateStaffInput, DashboardDto, LearningOverview, StaffUserDto, UpdateStaffInput } from '@b4/shared';
 import {
   and,
   articleDrafts,
@@ -29,9 +18,9 @@ import {
   ne,
   scrapeRuns,
   sessions,
-  socialAccounts,
   sources,
   sql,
+  takedownRequests,
   users,
 } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -43,7 +32,6 @@ import { hashPassword, verifyPassword } from '../../lib/password';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
 import { activateProfile, learningOverview, queueDistill, saveRules } from '../../services/learning';
-import { socialAccountDto } from './settings';
 
 const params = z.object({ id: z.string().uuid() });
 const count = sql<number>`count(*)::int`;
@@ -60,6 +48,10 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     const src = (...st: string[]) => sourceCounts.filter((x) => st.includes(x.status)).reduce((sum, x) => sum + x.n, 0);
     const [toReview] = await s.db.select({ n: count }).from(comments).where(and(eq(comments.status, 'hidden'), isNull(comments.moderatedBy)));
     const [reported] = await s.db.select({ n: count }).from(comments).where(and(gt(comments.reportCount, 0), eq(comments.status, 'visible')));
+    const [takedowns] = await s.db
+      .select({ open: count, overdue: sql<number>`count(*) filter (where ${takedownRequests.dueAt} < now())::int` })
+      .from(takedownRequests)
+      .where(inArray(takedownRequests.status, ['new', 'in_review']));
     const [failed] = await s.db.select({ n: count }).from(jobs).where(and(eq(jobs.status, 'failed'), gte(jobs.createdAt, new Date(Date.now() - 86_400_000))));
     const [last] = await s.db.select({ id: scrapeRuns.id }).from(scrapeRuns).orderBy(desc(scrapeRuns.createdAt)).limit(1);
     let lastRun = null;
@@ -69,6 +61,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
         ? {
             id: run.id,
             trigger: run.trigger,
+            region: run.region,
             status: run.status,
             triggeredBy: null,
             startedAt: run.startedAt?.toISOString() ?? null,
@@ -87,6 +80,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       lastRun,
       sources: { active: src('active'), waitingForDeveloper: src('pending_dev', 'in_development'), broken: src('broken') },
       comments: { toReview: toReview?.n ?? 0, reported: reported?.n ?? 0 },
+      takedowns: { open: takedowns?.open ?? 0, overdue: takedowns?.overdue ?? 0 },
       failedJobs: failed?.n ?? 0,
       ai: await s.ai.status(),
     };
@@ -118,33 +112,6 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
   app.get('/authors', { schema: { response: { 200: z.array(AuthorDto) } } }, async () =>
     s.db.select({ id: authors.id, displayName: authors.displayName, title: authors.title }).from(authors).orderBy(asc(authors.displayName)),
   );
-
-  // --- Social accounts (admin) ---------------------------------------------------
-  const accountDto = (a: typeof socialAccounts.$inferSelect) => socialAccountDto(s, a);
-
-  app.get('/social-accounts', { schema: { response: { 200: z.array(SocialAccountDto) } } }, async () =>
-    Promise.all((await s.db.select().from(socialAccounts).orderBy(asc(socialAccounts.platform))).map(accountDto)),
-  );
-
-  app.post('/social-accounts', { schema: { body: CreateSocialAccountInput, response: { 201: SocialAccountDto } } }, async (req, reply) => {
-    const staff = requireStaff(req, 'admin');
-    const [row] = await s.db
-      .insert(socialAccounts)
-      .values({ ...req.body, linkInFirstComment: LINK_IN_FIRST_COMMENT[req.body.platform] })
-      .onConflictDoNothing()
-      .returning();
-    if (!row) throw new AppError(409, 'duplicate', 'החשבון הזה כבר קיים.');
-    await audit(s.db, { userId: staff.id, entity: 'social_account', entityId: row.id, action: 'create' });
-    return reply.status(201).send(await accountDto(row));
-  });
-
-  app.patch('/social-accounts/:id', { schema: { params, body: z.object({ isActive: z.boolean() }), response: { 200: SocialAccountDto } } }, async (req) => {
-    const staff = requireStaff(req, 'admin');
-    const [row] = await s.db.update(socialAccounts).set({ isActive: req.body.isActive }).where(eq(socialAccounts.id, req.params.id)).returning();
-    if (!row) throw errors.notFound('החשבון');
-    await audit(s.db, { userId: staff.id, entity: 'social_account', entityId: row.id, action: req.body.isActive ? 'enable' : 'disable' });
-    return accountDto(row);
-  });
 
   // --- Staff (admin) -----------------------------------------------------------
   const staffDto = (u: typeof users.$inferSelect) => ({

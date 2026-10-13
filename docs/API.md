@@ -19,9 +19,13 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | GET | `/public/feed?cursor=&limit=` | `Page<ArticleCard>` (the app's endless feed) |
 | GET | `/public/search?q=&cursor=` | `Page<ArticleCard>` |
 | GET | `/public/markets` | `MarketQuote[]`: Bank of Israel representative rates (empty when unavailable) |
-| GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles |
-| GET | `/public/pages/:slug` | `PublicPage`: about, contact, advertise, accessibility, privacy, terms |
-| POST | `/public/newsletter` · `/public/newsletter/confirm` | double opt-in |
+| GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles, `consent` (terms version to accept) |
+| GET | `/public/pages/:slug` | `PublicPage`: about, contact, advertise, accessibility, privacy, terms, comment-rules (company details filled in) |
+| POST | `/public/newsletter` · `/public/newsletter/confirm` | `NewsletterSignupInput` (terms checkbox required, recorded in `consents`); double opt-in |
+| POST | `/public/newsletter/unsubscribe` | `UnsubscribeInput` (signed link from every newsletter) |
+| POST | `/public/newsletter/unsubscribe/:id/:token` | one-click unsubscribe from the mail client (RFC 8058, the `List-Unsubscribe` header) |
+| POST | `/public/consent` | `VisitorConsentInput`: the consent banner (site) or welcome screen (app); 409 `terms_changed` for an old version |
+| POST | `/public/takedown` | `TakedownInput`: a content-removal request from anyone; 5/hour; mails a confirmation |
 | POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app) |
 
 ## Comments and readers
@@ -29,13 +33,15 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/public/articles/:id/comments?cursor=` | `CommentList`; the viewer also sees their own comments held for review |
-| POST | `/articles/:id/comments` | `CreateCommentInput`; reader session; automatic filter; 5/min, 50/day |
+| POST | `/articles/:id/comments` | `CreateCommentInput`; reader session; automatic filter; 5/min, 50/day; 409 `terms_required` after a new terms version |
 | DELETE | `/comments/:id` | own comment |
 | POST | `/comments/:id/report` | `ReportCommentInput`; 3 reports hide the comment |
 | POST | `/auth/reader/request-code` | always 204 (no account enumeration) |
-| POST | `/auth/reader/verify` | `VerifyCodeInput` → `ReaderSession` (cookie for web, token for the app); 409 `name_required` on first sign-in |
-| GET | `/auth/reader/session` | `{ reader \| null }` |
+| POST | `/auth/reader/verify` | `VerifyCodeInput` → `ReaderSession` (cookie for web, token for the app); 409 `name_required` on first sign-in, 409 `terms_required` without `acceptTerms` (new readers, or a new terms version) |
+| GET | `/auth/reader/session` | `{ reader \| null }`; `reader.termsAccepted` is false after a new terms version |
 | GET/PATCH | `/auth/reader/me` | profile |
+| POST | `/auth/reader/terms` | `AcceptTermsInput` → `ReaderDto`; 409 `terms_changed` for an old version |
+| DELETE | `/auth/reader/me` | deletes the account, its comments, reports, sessions and consents (also allowed for banned readers) |
 | POST | `/auth/reader/logout` | |
 
 ## Staff sign-in
@@ -76,7 +82,9 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/integrations/:id/test` | `ConnectionTest` |
 | PUT | `/admin/social-accounts/:id/token` | `SetTokenInput` (`null` removes) → `SocialAccountDto` |
 | POST | `/admin/social-accounts/:id/test` | `ConnectionTest` (Telegram, Facebook, Instagram) |
-| GET / PUT | `/admin/site` | `SiteSettings` (read: any staff; write: admin); revalidates the site's `site` tag |
+| GET / PUT | `/admin/site` | `SiteSettings` (read: any staff; write: admin; the terms version is never changed by a PUT); revalidates the site's `site` tag |
+| GET | `/admin/site/defaults` | the built-in text of every info page ("restore the default text") |
+| POST | `/admin/site/legal-version` | publishes a new terms version (today's date): every reader is asked to accept again |
 
 ### Site settings
 
@@ -91,14 +99,17 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/sources/:id/test` | developer | `ConfigureSourceInput` → `SourceTestResult` (dry run, nothing saved) |
 | POST | `/admin/sources/:id/approve` | developer | needs a saved config with a passing test → `active` |
 | POST | `/admin/sources/:id/status` | developer | `active` (approved only) · `paused` · `archived` |
+| PATCH | `/admin/sources/:id` | editor, developer | `{ name }`: the name shown in discovery and credited in articles |
+
+`CreateSourceInput` and `BulkSourcesInput` take `region`: `local` (default) or `international`. International sites keep their own-language feeds during setup, and their language is recorded (`SourceDto.language`).
 
 ### Discovery
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| POST | `/admin/discovery/runs` | editor | 202 `{ runId, created }`; returns the running one if a run is in progress |
-| GET | `/admin/discovery/runs?limit=` | any | `RunDto[]` (date, counts, per-source results) |
-| GET | `/admin/discovery/runs/latest` | any | `RunDetail \| null` |
+| POST | `/admin/discovery/runs` | editor | `{ region }` (`local` default · `international`) → 202 `{ runId, created }`; returns the running one if a run of that region is in progress |
+| GET | `/admin/discovery/runs?region=&limit=` | any | `RunDto[]` of one region (date, counts, per-source results) |
+| GET | `/admin/discovery/runs/latest?region=` | any | `RunDetail \| null`; foreign items carry `language`, and `titleHe` / `introHe` once translated |
 | GET | `/admin/discovery/runs/:id` | any | `RunDetail` (items with source, image, title, first paragraph, section) |
 | POST | `/admin/discovery/items/:id/pull` | editor | add an item from an older run to the latest run |
 | POST | `/admin/discovery/save` | editor | `SaveSelectionInput` (`magazine` or `single` + color) → `SaveSelectionResult`; queues the AI |
@@ -121,7 +132,15 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/magazines/:id/archive` | editor | |
 | GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, nav, active AI job) |
 | PUT | `/admin/drafts/:id/content` | editor | `AutosaveInput` → `AutosaveResult`; 409 `version_conflict` / `text_locked` / `ai_busy` |
-| PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, tags, byline, color, push, main image |
+| PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, tags, byline, color, push, main image, disclosure |
+| GET | `/admin/drafts/:id/similarity` | any | `SimilarityDto`: how much of the draft repeats the original word for word (the Hebrew translation of a foreign original) |
+| POST | `/admin/drafts/:id/update-article` | editor | → `{ slug }`: the edited draft of an article already on the site replaces it in place (same id and address, home page position kept) and the site is refreshed; 422 `not_ready` when something is missing |
+| GET | `/admin/articles?status=published\|unpublished&q=&category=&cursor=` | any | `PublishedArticleList` ("כתבות באתר"): `PublishedArticleDto[]` and `nextCursor` |
+| POST | `/admin/articles/:id/edit` | editor | → `{ draftId }`: opens the article in the editor (its draft reopens, or one is made from it); the site changes only on `update-article` |
+| POST | `/admin/articles/:id/unpublish` | editor | 204: off the site and the home page at once; restorable |
+| POST | `/admin/articles/:id/republish` | editor | 204: back at its address and date |
+| DELETE | `/admin/articles/:id` | admin | 204: deleted for good with its comments; only an article already off the site (409 `still_published`) |
+| GET | `/admin/drafts/:id/facts` | any | `FactCheckDto`: numbers, percentages, amounts and years of the source missing from the draft, and ones the source doesn't have |
 | POST | `/admin/drafts/:id/refine` | editor | `RefineInput` → 202 `{ jobId }` |
 | GET | `/admin/drafts/:id/chat` | any | `ChatMessageDto[]` |
 | POST | `/admin/drafts/:id/retry-ai` | editor | re-run the first rewrite |
@@ -141,11 +160,46 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | PUT | `/admin/drafts/:id/social/targets` | editor | `SocialTargetsInput` |
 | POST | `/admin/drafts/:id/social/approve` | editor | checks: headline, ≤ 2 sentences, story image ≠ main image |
 
+### The social page (articles already on the site)
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/social/articles?filter=&q=&page=` | any | `ShareList`: published articles, `pending` (not posted yet, default) · `shared` · `all` |
+| GET | `/admin/social/articles/:articleId` | any | `ShareDto`: the kit, the chosen `formats`, the rendered post (4:5) and story (9:16), the reel (`plan`: stage and Hebrew prompts; picture, cover, video, settings, cost estimate), the text per account, what was posted |
+| PUT | `/admin/social/articles/:articleId` | editor | `UpdateShareInput` (optimistic version; `0` creates; optional `formats`, `reelSettings`) → `ShareDto`, re-rendered |
+| POST | `/admin/social/generate` | editor | `GenerateSharesInput` (up to 20 articles, optional instruction and `formats`) → 202 `{ jobIds }`; never makes a video |
+| POST | `/admin/social/articles/:articleId/reel/prompts` | editor | `ReelPromptsInput` (`instruction?`) → 202 `{ jobId }` (6/min): the AI writes the picture and video prompts in Hebrew; 422 `no_kit` before the post text exists; 409 `reel_busy` while a step runs |
+| PUT | `/admin/social/articles/:articleId/reel/prompts` | editor | `UpdateReelPromptsInput` → `ShareDto`: the editor's wording |
+| POST | `/admin/social/articles/:articleId/reel/image` | editor | 202 `{ jobId }`: prompts approved, a new picture (Gemini, from the English translation) and its branded cover; a new picture drops the old video |
+| POST | `/admin/social/articles/:articleId/reel/video` | editor | 202 `{ jobId }`: picture approved, a Veo video from the clean picture; 409 `no_picture` before there is one |
+| POST | `/admin/social/articles/:articleId/reel/approve` | editor | → `ShareDto`: the video is approved; only approved reels are published (`/social/publish` answers 422 `no_reel` otherwise) |
+| GET | `/admin/social/targets` | any | `ShareTargetDto[]`: active accounts, connected or not, which formats post automatically |
+| POST | `/admin/social/publish` | editor | `PublishSharesInput` (articles × formats × accounts) → 202 `{ jobId }`; a post that went out is never sent again |
+| POST | `/admin/social/articles/:articleId/posted` | editor | `{ accountId, format }`: a prepared post was posted by hand |
+
+### The newsroom agent
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/agent/status` | any | `AgentStatusDto`: live or demo, the model, the tools this person may use |
+| GET | `/admin/agent/conversations` · `/:id` | any (own only) | `AgentConversationSummary[]` · `AgentConversationDto` |
+| POST | `/admin/agent/messages` | any (viewers get read tools only) | `SendAgentMessageInput` → 202 `{ conversationId }`; 409 while working or awaiting approval |
+| POST | `/admin/agent/conversations/:id/decide` | any (the tool checks the role) | `DecideActionInput` (`approve` true/false) for a proposed change |
+| GET / PUT | `/admin/agent/editor-settings` | any / editor | `EditorAgentSettings` (divergence, length, voice, instructions; facts are always kept) |
+| GET | `/admin/agent/learning-reports` | any | `LearningReportDto[]`: one per publish batch |
+| GET / POST | `/admin/agent/tokens` | any (own) | `ApiTokenDto[]` · `CreateApiTokenInput` → `CreatedApiToken` (the secret is shown once) |
+| POST | `/admin/agent/tokens/:id/revoke` | any (own) | |
+| GET | `/admin/agent/mcp-config` | any | `McpConfigDto`: the command for the Claude app's config |
+| GET | `/admin/agent/tools` | any | `AgentToolDef[]` (the MCP server lists these) |
+| POST | `/admin/agent/tools/:name` | per tool | `RunAgentToolInput` → `AgentToolResult` |
+
+A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/agent/tools*`; everything else answers 403.
+
 ### Preview and publishing
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/magazines/:id/preview` · `/admin/drafts/:id/preview` | any | `PublishPreview` (date, editor, tags, networks, what's missing) |
+| GET | `/admin/magazines/:id/preview` · `/admin/drafts/:id/preview` | any | `PublishPreview` (date, editor, tags, networks, what's missing, warnings such as wording copied from the original) |
 | POST | `/admin/magazines/:id/publish` · `/admin/drafts/:id/publish` | editor | `PublishInput` (idempotency key) → 202 `{ publishJobId }`; 422 lists what isn't ready |
 | GET | `/admin/publish-jobs/:id` | any | `PublishJobDto` with per-step results (`<draft>:site`, `revalidate`, `<draft>:<platform>:<account>`) |
 
@@ -156,6 +210,13 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | GET | `/admin/comments?status=&reported=` | any | held (`hidden`) and reported first |
 | PATCH | `/admin/comments/:id` | editor | `{ status: visible \| hidden \| removed, note? }` |
 | POST | `/admin/readers/:id/ban` | editor | `{ reason, hideComments }`; ends the reader's sessions |
+
+### Content-removal requests (notice and takedown)
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/takedowns?view=open\|closed` | editor | `TakedownDto[]`: open ones oldest first, with the answer-by time (48 hours) |
+| PATCH | `/admin/takedowns/:id` | editor | `DecideTakedownInput` (`in_review` · `removed` · `rejected`, note, hide the comment); mails the requester |
 
 ## Site cache revalidation (site side)
 

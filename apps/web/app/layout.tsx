@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Heebo, IBM_Plex_Mono, Rubik } from 'next/font/google';
+import { ConsentBanner } from '@/components/consent-banner';
 import { SiteFooter } from '@/components/footer';
 import { SiteHeader } from '@/components/header';
+import { getSite } from '@/lib/api';
 import { SITE } from '@/lib/site';
 import './globals.css';
 
@@ -35,7 +37,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <main id="main">{children}</main>
         <SiteFooter />
+        <Consent />
       </body>
     </html>
   );
+}
+
+async function Consent() {
+  const { consent } = await getSite();
+  return <ConsentBanner version={consent.version} adsCookies={consent.adsCookies} />;
 }

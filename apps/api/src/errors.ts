@@ -16,4 +16,5 @@ export const errors = {
   forbidden: () => new AppError(403, 'forbidden', 'אין לך הרשאה לפעולה הזאת'),
   banned: () => new AppError(403, 'banned', 'החשבון הזה חסום מלהגיב'),
   rateLimited: () => new AppError(429, 'rate_limited', 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.'),
+  termsRequired: () => new AppError(409, 'terms_required', 'צריך לאשר את תנאי השימוש ומדיניות הפרטיות כדי להמשיך'),
 };

@@ -1,12 +1,26 @@
 // Public site details edited in the CMS: social and app links, contact details,
-// and the info pages linked from the footer. Defaults keep every link working
-// before anyone fills them in (empty links are simply not shown).
-import { PAGE_SLUGS, type PageSlug, type PublicPage, type PublicSite, SITE_LINK_KEYS, SiteSettings, docToHtml, textToDoc } from '@b4/shared';
+// company details, the info pages linked from the footer, and the terms version
+// readers accept. Defaults keep every link working before anyone fills them in
+// (empty links are simply not shown).
+import {
+  COMPANY_LABELS,
+  type CompanyDetails,
+  PAGE_SLUGS,
+  PAGE_TOKENS,
+  type PageSlug,
+  type PublicPage,
+  type PublicSite,
+  SITE_LINK_KEYS,
+  SiteSettings,
+  docToHtml,
+  textToDoc,
+} from '@b4/shared';
 import type { Services } from './context';
+import { ACCESSIBILITY_PAGE, COMMENT_RULES_PAGE, PRIVACY_PAGE, TERMS_PAGE } from './legal-pages';
 
 const KEY = 'site';
 
-const DEFAULT_PAGES: Record<PageSlug, { title: string; body: string }> = {
+export const DEFAULT_PAGES: Record<PageSlug, { title: string; body: string }> = {
   about: {
     title: 'אודות B4 NEW\'S',
     body: [
@@ -26,6 +40,8 @@ const DEFAULT_PAGES: Record<PageSlug, { title: string; body: string }> = {
       'את פרטי ההתקשרות של המערכת תמצאו בתחתית העמוד. אנחנו עונים בימים א׳ עד ה׳.',
       '## תיקונים',
       'מצאתם טעות בכתבה? צרפו קישור לכתבה ותיאור קצר של הטעות, ונבדוק בהקדם.',
+      '## תוכן פוגעני',
+      'לבקשה להסיר תגובה או תוכן שפוגעים בכם, מלאו את הטופס בעמוד ״דיווח על תוכן״. כך הבקשה נרשמת ומטופלת מהר יותר.',
     ].join('\n\n'),
   },
   advertise: {
@@ -39,63 +55,44 @@ const DEFAULT_PAGES: Record<PageSlug, { title: string; body: string }> = {
       'לפרטים ולהצעת מחיר, כתבו לנו בכתובת שמופיעה בתחתית העמוד.',
     ].join('\n\n'),
   },
-  accessibility: {
-    title: 'הצהרת נגישות',
-    body: [
-      'אנחנו רואים חשיבות רבה בהנגשת האתר והאפליקציה לאנשים עם מוגבלות, ופועלים להתאים אותם לדרישות תקן ישראלי 5568 ולהנחיות WCAG 2.1 ברמה AA.',
-      '## מה עשינו',
-      '- מבנה כותרות תקין וניווט מלא במקלדת',
-      '- טקסט חלופי לתמונות',
-      '- ניגודיות צבעים מספקת וגופנים קריאים',
-      '- תמיכה בקוראי מסך ובהגדלת טקסט',
-      '## נתקלתם בבעיה?',
-      'אם מצאתם רכיב שאינו נגיש, נשמח שתכתבו לנו (פרטי הקשר בתחתית העמוד) ונטפל בהקדם.',
-    ].join('\n\n'),
-  },
-  privacy: {
-    title: 'מדיניות פרטיות',
-    body: [
-      'מדיניות זו מסבירה איזה מידע אנחנו אוספים בשימוש באתר ובאפליקציה ולמה.',
-      '## מידע שאנחנו אוספים',
-      '- כתובת מייל ושם תצוגה, אם נרשמתם כדי להגיב או לניוזלטר',
-      '- נתוני שימוש בסיסיים ומידע טכני (סוג דפדפן ומכשיר)',
-      '- מזהה מכשיר להתראות, אם אישרתם התראות באפליקציה',
-      '## איך אנחנו משתמשים במידע',
-      'כדי להפעיל את השירות, לשלוח את מה שביקשתם (קודי כניסה, ניוזלטר, התראות) ולשפר את האתר. אנחנו לא מוכרים מידע אישי לצד שלישי.',
-      '## הזכויות שלכם',
-      'אפשר לבקש לעיין במידע עליכם, לתקן אותו או למחוק אותו, ולהסיר את עצמכם מהניוזלטר בכל עת.',
-    ].join('\n\n'),
-  },
-  terms: {
-    title: 'תנאי שימוש',
-    body: [
-      "השימוש באתר ובאפליקציה של B4 NEW'S כפוף לתנאים אלה.",
-      '## התוכן',
-      'התוכן מיועד למידע כללי בלבד ואינו ייעוץ השקעות, ייעוץ משפטי או ייעוץ מס. לפני החלטה כלכלית התייעצו עם בעל מקצוע מוסמך.',
-      '## תגובות גולשים',
-      'אנחנו רשאים להסתיר או למחוק תגובות פוגעניות, ספאם או תגובות שמפרסמות פרטים אישיים, ולחסום משתמשים שמפרים את הכללים.',
-      '## קניין רוחני',
-      'התכנים באתר מוגנים בזכויות יוצרים. מותר לשתף קישורים; העתקת תוכן מלא דורשת אישור בכתב.',
-    ].join('\n\n'),
-  },
+  accessibility: ACCESSIBILITY_PAGE,
+  privacy: PRIVACY_PAGE,
+  terms: TERMS_PAGE,
+  'comment-rules': COMMENT_RULES_PAGE,
 };
 
-export const DEFAULT_SITE: SiteSettings = {
-  links: Object.fromEntries(SITE_LINK_KEYS.map((k) => [k, ''])) as SiteSettings['links'],
+export const DEFAULT_SITE: SiteSettings = SiteSettings.parse({
+  links: Object.fromEntries(SITE_LINK_KEYS.map((k) => [k, ''])),
   contact: { email: '', phone: '', address: '' },
   pages: DEFAULT_PAGES,
-};
+});
 
 export async function getSite(s: Services): Promise<SiteSettings> {
-  const stored = await s.settings.getSetting<unknown>(KEY);
-  if (!stored) return DEFAULT_SITE;
-  const merged = { ...DEFAULT_SITE, ...(stored as object) };
+  const stored = (await s.settings.getSetting<Partial<SiteSettings>>(KEY)) ?? {};
+  // Pages merge one by one, so a page added in a later version gets its default text.
+  const merged = { ...DEFAULT_SITE, ...stored, pages: { ...DEFAULT_SITE.pages, ...(stored.pages ?? {}) } };
   const parsed = SiteSettings.safeParse(merged);
   return parsed.success ? parsed.data : DEFAULT_SITE;
 }
 
+/** Saves what the CMS sent, except the terms version, which only `publishLegalVersion` changes. */
 export async function saveSite(s: Services, staffId: string, value: SiteSettings): Promise<void> {
-  await s.settings.setSetting(KEY, value, staffId);
+  const current = await getSite(s);
+  await s.settings.setSetting(KEY, { ...value, legal: current.legal }, staffId);
+}
+
+export async function legalVersion(s: Services): Promise<string> {
+  return (await getSite(s)).legal.version;
+}
+
+/** Today's date as the new version ("2026-10-12", then "2026-10-12.2" for a second one that day). */
+export async function publishLegalVersion(s: Services, staffId: string, now = new Date()): Promise<string> {
+  const site = await getSite(s);
+  const today = now.toISOString().slice(0, 10);
+  const [day, n] = site.legal.version.split('.');
+  const version = day === today ? `${today}.${Number(n ?? 1) + 1}` : today;
+  await s.settings.setSetting(KEY, { ...site, legal: { version } }, staffId);
+  return version;
 }
 
 export async function publicSite(s: Services): Promise<PublicSite> {
@@ -104,12 +101,25 @@ export async function publicSite(s: Services): Promise<PublicSite> {
     links: Object.fromEntries(Object.entries(site.links).filter(([, v]) => v)),
     contact: site.contact,
     pages: PAGE_SLUGS.map((slug) => ({ slug, title: site.pages[slug].title })),
+    // No third-party ad cookies yet, so the banner only asks about the terms.
+    consent: { version: site.legal.version, adsCookies: false },
   };
+}
+
+/** Fills {שם החברה} and the other tokens; a missing value stays visible as "[להשלמה: …]". */
+export function fillTokens(body: string, company: CompanyDetails, fallbackEmail: string): string {
+  let out = body;
+  for (const [token, field] of Object.entries(PAGE_TOKENS) as [string, keyof CompanyDetails][]) {
+    const value = company[field] || (field === 'privacyEmail' || field === 'accessibilityEmail' ? fallbackEmail : '');
+    out = out.split(token).join(value || `[להשלמה: ${COMPANY_LABELS[field]}]`);
+  }
+  return out;
 }
 
 export async function publicPage(s: Services, slug: PageSlug): Promise<PublicPage> {
   const site = await getSite(s);
   const info = await s.settings.settingInfo(KEY);
   const page = site.pages[slug];
-  return { slug, title: page.title, bodyHtml: docToHtml(textToDoc(page.body)), updatedAt: info?.updatedAt.toISOString() ?? null };
+  const body = fillTokens(page.body, site.company, site.contact.email);
+  return { slug, title: page.title, bodyHtml: docToHtml(textToDoc(body)), updatedAt: info?.updatedAt.toISOString() ?? null };
 }

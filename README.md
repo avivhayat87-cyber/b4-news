@@ -41,7 +41,7 @@ The app: `npm run dev:app`, then press `w` for the web build or scan the QR code
 ## Connecting services (CMS > הגדרות)
 
 - **חיבורים**: Claude (writing), Gemini (images), outgoing email (SMTP), and social accounts (Facebook page, Instagram, Telegram bot). Keys are stored encrypted, shown only as their last characters, and take effect immediately; each has a "בדיקת חיבור" button.
-- **פרטי האתר**: social and app links, contact details, and the info pages (About, Contact, Advertise, Accessibility, Privacy, Terms). Empty links are hidden on the site and in the app.
+- **פרטי האתר**: social and app links, contact details, company details for the legal pages, the terms version readers accept, and the info pages (About, Contact, Advertise, Accessibility, Privacy, Terms, Comment rules). Empty links are hidden on the site and in the app.
 - **הגדרות אתרים**: paste a list of news-site links; each one is set up automatically (RSS / news sitemap detection, a section filter for section links, a live test) and waits for a developer/admin "אישור כולם". Sites that block bots or have no feed need a manual trigger.
 
 ## The newsroom process (CMS)
@@ -49,7 +49,7 @@ The app: `npm run dev:app`, then press `w` for the web build or scan the QR code
 1. **הגדרות אתרים**: an editor adds a site (name + link); the developer gets an email, builds the trigger (RSS / sitemap / HTML selectors), tests it against the live site and approves it.
 2. **איתור כתבות**: one click fetches only what was published since the last run, from every active site. Every run is kept with its date and count; an article from an older run can be moved into the latest one.
 3. Results are grouped by section with source, thumbnail, headline and first paragraph. Tick articles, then **save as a magazine** (or as single articles with a color label) in **עריכות שמורות**.
-4. **The editor**: the original (read-only) beside the canvas. The AI has already written its own version "as an external reporter" and 4 images. Ask the AI for changes in the chat (on a selected passage, or the whole article), edit by hand; everything autosaves. Choose main / trending / section, tags, byline, push. "Not for publishing" sets an article aside.
+4. **The editor**: the original (read-only) beside the canvas. The AI has already written its own version "as an external reporter" and 3 quick, low-resolution image drafts; only the one the editor chooses is redrawn at full quality and cut into the site's renditions. Ask the AI for changes in the chat (on a selected passage, or the whole article), edit by hand; everything autosaves. Choose main / trending / section, tags, byline, push. "Not for publishing" sets an article aside.
 5. **Social networks** open after the text is marked final: a story image different from the article image, a headline and two sentences; regenerate, edit, upload, or comment to the AI. On Facebook, Instagram and X the link goes in the first comment.
 6. **Preview and final approval**: every article with its date, editor and tags. Publishing goes to the site first, then to the networks; each correction goes back to the AI (see **למידת ה-AI**).
 

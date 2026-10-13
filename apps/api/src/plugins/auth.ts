@@ -1,7 +1,7 @@
 // Resolves the signed-in reader (cookie or Bearer token from the app) and staff
 // member (cookie) on every request, and provides route guards.
 import type { StaffRole } from '@b4/shared';
-import { type Db, and, eq, gt, readers, sessions, sql, users } from '@b4/db';
+import { type Db, and, eq, gt, isNull, readers, sessions, sql, staffApiTokens, users } from '@b4/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { Config } from '../config';
@@ -9,8 +9,12 @@ import { errors } from '../errors';
 import { newToken, sha256 } from '../lib/crypto';
 import { COOKIE } from './security';
 
-export type ReaderCtx = { id: string; email: string; displayName: string; banned: boolean; sessionId: string };
-export type StaffCtx = { id: string; email: string; fullName: string; role: StaffRole; sessionId: string };
+export type ReaderCtx = { id: string; email: string; displayName: string; banned: boolean; termsVersion: string | null; sessionId: string };
+/** apiTokenId: signed in with a personal access token (the Claude app), which reaches only the agent's tools. */
+export type StaffCtx = { id: string; email: string; fullName: string; role: StaffRole; sessionId: string; apiTokenId?: string };
+
+/** Personal access tokens carry a prefix, so they are never mistaken for a reader's app token. */
+export const STAFF_TOKEN_PREFIX = 'b4s_';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -31,12 +35,14 @@ function bearerToken(header: string | undefined): string | undefined {
 
 async function loadReader(db: Db, token: string): Promise<ReaderCtx | null> {
   const [row] = await db
-    .select({ sessionId: sessions.id, id: readers.id, email: readers.email, displayName: readers.displayName, status: readers.status })
+    .select({ sessionId: sessions.id, id: readers.id, email: readers.email, displayName: readers.displayName, status: readers.status, termsVersion: readers.termsVersion })
     .from(sessions)
     .innerJoin(readers, eq(sessions.readerId, readers.id))
     .where(and(eq(sessions.id, sha256(token)), eq(sessions.kind, 'reader'), gt(sessions.expiresAt, sql`now()`)))
     .limit(1);
-  return row ? { id: row.id, email: row.email, displayName: row.displayName, banned: row.status === 'banned', sessionId: row.sessionId } : null;
+  return row
+    ? { id: row.id, email: row.email, displayName: row.displayName, banned: row.status === 'banned', termsVersion: row.termsVersion, sessionId: row.sessionId }
+    : null;
 }
 
 async function loadStaff(db: Db, token: string): Promise<StaffCtx | null> {
@@ -49,16 +55,31 @@ async function loadStaff(db: Db, token: string): Promise<StaffCtx | null> {
   return row && row.isActive ? { id: row.id, email: row.email, fullName: row.fullName, role: row.role, sessionId: row.sessionId } : null;
 }
 
+async function loadStaffByApiToken(db: Db, token: string): Promise<StaffCtx | null> {
+  const [row] = await db
+    .select({ tokenId: staffApiTokens.id, id: users.id, email: users.email, fullName: users.fullName, role: users.role, isActive: users.isActive })
+    .from(staffApiTokens)
+    .innerJoin(users, eq(staffApiTokens.userId, users.id))
+    .where(and(eq(staffApiTokens.tokenHash, sha256(token)), isNull(staffApiTokens.revokedAt)))
+    .limit(1);
+  if (!row?.isActive) return null;
+  await db.update(staffApiTokens).set({ lastUsedAt: new Date() }).where(eq(staffApiTokens.id, row.tokenId));
+  return { id: row.id, email: row.email, fullName: row.fullName, role: row.role, sessionId: `token:${row.tokenId}`, apiTokenId: row.tokenId };
+}
+
 export const authPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) => {
   const { db } = opts;
   app.decorateRequest('reader', null);
   app.decorateRequest('staff', null);
 
   app.addHook('onRequest', async (req) => {
-    const readerToken = bearerToken(req.headers.authorization) ?? req.cookies[COOKIE.reader];
+    const bearer = bearerToken(req.headers.authorization);
+    const staffBearer = bearer?.startsWith(STAFF_TOKEN_PREFIX) ? bearer : undefined;
+    const readerToken = (staffBearer ? undefined : bearer) ?? req.cookies[COOKIE.reader];
     if (readerToken) req.reader = await loadReader(db, readerToken);
     const staffToken = req.cookies[COOKIE.staff];
     if (staffToken) req.staff = await loadStaff(db, staffToken);
+    else if (staffBearer) req.staff = await loadStaffByApiToken(db, staffBearer);
   });
 });
 

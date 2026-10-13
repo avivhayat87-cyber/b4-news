@@ -4,10 +4,10 @@ import {
   AutosaveResult,
   ChatMessageDto,
   DraftDetail,
+  DraftImagesDto,
   DraftMetaInput,
   GenerateImagesInput,
   GenerateSocialInput,
-  ImageBatchDto,
   JobRef,
   MagazineDetail,
   PublishInput,
@@ -15,6 +15,7 @@ import {
   PublishPreview,
   RefineInput,
   SavedEdits,
+  SimilarityDto,
   SkipInput,
   SocialPackageDto,
   SocialTargetsInput,
@@ -105,18 +106,14 @@ export const draftRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
     return reply.status(202).send();
   });
 
-  app.get(
-    '/drafts/:id/images',
-    { schema: { params, response: { 200: z.object({ batches: z.array(ImageBatchDto), activeJob: JobRef.nullable() }) } } },
-    async (req) => ({ batches: await drafts.imageBatchesOf(s, req.params.id, 'article'), activeJob: await drafts.imagesJob(s, req.params.id) }),
-  );
+  app.get('/drafts/:id/images', { schema: { params, response: { 200: DraftImagesDto } } }, async (req) => drafts.draftImages(s, req.params.id));
 
   app.post(
     '/drafts/:id/images',
     { schema: { params, body: GenerateImagesInput, response: { 202: jobId } }, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const staff = requireStaff(req, 'editor');
-      return reply.status(202).send({ jobId: await drafts.requestImages(s, staff.id, req.params.id, 'article', req.body.prompt) });
+      return reply.status(202).send({ jobId: await drafts.requestImages(s, staff.id, req.params.id, 'article', req.body.prompt, { useSourceImage: req.body.useSourceImage }) });
     },
   );
 
@@ -139,6 +136,14 @@ export const draftRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
   });
 
   app.get('/drafts/:id/revisions', { schema: { params } }, async (req) => drafts.revisions(s, req.params.id));
+
+  app.get('/drafts/:id/similarity', { schema: { params, response: { 200: SimilarityDto } } }, async (req) => drafts.similarityToOriginal(s, req.params.id));
+
+  /** "Accept the recommendation": the AI rewords the passages copied from the original. */
+  app.post('/drafts/:id/rewrite-copied', { schema: { params, response: { 202: jobId } }, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor');
+    return reply.status(202).send({ jobId: await drafts.requestCopyRewrite(s, staff, req.params.id) });
+  });
 
   app.post(
     '/drafts/:id/revisions/:revisionId/restore',

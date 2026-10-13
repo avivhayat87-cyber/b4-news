@@ -3,9 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { marketsHref } from '@/lib/markets';
 import { CATEGORIES, categoryHref } from '@/lib/site';
 
-const items = [{ href: '/', label: 'ראשי' }, ...CATEGORIES.map((c) => ({ href: categoryHref(c.slug), label: c.name }))];
+const items = [
+  { href: '/', label: 'ראשי' },
+  { href: marketsHref(), label: 'שווקים' },
+  ...CATEGORIES.map((c) => ({ href: categoryHref(c.slug), label: c.name })),
+];
 
 const linkClass = (active: boolean) =>
   `block whitespace-nowrap border-b-4 px-2.5 pb-2.5 pt-3 text-[15px] outline-offset-[-3px] ${

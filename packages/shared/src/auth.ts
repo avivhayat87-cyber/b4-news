@@ -23,6 +23,8 @@ export const VerifyCodeInput = z.object({
   code: z.string().trim().regex(/^\d{6}$/, 'הקוד מורכב מ-6 ספרות'),
   /** Required on first sign-in, ignored afterwards. */
   displayName: DisplayName.optional(),
+  /** The terms checkbox. Required on first sign-in and after a new terms version. */
+  acceptTerms: z.boolean().optional(),
   /** "app" returns a bearer token in the body instead of setting a cookie. */
   client: z.enum(['web', 'app']).default('web'),
 });
@@ -32,6 +34,8 @@ export const ReaderDto = z.object({
   id: z.string().uuid(),
   email: z.string(),
   displayName: z.string(),
+  /** Has accepted the current terms version (otherwise they are asked before commenting). */
+  termsAccepted: z.boolean(),
 });
 export type ReaderDto = z.infer<typeof ReaderDto>;
 

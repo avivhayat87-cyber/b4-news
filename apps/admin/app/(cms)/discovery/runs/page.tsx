@@ -1,17 +1,32 @@
 'use client';
-import type { RunDto } from '@b4/shared';
+import type { RunDto, SourceRegion } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Badge, Empty, ErrorBox, Loading, PageHeader } from '@/components/ui';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+import { Badge, Empty, ErrorBox, Loading, PageHeader, cx } from '@/components/ui';
 import { admin } from '@/lib/api';
 import { RUN_STATUS, formatDateTime } from '@/lib/labels';
 
-export default function RunsPage() {
-  const runs = useQuery({ queryKey: ['run', 'list'], queryFn: () => admin.get<RunDto[]>('/discovery/runs?limit=60') });
+function Runs() {
+  const region: SourceRegion = useSearchParams().get('region') === 'international' ? 'international' : 'local';
+  const runs = useQuery({ queryKey: ['run', 'list', region], queryFn: () => admin.get<RunDto[]>(`/discovery/runs?limit=60&region=${region}`) });
 
   return (
     <>
       <PageHeader title="איתורים קודמים" subtitle="כל איתור נשמר עם התאריך ומספר הכתבות שנמצאו. אפשר להיכנס ולהעביר כתבה לאיתור האחרון." />
+      <div className="mb-5 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist" aria-label="סוג האתרים">
+        {(
+          [
+            ['local', '/discovery/runs', 'אתרים בישראל'],
+            ['international', '/discovery/runs?region=international', 'אתרים מחו״ל'],
+          ] as const
+        ).map(([id, href, label]) => (
+          <Link key={id} href={href} role="tab" aria-selected={region === id} className={cx('rounded-md px-4 py-2 font-bold', region === id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-stone')}>
+            {label}
+          </Link>
+        ))}
+      </div>
       {runs.isPending ? (
         <Loading />
       ) : runs.isError ? (
@@ -58,5 +73,13 @@ export default function RunsPage() {
         </div>
       )}
     </>
+  );
+}
+
+export default function RunsPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <Runs />
+    </Suspense>
   );
 }

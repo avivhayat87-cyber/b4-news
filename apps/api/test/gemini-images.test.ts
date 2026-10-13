@@ -25,13 +25,39 @@ describe('Gemini images', () => {
     expect(calls[0]!.body).toMatchObject({
       model: 'gemini-nano-banana-2.1',
       input: 'A harbor at dawn',
-      response_format: { type: 'image', aspect_ratio: '16:9', image_size: '2K' },
+      response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: '16:9', image_size: '2K' },
       store: false,
     });
 
     const story = stub(() => json(200, { output_image: { data: png(0) } }));
     await new GeminiImages('k', 'm', '1K', story.fn).generate('p', { count: 1, shape: 'portrait' });
     expect(story.calls[0]!.body.response_format).toMatchObject({ aspect_ratio: '9:16', image_size: '1K' });
+  });
+
+  it('sends a reference image beside the text when given one', async () => {
+    const { fn, calls } = stub(() => json(200, { output_image: { data: png(1) } }));
+    const photo = Buffer.from([0xff, 0xd8, 0xff]);
+    await new GeminiImages('k', 'm', '2K', fn).generate('Use it as inspiration', { count: 1, shape: 'landscape', references: [{ data: photo, mimeType: 'image/jpeg' }] });
+    expect(calls[0]!.body.input).toEqual([
+      { type: 'text', text: 'Use it as inspiration' },
+      { type: 'image', mime_type: 'image/jpeg', data: photo.toString('base64') },
+    ]);
+  });
+
+  it('redraws a chosen draft from the draft itself', async () => {
+    const { fn, calls } = stub(() => json(200, { output_image: { data: png(1) } }));
+    const draft = Buffer.from([0xff, 0xd8, 0xff]);
+    const image = await new GeminiImages('k', 'gemini-nano-banana-2.1', '4K', fn).finish('Keep it as it is', { data: draft, mimeType: 'image/jpeg' }, 'landscape');
+    expect(String(image)).toBe('image-1');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toMatchObject({
+      model: 'gemini-nano-banana-2.1',
+      input: [
+        { type: 'text', text: 'Keep it as it is' },
+        { type: 'image', mime_type: 'image/jpeg', data: draft.toString('base64') },
+      ],
+      response_format: { aspect_ratio: '16:9', image_size: '4K' },
+    });
   });
 
   it('reads the image from the output steps when there is no output_image', async () => {

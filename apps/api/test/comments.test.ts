@@ -32,13 +32,18 @@ describe('reader sign-in', () => {
     expect(noName.statusCode).toBe(409);
     expect(noName.json().code).toBe('name_required');
 
+    const noTerms = await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/reader/verify', payload: { email, code, displayName: 'דנה כהן' } });
+    expect(noTerms.statusCode).toBe(409);
+    expect(noTerms.json().code).toBe('terms_required');
+
     const withName = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/reader/verify',
-      payload: { email, code, displayName: 'דנה כהן' },
+      payload: { email, code, displayName: 'דנה כהן', acceptTerms: true },
     });
     expect(withName.statusCode).toBe(200);
     expect(withName.json().reader.displayName).toBe('דנה כהן');
+    expect(withName.json().reader.termsAccepted).toBe(true);
     const cookie = withName.cookies.find((c) => c.name === 'b4_rs');
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.sameSite).toBe('Lax');
@@ -59,7 +64,7 @@ describe('reader sign-in', () => {
       const res = await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/reader/verify', payload: { email, code: wrong, displayName: 'x y' } });
       expect(res.statusCode).toBe(400);
     }
-    const late = await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/reader/verify', payload: { email, code: real, displayName: 'x y' } });
+    const late = await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/reader/verify', payload: { email, code: real, displayName: 'x y', acceptTerms: true } });
     expect(late.statusCode).toBe(400);
   });
 
@@ -69,7 +74,7 @@ describe('reader sign-in', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/reader/verify',
-      payload: { email, code: codeFrom(ctx, email), displayName: 'משתמש אפליקציה', client: 'app' },
+      payload: { email, code: codeFrom(ctx, email), displayName: 'משתמש אפליקציה', acceptTerms: true, client: 'app' },
     });
     const { token } = res.json();
     expect(token).toBeTypeOf('string');

@@ -1,11 +1,14 @@
-// A discovery run ("איתור כתבות"): every active source, only what was published
-// since that source's last successful run (delta fetch), never an article twice.
-import type { SelectorConfig } from '@b4/shared';
+// A discovery run ("איתור כתבות"): every active source of one region (Israeli or
+// international), only what was published since that source's last successful
+// run (delta fetch), never an article twice. Foreign articles are marked with
+// their language and get Hebrew headlines right after the run.
+import type { SelectorConfig, SourceRegion } from '@b4/shared';
 import {
   and,
   categories,
   eq,
   inArray,
+  jobs,
   scrapedItemPayloads,
   scrapedItems,
   scrapeRunItems,
@@ -16,25 +19,47 @@ import {
 } from '@b4/db';
 import { AppError } from '../../errors';
 import { enqueue } from '../../lib/jobs';
-import { classifyHeadline } from '../classify';
+import { classifyHeadline, outsideEconomy } from '../classify';
 import type { Services } from '../context';
+import { detectLanguage, queueHeadlineTranslation } from '../translate';
 import { type SourceSpec, canonicalUrl, categoryFor, completeItem, contentHash, listItems, sha256 } from './collect';
 import { RobotsCache } from './robots';
 
 const BREAK_AFTER_FAILURES = 5;
 
-export async function startRun(s: Services, staffId: string | null, trigger: 'manual' | 'schedule' = 'manual') {
+/** Israeli and international sites are scanned by separate runs; one run per region at a time. */
+export async function startRun(s: Services, staffId: string | null, trigger: 'manual' | 'schedule' = 'manual', region: SourceRegion = 'local') {
   const [running] = await s.db
     .select({ id: scrapeRuns.id })
     .from(scrapeRuns)
-    .where(inArray(scrapeRuns.status, ['queued', 'running']))
+    .where(and(eq(scrapeRuns.region, region), inArray(scrapeRuns.status, ['queued', 'running'])))
     .limit(1);
-  if (running) return { runId: running.id, created: false };
+  if (running) {
+    // A run whose job is gone (the process stopped mid-run) would block scanning for good: close it and start afresh.
+    const [alive] = await s.db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.kind, 'discovery.run'), sql`${jobs.payload}->>'runId' = ${running.id}`, inArray(jobs.status, ['queued', 'running'])))
+      .limit(1);
+    if (alive) return { runId: running.id, created: false };
+    await failRun(s, running.id, 'the scan stopped before it finished');
+  }
 
-  const [{ n } = { n: 0 }] = await s.db.select({ n: sql<number>`count(*)::int` }).from(sources).where(eq(sources.status, 'active'));
-  if (n === 0) throw new AppError(409, 'no_sources', 'אין עדיין אתרים פעילים. הוסיפו אתר ב"הגדרות אתרים" וחכו לאישור המפתח.');
+  const [{ n } = { n: 0 }] = await s.db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(sources)
+    .where(and(eq(sources.status, 'active'), eq(sources.region, region)));
+  if (n === 0) {
+    throw new AppError(
+      409,
+      'no_sources',
+      region === 'international'
+        ? 'אין עדיין אתרים פעילים מחו״ל. הוסיפו אתרים ב"הגדרות אתרים" ← "אתרים מחו״ל" ואשרו אותם.'
+        : 'אין עדיין אתרים פעילים. הוסיפו אתר ב"הגדרות אתרים" וחכו לאישור המפתח.',
+    );
+  }
 
-  const [run] = await s.db.insert(scrapeRuns).values({ trigger, triggeredBy: staffId, status: 'queued' }).returning({ id: scrapeRuns.id });
+  const [run] = await s.db.insert(scrapeRuns).values({ trigger, region, triggeredBy: staffId, status: 'queued' }).returning({ id: scrapeRuns.id });
   await enqueue(s.db, 'discovery.run', { runId: run!.id }, { createdBy: staffId, maxAttempts: 1 });
   return { runId: run!.id, created: true };
 }
@@ -50,9 +75,13 @@ async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>)
 
 export async function runDiscovery(s: Services, runId: string): Promise<{ found: number; inserted: number }> {
   const { db } = s;
-  await db.update(scrapeRuns).set({ status: 'running', startedAt: new Date() }).where(eq(scrapeRuns.id, runId));
+  const [run] = await db.update(scrapeRuns).set({ status: 'running', startedAt: new Date() }).where(eq(scrapeRuns.id, runId)).returning({ region: scrapeRuns.region, triggeredBy: scrapeRuns.triggeredBy });
   const categoryIds = new Map((await db.select({ id: categories.id, slug: categories.slug }).from(categories)).map((c) => [c.slug, c.id]));
-  const active = await db.select().from(sources).where(eq(sources.status, 'active'));
+  const active = await db
+    .select()
+    .from(sources)
+    .where(and(eq(sources.status, 'active'), eq(sources.region, run?.region ?? 'local')));
+  const foreign: string[] = [];
   const robots = new RobotsCache(s.fetch, s.config.scraper.userAgent);
 
   let totalFound = 0;
@@ -88,9 +117,12 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
             const [dup] = await db.select({ id: scrapedItems.id }).from(scrapedItems).where(eq(scrapedItems.contentHash, hash)).limit(1);
             if (dup) return;
           }
+          // A site rule, then the site's default section, then a keyword guess. Items from non-economic
+          // sections (politics, sport…) and items nothing places stay without one: "פוליטיקה ושונות".
           const slug = categoryFor(item.url, spec.config) ?? null;
-          const categoryId =
-            (slug ? categoryIds.get(slug) : undefined) ?? source.defaultCategoryId ?? categoryIds.get(classifyHeadline(`${item.title} ${item.intro ?? ''}`) ?? '') ?? null;
+          const guess = outsideEconomy(item.url) ? null : classifyHeadline(`${item.title} ${item.intro ?? ''}`);
+          const categoryId = (slug ? categoryIds.get(slug) : undefined) ?? source.defaultCategoryId ?? categoryIds.get(guess ?? '') ?? null;
+          const language = detectLanguage(`${item.title} ${item.intro ?? ''} ${(item.bodyText ?? '').slice(0, 2000)}`, source.language);
           const [row] = await db
             .insert(scrapedItems)
             .values({
@@ -105,10 +137,12 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
               imageUrl: item.imageUrl,
               publishedAt: item.publishedAt,
               categoryId,
+              language,
             })
             .onConflictDoNothing({ target: scrapedItems.urlHash })
             .returning({ id: scrapedItems.id });
           if (!row) return;
+          if (language) foreign.push(row.id);
           await db.insert(scrapedItemPayloads).values({ itemId: row.id, raw: item.raw });
           await db.insert(scrapeRunItems).values({ runId, itemId: row.id, origin: 'found' });
           inserted++;
@@ -156,11 +190,32 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
 
   const status = active.length === 0 || failedSources === active.length ? 'failed' : failedSources ? 'partial' : 'succeeded';
   await db.update(scrapeRuns).set({ status, finishedAt: new Date(), itemsFound: totalFound, itemsNew: totalNew }).where(eq(scrapeRuns.id, runId));
+  // Foreign articles get Hebrew headlines in the background; the results show them as they arrive.
+  await queueHeadlineTranslation(s, foreign, run?.triggeredBy ?? null);
   return { found: totalFound, inserted: totalNew };
 }
 
-/** Marks a run failed if its job dies (e.g. the worker was stopped). */
+/**
+ * Closes a run whose job died (e.g. the worker was stopped): the sites it had finished keep
+ * their articles (status "partial"), the one it was in the middle of is marked failed.
+ */
 export async function failRun(s: Services, runId: string, message: string) {
-  await s.db.update(scrapeRuns).set({ status: 'failed', finishedAt: new Date() }).where(and(eq(scrapeRuns.id, runId), inArray(scrapeRuns.status, ['queued', 'running'])));
+  await s.db
+    .update(scrapeRunSources)
+    .set({ status: 'failed', error: message.slice(0, 500) })
+    .where(and(eq(scrapeRunSources.runId, runId), eq(scrapeRunSources.status, 'running')));
+  const done = await s.db
+    .select({ found: scrapeRunSources.itemsFound, inserted: scrapeRunSources.itemsNew })
+    .from(scrapeRunSources)
+    .where(and(eq(scrapeRunSources.runId, runId), eq(scrapeRunSources.status, 'succeeded')));
+  await s.db
+    .update(scrapeRuns)
+    .set({
+      status: done.length ? 'partial' : 'failed',
+      finishedAt: new Date(),
+      itemsFound: done.reduce((n, d) => n + d.found, 0),
+      itemsNew: done.reduce((n, d) => n + d.inserted, 0),
+    })
+    .where(and(eq(scrapeRuns.id, runId), inArray(scrapeRuns.status, ['queued', 'running'])));
   s.log.error({ runId, message }, 'discovery run failed');
 }

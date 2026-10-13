@@ -80,7 +80,7 @@ function IntegrationCard({ status }: { status: IntegrationStatus }) {
                 key={f.key}
                 label={f.label}
                 htmlFor={`${status.id}-${f.key}`}
-                hint={f.secret ? (state?.configured ? `שמור: ${state.hint}. השאירו ריק כדי לא לשנות.` : f.help) : `ברירת מחדל: ${f.defaultValue ?? '—'}`}
+                hint={f.secret ? (state?.configured ? `שמור: ${state.hint}. השאירו ריק כדי לא לשנות.` : f.help) : `${f.help ? `${f.help} ` : ''}ברירת מחדל: ${f.defaultValue ?? '—'}`}
               >
                 <div className="flex gap-2">
                   <input
@@ -131,8 +131,11 @@ function IntegrationCard({ status }: { status: IntegrationStatus }) {
 }
 
 const TOKEN_HELP: Record<SocialPlatform, { id: string; token: string }> = {
-  facebook: { id: 'מזהה העמוד (Page ID)', token: 'Page Access Token עם הרשאות pages_manage_posts ו-pages_manage_engagement' },
-  instagram: { id: 'מזהה חשבון האינסטגרם העסקי (IG User ID)', token: 'Access Token עם instagram_content_publish' },
+  facebook: { id: 'מזהה העמוד (Page ID, מספר)', token: 'Page Access Token קבוע, עם pages_show_list, pages_read_engagement, pages_manage_posts ו-pages_manage_engagement (לתגובה עם הקישור)' },
+  instagram: {
+    id: 'מזהה האינסטגרם (IG User ID, מספר; לא @שם)',
+    token: 'ה-Page Access Token של עמוד הפייסבוק המקושר, עם instagram_basic, instagram_content_publish ו-instagram_manage_comments (לתגובה עם הקישור)',
+  },
   telegram: { id: 'שם הערוץ (@channel) או מזהה הצ׳אט', token: 'טוקן של בוט מ-@BotFather. הבוט צריך להיות מנהל בערוץ' },
   whatsapp: { id: 'שם או קישור הערוץ', token: 'לערוצי וואטסאפ אין API לפרסום; הפוסטים יוכנו לפרסום ידני' },
   x: { id: 'שם המשתמש', token: 'פרסום אוטומטי ל-X עוד לא מחובר; הפוסטים יוכנו לפרסום ידני' },
@@ -141,7 +144,8 @@ const TOKEN_HELP: Record<SocialPlatform, { id: string; token: string }> = {
 
 const AUTOMATIC: SocialPlatform[] = ['facebook', 'instagram', 'telegram'];
 
-function AccountRow({ account }: { account: SocialAccountDto }) {
+/** duplicate: an extra account of the same network (left from before one-per-network), to delete. */
+function AccountRow({ account, duplicate }: { account: SocialAccountDto; duplicate: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [token, setToken] = useState('');
@@ -158,6 +162,35 @@ function AccountRow({ account }: { account: SocialAccountDto }) {
   });
   const check = useMutation({ mutationFn: () => admin.post<ConnectionTest>(`/social-accounts/${account.id}/test`), onSuccess: setTest, onError: (e) => toast(errorMessage(e), 'danger') });
   const toggle = useMutation({ mutationFn: () => admin.patch(`/social-accounts/${account.id}`, { isActive: !account.isActive }), onSuccess: refresh, onError: (e) => toast(errorMessage(e), 'danger') });
+  // Correcting the ID keeps the account's token.
+  const changeId = useMutation({
+    mutationFn: (externalId: string) => admin.patch(`/social-accounts/${account.id}`, { externalId }),
+    onSuccess: () => {
+      setTest(null);
+      refresh();
+      toast('המזהה עודכן. אפשר ללחוץ "בדיקת חיבור".');
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  const askId = () => {
+    const next = prompt(TOKEN_HELP[account.platform].id, account.externalId)?.trim();
+    if (next && next !== account.externalId) changeId.mutate(next);
+  };
+  // Deleting is for good: the token and the account's posts go too. Using the network again means adding it anew.
+  const remove = useMutation({
+    mutationFn: () => admin.del(`/social-accounts/${account.id}`),
+    onSuccess: () => {
+      refresh();
+      toast(`החשבון "${account.displayName}" נמחק.`);
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  const askRemove = () => {
+    const ok = confirm(
+      `למחוק את "${account.displayName}" (${PLATFORM[account.platform]})?\n\nהטוקן יימחק, שום דבר לא יפורסם אליו יותר, והוא יוסר מכל הכתבות. כדי להשתמש ברשת שוב, מוסיפים חשבון חדש.`,
+    );
+    if (ok) remove.mutate();
+  };
   const automatic = AUTOMATIC.includes(account.platform);
 
   return (
@@ -171,8 +204,15 @@ function AccountRow({ account }: { account: SocialAccountDto }) {
         {account.linkInFirstComment && <Badge tone="info">קישור בתגובה הראשונה</Badge>}
         {automatic ? <Badge tone={account.connected ? 'ok' : 'warn'}>{account.connected ? 'טוקן מוגדר' : 'חסר טוקן'}</Badge> : <Badge>פרסום ידני</Badge>}
         {!account.isActive && <Badge>מושבת</Badge>}
-        <Button size="sm" variant="ghost" className="mr-auto" onClick={() => toggle.mutate()}>
+        {duplicate && <Badge tone="warn">יש עוד חשבון לרשת הזו: מחקו את המיותר</Badge>}
+        <Button size="sm" variant="ghost" className="mr-auto" busy={changeId.isPending} onClick={askId}>
+          שינוי מזהה
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => toggle.mutate()}>
           {account.isActive ? 'השבתה' : 'הפעלה'}
+        </Button>
+        <Button size="sm" variant="ghost" className="text-brand" busy={remove.isPending} onClick={askRemove}>
+          מחיקה
         </Button>
       </div>
       {automatic ? (
@@ -219,10 +259,13 @@ function AccountRow({ account }: { account: SocialAccountDto }) {
   );
 }
 
-function AddAccount() {
+/** One account per network: only the networks that have none yet are offered. */
+function AddAccount({ taken }: { taken: SocialPlatform[] }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [platform, setPlatform] = useState<SocialPlatform>('facebook');
+  const free = SOCIAL_PLATFORMS.filter((p) => !taken.includes(p));
+  const [chosen, setPlatform] = useState<SocialPlatform>('facebook');
+  const platform = free.includes(chosen) ? chosen : free[0]!;
   const [displayName, setDisplayName] = useState('');
   const [externalId, setExternalId] = useState('');
   const create = useMutation({
@@ -242,6 +285,9 @@ function AddAccount() {
     },
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
+  if (free.length === 0) {
+    return <p className="mt-5 border-t border-line-soft pt-5 text-sm text-muted">לכל הרשתות כבר יש חשבון. כדי להחליף חשבון, מוחקים אותו ומוסיפים חדש.</p>;
+  }
   return (
     <form
       className="mt-5 grid gap-3 border-t border-line-soft pt-5 md:grid-cols-4"
@@ -252,7 +298,7 @@ function AddAccount() {
     >
       <Field label="רשת" htmlFor="sa-p">
         <select id="sa-p" value={platform} onChange={(e) => setPlatform(e.target.value as SocialPlatform)} className={inputClass}>
-          {SOCIAL_PLATFORMS.map((p) => (
+          {free.map((p) => (
             <option key={p} value={p}>
               {PLATFORM[p]}
               {LINK_IN_FIRST_COMMENT[p] ? ' (קישור בתגובה)' : ''}
@@ -278,6 +324,13 @@ function AddAccount() {
 export function Connections() {
   const integrations = useQuery({ queryKey: ['integrations'], queryFn: () => admin.get<IntegrationStatus[]>('/integrations') });
   const accounts = useQuery({ queryKey: ['social-accounts'], queryFn: () => admin.get<SocialAccountDto[]>('/social-accounts') });
+  const list = accounts.data ?? [];
+  const taken = [...new Set(list.map((a) => a.platform))];
+  // The extra ones of a network: the switched-off ones, or all of them when more than one is on.
+  const isDuplicate = (a: SocialAccountDto) => {
+    const same = list.filter((x) => x.platform === a.platform);
+    return same.length > 1 && (!a.isActive || same.filter((x) => x.isActive).length > 1);
+  };
   return (
     <div className="space-y-6">
       <p className="rounded-lg bg-info-soft px-4 py-3 text-sm text-info">
@@ -287,17 +340,18 @@ export function Connections() {
       <Card title="רשתות חברתיות">
         <p className="mb-4 text-sm text-ink-2">
           פייסבוק, אינסטגרם וטלגרם מתפרסמים אוטומטית אחרי שהכתבה עולה לאתר. בפייסבוק, אינסטגרם ו-X הקישור לכתבה נכנס לתגובה הראשונה. בשאר הרשתות הפוסט מוכן לפרסום ידני.
+          לכל רשת מחברים חשבון אחד. "השבתה" עוצרת אותו זמנית; "מחיקה" מסירה אותו לגמרי.
         </p>
         {accounts.isPending ? (
           <Loading />
         ) : (
           <ul className="space-y-3">
-            {accounts.data?.map((a) => (
-              <AccountRow key={a.id} account={a} />
+            {list.map((a) => (
+              <AccountRow key={a.id} account={a} duplicate={isDuplicate(a)} />
             ))}
           </ul>
         )}
-        <AddAccount />
+        {!accounts.isPending && <AddAccount taken={taken} />}
       </Card>
     </div>
   );

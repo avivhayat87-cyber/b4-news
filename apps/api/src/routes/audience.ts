@@ -1,30 +1,45 @@
-// Newsletter sign-up (double opt-in) and push-notification devices: /api/v1/public/*
-import { Email } from '@b4/shared';
-import { type Db, devices, eq, newsletterSubscribers, sql } from '@b4/db';
-import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+// Newsletter sign-up (double opt-in, with the terms accepted) and unsubscribe,
+// the consent banner's answer, and push-notification devices: /api/v1/public/*
+import { NewsletterSignupInput, UnsubscribeInput, VisitorConsentInput } from '@b4/shared';
+import { and, devices, eq, isNull, newsletterSubscribers, sql } from '@b4/db';
+import type { FastifyPluginAsyncZod, ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { Config } from '../config';
 import { AppError } from '../errors';
 import { newToken, sha256 } from '../lib/crypto';
-import type { Mailer } from '../lib/mailer';
+import { recordConsent } from '../services/consent';
+import type { Services } from '../services/context';
+import { validUnsubscribeToken } from '../services/newsletter';
+import { legalVersion } from '../services/site-settings';
 
-export const audienceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config; mailer: Mailer }> = async (app, { db, config, mailer }) => {
+export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
+  const { db, config, mailer } = s;
+
   app.post(
     '/newsletter',
-    { schema: { body: z.object({ email: Email }) }, config: { rateLimit: { max: 5, timeWindow: '1 hour' } } },
+    { schema: { body: NewsletterSignupInput }, config: { rateLimit: { max: 5, timeWindow: '1 hour' } } },
     async (req, reply) => {
       const token = newToken();
       const [row] = await db
         .insert(newsletterSubscribers)
         .values({ email: req.body.email, confirmTokenHash: sha256(token) })
+        // Someone who unsubscribed signs up again through the same confirmation link
+        // (their removal stays on record until they confirm).
         .onConflictDoUpdate({
           target: newsletterSubscribers.email,
-          set: { confirmTokenHash: sha256(token), unsubscribedAt: null },
-          setWhere: sql`${newsletterSubscribers.confirmedAt} is null`,
+          set: { confirmTokenHash: sha256(token), confirmedAt: null },
+          setWhere: sql`${newsletterSubscribers.confirmedAt} is null or ${newsletterSubscribers.unsubscribedAt} is not null`,
         })
         .returning({ id: newsletterSubscribers.id });
-      // Already confirmed addresses get no new mail; the answer is the same either way.
+      // Active subscribers get no new mail; the answer is the same either way.
       if (row) {
+        await recordConsent(db, config.hashPepper, {
+          subject: 'subscriber',
+          subscriberId: row.id,
+          termsVersion: await legalVersion(s),
+          channel: 'web',
+          ip: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
         const link = `${config.publicSiteUrl}/newsletter/confirm?token=${encodeURIComponent(token)}`;
         await mailer.send({
           to: req.body.email,
@@ -42,13 +57,57 @@ export const audienceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config; mai
     async (req, reply) => {
       const [row] = await db
         .update(newsletterSubscribers)
-        .set({ confirmedAt: new Date(), confirmTokenHash: null })
+        .set({ confirmedAt: new Date(), confirmTokenHash: null, unsubscribedAt: null })
         .where(eq(newsletterSubscribers.confirmTokenHash, sha256(req.body.token)))
         .returning({ id: newsletterSubscribers.id });
       if (!row) throw new AppError(400, 'token_invalid', 'הקישור לא תקין או שכבר נעשה בו שימוש');
       return reply.status(204).send();
     },
   );
+
+  const unsubscribe = async (id: string, token: string) => {
+    if (!validUnsubscribeToken(config, id, token)) throw new AppError(400, 'token_invalid', 'קישור ההסרה לא תקין');
+    // The row stays, with the time of the removal, as the record the law asks for.
+    await db
+      .update(newsletterSubscribers)
+      .set({ unsubscribedAt: new Date() })
+      .where(and(eq(newsletterSubscribers.id, id), isNull(newsletterSubscribers.unsubscribedAt)));
+  };
+
+  // From the unsubscribe page on the site.
+  app.post('/newsletter/unsubscribe', { schema: { body: UnsubscribeInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (req, reply) => {
+    await unsubscribe(req.body.id, req.body.token);
+    return reply.status(204).send();
+  });
+
+  // One-click unsubscribe from the mail client (RFC 8058): a form POST to the List-Unsubscribe address.
+  await app.register(async (scope) => {
+    scope.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body));
+    scope.withTypeProvider<ZodTypeProvider>().post(
+      '/newsletter/unsubscribe/:id/:token',
+      { schema: { params: UnsubscribeInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
+      async (req, reply) => {
+        await unsubscribe(req.params.id, req.params.token);
+        return reply.status(204).send();
+      },
+    );
+  });
+
+  // The consent banner (site) and the welcome screen (app). Anonymous: a random id from the browser or device.
+  app.post('/consent', { schema: { body: VisitorConsentInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (req, reply) => {
+    const current = await legalVersion(s);
+    if (req.body.version !== current) throw new AppError(409, 'terms_changed', 'התנאים עודכנו. רעננו את הדף ואשרו את הגרסה החדשה.');
+    await recordConsent(db, config.hashPepper, {
+      subject: 'visitor',
+      visitorId: req.body.visitorId,
+      termsVersion: current,
+      ads: req.body.ads,
+      channel: req.body.channel,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return reply.status(204).send();
+  });
 
   const DeviceInput = z.object({
     platform: z.enum(['ios', 'android', 'web']),

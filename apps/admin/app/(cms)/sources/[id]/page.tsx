@@ -166,6 +166,7 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
     }
   }, [detecting, source, toast]);
   const status = useMutation({ mutationFn: (s: 'active' | 'paused' | 'archived') => admin.post<SourceDto>(`/sources/${id}/status`, { status: s }), onSuccess: refresh, onError });
+  const rename = useMutation({ mutationFn: (name: string) => admin.patch<SourceDto>(`/sources/${id}`, { name }), onSuccess: refresh, onError });
 
   if (sources.isPending) return <Loading />;
   if (sources.isError) return <ErrorBox error={sources.error} />;
@@ -184,6 +185,17 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
         actions={
           <>
             <Badge tone={st.tone}>{st.label}</Badge>
+            <Button
+              size="sm"
+              variant="ghost"
+              busy={rename.isPending}
+              onClick={() => {
+                const name = prompt('שם האתר כפי שיופיע באיתור ובכתבות:', source.name)?.trim();
+                if (name && name !== source.name) rename.mutate(name);
+              }}
+            >
+              שינוי שם
+            </Button>
             {isDev && source.status === 'active' && (
               <Button size="sm" onClick={() => status.mutate('paused')}>
                 השהיה
@@ -252,7 +264,7 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
                 <textarea id="lu" dir="ltr" rows={3} value={form.listUrls} onChange={(e) => set('listUrls', e.target.value)} className={cx(inputClass, 'font-mono text-sm')} />
               </Field>
 
-              <Field label="רק כתבות שהכתובת שלהן מכילה (לא חובה)" htmlFor="uf" hint='למשל /economy, כשהרשימה כוללת את כל האתר ורוצים רק מדור אחד.'>
+              <Field label="רק כתבות שהכתובת שלהן מכילה (לא חובה)" htmlFor="uf" hint='למשל /economy, כשהרשימה כוללת את כל האתר ורוצים רק מדור אחד. כמה חלקים מופרדים ברווח חייבים להופיע כולם, למשל: /economy/ /article-'>
                 <input id="uf" dir="ltr" value={form.urlFilter} placeholder="/economy" onChange={(e) => set('urlFilter', e.target.value)} className={cx(inputClass, 'font-mono text-sm')} />
               </Field>
 

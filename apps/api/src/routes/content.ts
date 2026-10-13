@@ -153,6 +153,7 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           updatedAt: articles.updatedAt,
           readingMinutes: articles.readingMinutes,
           commentsEnabled: articles.commentsEnabled,
+          disclosure: articles.disclosure,
           sourceUrl: articles.sourceUrl,
           sourceName: sources.name,
           editorName: users.fullName,
@@ -190,6 +191,7 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         readingMinutes: row.readingMinutes,
         source: row.sourceName && row.sourceUrl ? { name: row.sourceName, url: row.sourceUrl } : null,
         commentsEnabled: row.commentsEnabled,
+        disclosure: row.disclosure,
         commentCount: counted?.n ?? 0,
       };
     },

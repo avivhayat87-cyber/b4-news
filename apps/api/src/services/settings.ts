@@ -100,6 +100,7 @@ export class SettingsStore {
       'anthropic.model': c.ai.model,
       'anthropic.modelFast': c.ai.modelFast,
       'gemini.apiKey': c.ai.geminiKey,
+      'gemini.previewModel': c.ai.imagePreviewModel,
       'gemini.imageModel': c.ai.imageModel,
       'gemini.imageSize': c.ai.imageSize,
       'smtp.url': c.smtpUrl,

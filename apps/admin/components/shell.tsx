@@ -27,8 +27,15 @@ const I = {
       <path d="M3 3v5h5M12 7v5l3 2" />
     </>
   ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.5 9h17M3.5 15h17M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </>
+  ),
   upload: <path d="M12 16V4m0 0-5 5m5-5 5 5M4 20h16" />,
   saved: <path d="M6 3h12v18l-6-4-6 4z" />,
+  articles: <path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8" />,
   sites: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -36,11 +43,30 @@ const I = {
     </>
   ),
   comments: <path d="M4 5h16v11H8l-4 4z" />,
+  social: (
+    <>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+    </>
+  ),
+  takedown: (
+    <>
+      <path d="M5 21V4h11l-1.5 4L16 12H5" />
+    </>
+  ),
   learn: <path d="M12 3 2 8l10 5 10-5zM6 10.5V16c3 2 9 2 12 0v-5.5" />,
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M12 2v3m0 14v3M4.2 4.2l2.1 2.1m11.4 11.4 2.1 2.1M2 12h3m14 0h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+    </>
+  ),
+  agent: (
+    <>
+      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" />
+      <path d="M9 9.5h.01M15 9.5h.01M9.5 13c1.5 1 3.5 1 5 0" />
     </>
   ),
 };
@@ -63,17 +89,25 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const nav: NavItem[] = [
     { href: '/', label: 'לוח בקרה', icon: I.home },
+    { href: '/agent', label: 'סוכן AI', icon: I.agent },
     { href: '/discovery', label: 'איתור כתבות', icon: I.radar },
+    { href: '/discovery/international', label: 'איתור מחו״ל', icon: I.globe },
     { href: '/discovery/runs', label: 'איתורים קודמים', icon: I.history },
     { href: '/manual', label: 'העלאה ידנית', icon: I.upload },
     { href: '/saved', label: 'עריכות שמורות', icon: I.saved, badge: dash.data ? dash.data.drafts.working + dash.data.drafts.ready : undefined },
+    { href: '/articles', label: 'כתבות באתר', icon: I.articles },
+    { href: '/social', label: 'רשתות חברתיות', icon: I.social },
     { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },
     { href: '/comments', label: 'תגובות גולשים', icon: I.comments, badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported || undefined : undefined },
+    { href: '/takedowns', label: 'בקשות הסרה', icon: I.takedown, badge: dash.data?.takedowns.open || undefined },
     { href: '/learning', label: 'למידת ה-AI', icon: I.learn },
     { href: '/settings', label: 'הגדרות', icon: I.settings },
   ];
 
-  const active = (href: string) => (href === '/' ? pathname === '/' : pathname === href || (pathname.startsWith(`${href}/`) && !(href === '/discovery' && pathname.startsWith('/discovery/runs'))));
+  const active = (href: string) =>
+    href === '/'
+      ? pathname === '/'
+      : pathname === href || (pathname.startsWith(`${href}/`) && !(href === '/discovery' && (pathname.startsWith('/discovery/runs') || pathname.startsWith('/discovery/international'))));
 
   async function logout() {
     await api.post('/auth/staff/logout').catch(() => undefined);

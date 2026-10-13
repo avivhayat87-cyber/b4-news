@@ -1,11 +1,13 @@
 import { COMMENT_LIMITS, type CommentDto, type ReaderDto } from '@b4/shared';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { ApiFailure, api } from '@/lib/api';
+import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ApiFailure, SITE_URL, api } from '@/lib/api';
 import { relativeTime } from '@/lib/format';
 import { colors, fonts, rtl, space } from '@/lib/theme';
 import { setToken } from '@/lib/token';
+import { TermsCheckbox, openSitePage } from './terms-checkbox';
 import { SectionHeader } from './ui';
 
 const errorText = (err: unknown) => (err instanceof ApiFailure ? err.message : 'משהו השתבש. נסו שוב.');
@@ -14,7 +16,7 @@ export function useReader() {
   return useQuery({ queryKey: ['reader'], queryFn: api.me, staleTime: Infinity });
 }
 
-export function Comments({ articleId, enabled }: { articleId: number; enabled: boolean }) {
+export function Comments({ articleId, articleSlug, enabled }: { articleId: number; articleSlug: string; enabled: boolean }) {
   const qc = useQueryClient();
   const reader = useReader();
   const list = useInfiniteQuery({
@@ -37,8 +39,16 @@ export function Comments({ articleId, enabled }: { articleId: number; enabled: b
           <>
             <Text style={s.small}>
               מגיב/ה בתור <Text style={{ fontFamily: fonts.textBold, color: colors.ink }}>{reader.data.displayName}</Text>
+              {' · '}
+              <Text style={s.inlineLink} onPress={() => router.push('/account')} accessibilityRole="link">
+                החשבון שלי
+              </Text>
             </Text>
-            <Composer articleId={articleId} onPosted={refresh} />
+            {reader.data.termsAccepted ? (
+              <Composer articleId={articleId} onPosted={refresh} onTermsRequired={() => void qc.invalidateQueries({ queryKey: ['reader'] })} />
+            ) : (
+              <TermsUpdate onAccepted={(r) => qc.setQueryData(['reader'], r)} />
+            )}
           </>
         ) : reader.isFetched ? (
           <SignIn
@@ -50,7 +60,15 @@ export function Comments({ articleId, enabled }: { articleId: number; enabled: b
         ) : null}
 
         {items.map((c) => (
-          <CommentRow key={c.id} comment={c} articleId={articleId} signedIn={Boolean(reader.data)} canReply={enabled && Boolean(reader.data)} onChanged={refresh} />
+          <CommentRow
+            key={c.id}
+            comment={c}
+            articleId={articleId}
+            articleSlug={articleSlug}
+            signedIn={Boolean(reader.data)}
+            canReply={enabled && Boolean(reader.data?.termsAccepted)}
+            onChanged={refresh}
+          />
         ))}
         {list.isFetched && items.length === 0 ? <Text style={s.note}>עדיין אין תגובות. אפשר להיות הראשונים.</Text> : null}
         {list.hasNextPage ? (
@@ -66,17 +84,22 @@ export function Comments({ articleId, enabled }: { articleId: number; enabled: b
 function CommentRow({
   comment,
   articleId,
+  articleSlug,
   signedIn,
   canReply,
   onChanged,
 }: {
   comment: CommentDto;
   articleId: number;
+  articleSlug: string;
   signedIn: boolean;
   canReply: boolean;
   onChanged: () => void;
 }) {
   const [replying, setReplying] = useState(false);
+  // The formal removal request is a form on the site, open to anyone.
+  const takedown = () =>
+    void Linking.openURL(`${SITE_URL}/report?url=${encodeURIComponent(`${SITE_URL}/article/${articleSlug}#comments`)}&comment=${comment.id}`);
 
   const report = () =>
     Alert.alert('דיווח על תגובה', 'מה הבעיה בתגובה?', [
@@ -94,6 +117,7 @@ function CommentRow({
             .then(() => Alert.alert('תודה', 'הדיווח התקבל ויבדק.'))
             .catch((e) => Alert.alert('שגיאה', errorText(e))),
       })),
+      { text: 'פוגע בי: בקשת הסרה', onPress: takedown },
       { text: 'ביטול', style: 'cancel' as const },
     ]);
 
@@ -127,8 +151,8 @@ function CommentRow({
             <Pressable onPress={remove} hitSlop={8} accessibilityRole="button">
               <Text style={s.action}>מחיקה</Text>
             </Pressable>
-          ) : signedIn && !comment.pending ? (
-            <Pressable onPress={report} hitSlop={8} accessibilityRole="button">
+          ) : !comment.pending ? (
+            <Pressable onPress={signedIn ? report : takedown} hitSlop={8} accessibilityRole="button">
               <Text style={s.action}>דיווח</Text>
             </Pressable>
           ) : null}
@@ -148,7 +172,18 @@ function CommentRow({
   );
 }
 
-function Composer({ articleId, parentId, onPosted }: { articleId: number; parentId?: string; onPosted: () => void }) {
+function Composer({
+  articleId,
+  parentId,
+  onPosted,
+  onTermsRequired,
+}: {
+  articleId: number;
+  parentId?: string;
+  onPosted: () => void;
+  /** The terms changed since this reader accepted them. */
+  onTermsRequired?: () => void;
+}) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +198,8 @@ function Composer({ articleId, parentId, onPosted }: { articleId: number; parent
       setHeld(created.pending);
       onPosted();
     } catch (e) {
-      setError(errorText(e));
+      if (e instanceof ApiFailure && e.code === 'terms_required' && onTermsRequired) onTermsRequired();
+      else setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -194,15 +230,57 @@ function Composer({ articleId, parentId, onPosted }: { articleId: number; parent
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
       {held ? <Text style={s.small}>התגובה התקבלה ותופיע אחרי בדיקה.</Text> : null}
+      {parentId ? null : (
+        <Text style={s.small}>
+          תגובות פוגעניות, ספאם או פרטים אישיים יוסרו.{' '}
+          <Text style={s.inlineLink} onPress={() => openSitePage('comment-rules')} accessibilityRole="link">
+            כללי ההשתתפות
+          </Text>
+        </Text>
+      )}
     </View>
   );
 }
 
-function SignIn({ onSignedIn }: { onSignedIn: (r: ReaderDto) => void }) {
+/** Instead of the composer after a new terms version, until the reader accepts it. */
+function TermsUpdate({ onAccepted }: { onAccepted: (r: ReaderDto) => void }) {
+  const site = useQuery({ queryKey: ['site'], queryFn: api.site, staleTime: 10 * 60_000 });
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!site.data) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onAccepted(await api.acceptTerms(site.data.consent.version));
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={s.signIn}>
+      <Text style={s.signInTitle}>עדכנו את תנאי השימוש</Text>
+      <Text style={s.signInBody}>כדי להמשיך להגיב, קראו ואשרו את הנוסח המעודכן.</Text>
+      <TermsCheckbox checked={checked} onChange={setChecked} />
+      <Pressable onPress={submit} disabled={!checked || busy || !site.data} style={[s.button, (!checked || busy) && { opacity: 0.5 }]} accessibilityRole="button">
+        <Text style={s.buttonText}>{busy ? 'שומר…' : 'אישור והמשך'}</Text>
+      </Pressable>
+      {error ? <Text style={s.error}>{error}</Text> : null}
+    </View>
+  );
+}
+
+export function SignIn({ onSignedIn, title = 'רוצים להגיב?' }: { onSignedIn: (r: ReaderDto) => void; title?: string }) {
   const [step, setStep] = useState<'email' | 'code' | 'name'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -213,7 +291,13 @@ function SignIn({ onSignedIn }: { onSignedIn: (r: ReaderDto) => void }) {
       await fn();
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'name_required') setStep('name');
-      else setError(errorText(e));
+      else {
+        if (e instanceof ApiFailure && e.code === 'terms_required') {
+          setAccepted(false);
+          setStep('email');
+        }
+        setError(errorText(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -227,14 +311,14 @@ function SignIn({ onSignedIn }: { onSignedIn: (r: ReaderDto) => void }) {
 
   const verify = () =>
     run(async () => {
-      const session = await api.verify(email.trim(), code, step === 'name' ? name.trim() : undefined);
+      const session = await api.verify(email.trim(), code, { displayName: step === 'name' ? name.trim() : undefined, acceptTerms: accepted });
       if (session.token) await setToken(session.token);
       onSignedIn(session.reader);
     });
 
   return (
     <View style={s.signIn}>
-      <Text style={s.signInTitle}>רוצים להגיב?</Text>
+      <Text style={s.signInTitle}>{title}</Text>
       <Text style={s.signInBody}>
         {step === 'email'
           ? 'נשלח אליכם קוד חד-פעמי למייל. בלי סיסמאות.'
@@ -254,7 +338,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (r: ReaderDto) => void }) {
           placeholderTextColor={colors.muted}
           style={[s.input, { writingDirection: 'ltr', textAlign: 'right' }]}
           accessibilityLabel="כתובת מייל"
-          onSubmitEditing={requestCode}
+          onSubmitEditing={() => accepted && requestCode()}
         />
       ) : (
         <>
@@ -282,7 +366,13 @@ function SignIn({ onSignedIn }: { onSignedIn: (r: ReaderDto) => void }) {
           ) : null}
         </>
       )}
-      <Pressable onPress={step === 'email' ? requestCode : verify} disabled={busy} style={[s.button, busy && { opacity: 0.6 }]} accessibilityRole="button">
+      {step === 'email' ? <TermsCheckbox checked={accepted} onChange={setAccepted} /> : null}
+      <Pressable
+        onPress={step === 'email' ? requestCode : verify}
+        disabled={busy || (step === 'email' && !accepted)}
+        style={[s.button, (busy || (step === 'email' && !accepted)) && { opacity: 0.5 }]}
+        accessibilityRole="button"
+      >
         <Text style={s.buttonText}>{busy ? 'רגע…' : step === 'email' ? 'שלחו לי קוד' : 'התחברות'}</Text>
       </Pressable>
       {step !== 'email' ? (
@@ -306,6 +396,7 @@ const s = StyleSheet.create({
   pending: { fontFamily: fonts.textBold, fontSize: 11, color: colors.pendingText, backgroundColor: colors.pending, borderRadius: 999, paddingHorizontal: 8, overflow: 'hidden' },
   body: { fontFamily: fonts.text, fontSize: 16, lineHeight: 24, color: colors.ink },
   action: { fontFamily: fonts.textSemi, fontSize: 13, color: colors.muted },
+  inlineLink: { fontFamily: fonts.textBold, color: colors.ink2, textDecorationLine: 'underline' },
   input: {
     borderWidth: 1.5,
     borderColor: colors.line,

@@ -1,0 +1,1 @@
+ALTER TABLE "article_shares" ADD COLUMN "reel_plan" jsonb;

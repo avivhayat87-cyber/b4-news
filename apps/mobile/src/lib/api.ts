@@ -82,9 +82,14 @@ export const api = {
 
   me: async (): Promise<ReaderDto | null> => (await getToken() ? (await call<{ reader: ReaderDto | null }>('/auth/reader/session')).reader : null),
   requestCode: (email: string) => call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email }) }),
-  verify: (email: string, code: string, displayName?: string) =>
-    call<ReaderSession>('/auth/reader/verify', { method: 'POST', body: json({ email, code, displayName, client: 'app' }) }),
+  verify: (email: string, code: string, opts: { displayName?: string; acceptTerms: boolean }) =>
+    call<ReaderSession>('/auth/reader/verify', { method: 'POST', body: json({ email, code, ...opts, client: 'app' }) }),
+  acceptTerms: (version: string) => call<ReaderDto>('/auth/reader/terms', { method: 'POST', body: json({ version, accept: true }) }),
+  rename: (displayName: string) => call<ReaderDto>('/auth/reader/me', { method: 'PATCH', body: json({ displayName }) }),
+  deleteAccount: () => call<void>('/auth/reader/me', { method: 'DELETE' }),
   logout: () => call<void>('/auth/reader/logout', { method: 'POST' }),
+  recordConsent: (visitorId: string, version: string) =>
+    call<void>('/public/consent', { method: 'POST', body: json({ visitorId, version, ads: false, channel: 'app' }) }),
 
   comments: (articleId: number, cursor?: string | null) => call<CommentList>(withCursor(`/public/articles/${articleId}/comments`, cursor)),
   postComment: (articleId: number, body: string, parentId?: string) =>

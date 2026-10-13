@@ -53,6 +53,7 @@ export const api = {
   post: <T = void>(path: string, body: unknown = {}) => request<T>('POST', path, body),
   put: <T = void>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T = void>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  del: <T = void>(path: string) => request<T>('DELETE', path),
   upload: <T>(path: string, form: FormData) => request<T>('POST', path, form),
 };
 
@@ -61,6 +62,7 @@ export const admin = {
   post: <T = void>(path: string, body: unknown = {}) => api.post<T>(`/admin${path}`, body),
   put: <T = void>(path: string, body: unknown) => api.put<T>(`/admin${path}`, body),
   patch: <T = void>(path: string, body: unknown) => api.patch<T>(`/admin${path}`, body),
+  del: <T = void>(path: string) => api.del<T>(`/admin${path}`),
   upload: <T>(path: string, form: FormData) => api.upload<T>(`/admin${path}`, form),
 };
 

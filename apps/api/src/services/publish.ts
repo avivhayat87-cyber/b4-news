@@ -8,7 +8,6 @@ import {
   and,
   articleDrafts,
   articles,
-  articleTags,
   asc,
   categories,
   devices,
@@ -24,14 +23,15 @@ import {
   socialPackages,
   socialPosts,
   sql,
-  tags,
 } from '@b4/db';
 import { AppError, errors } from '../errors';
 import { variantUrl } from '../lib/images';
+import { compareWording, similarityWarning } from '../lib/similarity';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import type { Services } from './context';
 import { type DraftRow, loadDraft, summariesFor } from './drafts';
-import { queueDistill, recordFeedback } from './learning';
+import { queueBatchLearning, recordFeedback } from './learning';
+import { setArticleTags, updateArticleFromDraft } from './article-content';
 import { type SocialPayload, publishToNetwork } from './social-adapters';
 
 type Staff = { id: string; fullName: string };
@@ -39,7 +39,8 @@ export type PublishTarget = { magazineId: string } | { draftId: string };
 
 const PUBLISHABLE = ['text_final', 'ready'];
 
-export function problemsOf(d: Pick<DraftRow, 'status' | 'title' | 'bodyText' | 'categoryId' | 'heroMediaId'>): string[] {
+/** draftHeroes: main images that are still a quick AI draft (their full-quality version isn't ready). */
+export function problemsOf(d: Pick<DraftRow, 'status' | 'title' | 'bodyText' | 'categoryId' | 'heroMediaId'>, draftHeroes: ReadonlySet<string> = new Set()): string[] {
   if (d.status === 'skipped' || d.status === 'published') return [];
   const p: string[] = [];
   if (!PUBLISHABLE.includes(d.status)) p.push('הטקסט עוד לא סומן כסופי');
@@ -47,7 +48,15 @@ export function problemsOf(d: Pick<DraftRow, 'status' | 'title' | 'bodyText' | '
   if (d.bodyText.trim().length < 100) p.push('גוף הכתבה קצר מדי');
   if (!d.categoryId) p.push('לא נבחרה קטגוריה');
   if (!d.heroMediaId) p.push('לא נבחרה תמונה ראשית');
+  else if (draftHeroes.has(d.heroMediaId)) p.push('התמונה הראשית עוד בהכנה באיכות מלאה');
   return p;
+}
+
+async function draftHeroesOf(db: Db, rows: DraftRow[]): Promise<Set<string>> {
+  const ids = rows.flatMap((r) => (r.heroMediaId ? [r.heroMediaId] : []));
+  if (ids.length === 0) return new Set();
+  const media = await db.select({ id: mediaAssets.id }).from(mediaAssets).where(and(inArray(mediaAssets.id, ids), eq(mediaAssets.kind, 'ai_preview')));
+  return new Set(media.map((m) => m.id));
 }
 
 async function draftsOf(db: Db, target: PublishTarget): Promise<DraftRow[]> {
@@ -61,7 +70,12 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
   const media = rows.some((r) => r.heroMediaId)
     ? await s.db.select().from(mediaAssets).where(inArray(mediaAssets.id, rows.flatMap((r) => (r.heroMediaId ? [r.heroMediaId] : []))))
     : [];
+  const draftHeroes = new Set(media.filter((m) => m.kind === 'ai_preview').map((m) => m.id));
   const packages = rows.length ? await s.db.select().from(socialPackages).where(inArray(socialPackages.draftId, rows.map((r) => r.id))) : [];
+  const originalIds = rows.flatMap((r) => (r.scrapedItemId ? [r.scrapedItemId] : []));
+  const originals = originalIds.length
+    ? await s.db.select({ id: scrapedItems.id, body: scrapedItems.bodyText, intro: scrapedItems.intro, bodyHe: scrapedItems.bodyHe }).from(scrapedItems).where(inArray(scrapedItems.id, originalIds))
+    : [];
   const posts = rows.length
     ? await s.db
         .select({ draftId: socialPosts.draftId, platform: socialAccounts.platform })
@@ -75,6 +89,8 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     if (!summary) return [];
     const hero = media.find((m) => m.id === r.heroMediaId);
     const pkg = packages.find((p) => p.draftId === r.id);
+    const original = originals.find((o) => o.id === r.scrapedItemId);
+    const copied = original ? similarityWarning(compareWording(r.bodyText, original.bodyHe ?? original.body ?? original.intro ?? '')) : null;
     return [
       {
         draft: summary,
@@ -84,7 +100,8 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
         tags: r.tagNames,
         editorName: staff.fullName,
         social: { ready: Boolean(pkg?.approvedAt), platforms: posts.filter((p) => p.draftId === r.id).map((p) => p.platform) },
-        problems: problemsOf(r),
+        problems: problemsOf(r, draftHeroes),
+        warnings: copied && r.status !== 'published' && r.status !== 'skipped' ? [copied] : [],
       },
     ];
   });
@@ -92,7 +109,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     publishDate: new Date().toISOString(),
     editorName: staff.fullName,
     items,
-    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && problemsOf(r).length === 0).length,
+    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && problemsOf(r, draftHeroes).length === 0).length,
     skippedCount: rows.filter((r) => r.status === 'skipped').length,
   };
 }
@@ -109,13 +126,14 @@ export async function startPublish(s: Services, staff: Staff, target: PublishTar
   const rows = await draftsOf(s.db, target);
   const pending = rows.filter((r) => r.status !== 'skipped' && r.status !== 'published');
   if (pending.length === 0) throw new AppError(409, 'nothing_to_publish', 'אין כתבות שממתינות לפרסום.');
-  const blocked = pending.filter((r) => problemsOf(r).length > 0);
+  const draftHeroes = await draftHeroesOf(s.db, pending);
+  const blocked = pending.filter((r) => problemsOf(r, draftHeroes).length > 0);
   if (blocked.length) {
     const first = blocked[0]!;
     throw new AppError(
       422,
       'not_ready',
-      `${blocked.length} כתבות עוד לא מוכנות (למשל "${first.title.slice(0, 40)}": ${problemsOf(first).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
+      `${blocked.length} כתבות עוד לא מוכנות (למשל "${first.title.slice(0, 40)}": ${problemsOf(first, draftHeroes).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
     );
   }
 
@@ -134,15 +152,6 @@ function newSlug(): string {
   const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
   const rand = [...randomBytes(6)].map((b) => alphabet[b % alphabet.length]).join('');
   return `${ymd}-${rand}`;
-}
-
-function tagSlug(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
 }
 
 /** New article first; pinned slots keep their position; the rest shift down and the last falls off. */
@@ -189,17 +198,12 @@ async function publishArticle(db: Db, draft: DraftRow, editorId: string): Promis
         sourceId: item?.sourceId ?? null,
         sourceUrl: item?.url ?? null,
         readingMinutes: readingMinutes(text),
+        disclosure: draft.disclosure.trim() || null,
         draftId: draft.id,
       })
       .returning({ id: articles.id, slug: articles.slug });
 
-    for (const name of draft.tagNames) {
-      const slug = tagSlug(name);
-      if (!slug) continue;
-      await tx.insert(tags).values({ slug, name: name.trim() }).onConflictDoNothing({ target: tags.slug });
-      const [tag] = await tx.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).limit(1);
-      if (tag) await tx.insert(articleTags).values({ articleId: article!.id, tagId: tag.id }).onConflictDoNothing();
-    }
+    await setArticleTags(tx, article!.id, draft.tagNames);
     if (draft.placement !== 'none') await placeOnHomepage(tx, draft.placement, article!.id);
     await tx.update(articleDrafts).set({ status: 'published', publishedArticleId: article!.id }).where(eq(articleDrafts.id, draft.id));
     await recordFeedback(tx, draft, article!.id, editorId);
@@ -293,6 +297,9 @@ export async function runPublish(s: Services, job: JobRow) {
   const rows = await draftsOf(s.db, target);
   const steps: Record<string, string> = { ...pj.steps };
   const published: { draft: DraftRow; article: { id: number; slug: string; category: string } }[] = [];
+  // Articles already on the site whose draft was edited: updated in place (no push, posts or learning again).
+  const updated: { id: number; slug: string; categories: string[] }[] = [];
+  const draftHeroes = await draftHeroesOf(s.db, rows);
 
   // 1. The site.
   for (const draft of rows) {
@@ -302,8 +309,18 @@ export async function runPublish(s: Services, job: JobRow) {
       if (a) published.push({ draft, article: { ...a, category: '' } });
       continue;
     }
-    if (problemsOf(draft).length) {
-      steps[`${draft.id}:site`] = `failed: ${problemsOf(draft).join(', ')}`;
+    if (problemsOf(draft, draftHeroes).length) {
+      steps[`${draft.id}:site`] = `failed: ${problemsOf(draft, draftHeroes).join(', ')}`;
+      continue;
+    }
+    if (draft.publishedArticleId) {
+      try {
+        updated.push(await s.db.transaction((tx) => updateArticleFromDraft(tx, draft, pj.requestedBy)));
+        steps[`${draft.id}:site`] = 'updated';
+      } catch (e) {
+        steps[`${draft.id}:site`] = `failed: ${e instanceof Error ? e.message : e}`;
+      }
+      await s.db.update(publishJobs).set({ steps }).where(eq(publishJobs.id, publishJobId));
       continue;
     }
     try {
@@ -332,7 +349,12 @@ export async function runPublish(s: Services, job: JobRow) {
       tagList.add(`article-slug:${article.slug}`);
       if (article.category) tagList.add(`category:${article.category}`);
     }
-    if (published.length) await revalidateSite(s, [...tagList]);
+    for (const article of updated) {
+      tagList.add(`article:${article.id}`);
+      tagList.add(`article-slug:${article.slug}`);
+      for (const c of article.categories) tagList.add(`category:${c}`);
+    }
+    if (published.length || updated.length) await revalidateSite(s, [...tagList]);
     steps.revalidate = 'ok';
   } catch (e) {
     steps.revalidate = `failed: ${e instanceof Error ? e.message : e}`;
@@ -341,11 +363,11 @@ export async function runPublish(s: Services, job: JobRow) {
   // 2. Social networks (only after the site is live).
   for (const { draft, article } of published) await postSocial(s, draft, article.id, steps);
 
-  // 3. The learning loop.
-  await queueDistill(s, pj.requestedBy).catch(() => undefined);
+  // 3. The learning loop: the whole batch in one learning pass.
+  if (published.length) await queueBatchLearning(s, publishJobId, pj.requestedBy).catch(() => undefined);
 
   const siteFailures = Object.entries(steps).filter(([k, v]) => k.endsWith(':site') && v.startsWith('failed')).length;
-  const status = siteFailures && !published.length ? 'failed' : 'succeeded';
+  const status = siteFailures && !published.length && !updated.length ? 'failed' : 'succeeded';
   await s.db
     .update(publishJobs)
     .set({ status, steps, finishedAt: new Date(), error: siteFailures ? `${siteFailures} כתבות לא פורסמו` : null })
@@ -356,7 +378,7 @@ export async function runPublish(s: Services, job: JobRow) {
       .set({ status: siteFailures ? 'partially_failed' : 'published', publishedAt: new Date() })
       .where(eq(magazines.id, pj.magazineId));
   }
-  return { published: published.length, siteFailures };
+  return { published: published.length, updated: updated.length, siteFailures };
 }
 
 export async function markPublishFailed(s: Services, job: JobRow, error: Error) {
