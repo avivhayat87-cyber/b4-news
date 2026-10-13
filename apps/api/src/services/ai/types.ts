@@ -1,5 +1,5 @@
-// What the newsroom asks of the AI. Two providers implement it: Anthropic
-// (production) and a deterministic stand-in for local development and tests.
+// What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
+// video: Google Gemini; and a deterministic stand-in of each for development and tests.
 import { CATEGORY_SLUGS, SHARE_TEMPLATES } from '@b4/shared';
 import { z } from 'zod';
 
@@ -117,17 +117,6 @@ export type LearnBatchRequest = {
   articles: { section: string; source: string; diff: string; editRatio: number; images: string }[];
 };
 
-export type ReelPromptsRequest = {
-  /** prompt_templates "reel.prompts" */
-  systemPrompt: string;
-  article: ArticleText & { section: string; hook: string };
-  /** The article's main image and the original report's photo, to look at (never copied). */
-  images: ImageReference[];
-  /** The editor's current prompts and direction, when asking for new ones. */
-  current?: { imagePrompt: string; videoPrompt: string };
-  instruction?: string;
-};
-
 export interface TextAI {
   readonly provider: string;
   /** False for the development stand-in: the UI says the text was not really rewritten. */
@@ -139,7 +128,6 @@ export interface TextAI {
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;
   distill(req: DistillRequest): Promise<AiResult<DistillOutput>>;
   learnBatch(req: LearnBatchRequest): Promise<AiResult<LearnBatchOutput>>;
-  reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>>;
   /** Hebrew prompts the editor approved, in English for the image and video models (same order). */
   toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>>;
 }
@@ -176,6 +164,58 @@ export interface VideoAI {
   /** False for the development stand-in, which makes no video (data is null). */
   readonly live: boolean;
   generate(req: VideoRequest): Promise<AiResult<{ video: Buffer | null; mimeType: string }>>;
+}
+
+// ---------------------------------------------------------------------------
+// The visual agent (Google Gemini): writes the prompts for article images and reels,
+// in Hebrew for the editor, and learns from what the editors did with them.
+// ---------------------------------------------------------------------------
+/** The description of an article's main image, in Hebrew. */
+export const ImagePromptOutput = z.object({ prompt: z.string().min(5).max(1500) });
+export type ImagePromptOutput = z.infer<typeof ImagePromptOutput>;
+
+export type ImagePromptRequest = {
+  /** prompt_templates "visual.image" */
+  systemPrompt: string;
+  /** The newsroom's settings and the rules the agent learned. */
+  guidance: string;
+  article: ArticleText & { section: string };
+  /** The original report's photo, when the editor asked for it as inspiration (looked at, never copied). */
+  images: ImageReference[];
+  /** Descriptions already drawn for this article: the editor asked for something else. */
+  tried: string[];
+};
+
+export type ReelPromptsRequest = {
+  /** prompt_templates "reel.prompts" */
+  systemPrompt: string;
+  guidance: string;
+  article: ArticleText & { section: string; hook: string };
+  /** The article's main image and the original report's photo, to look at (never copied). */
+  images: ImageReference[];
+  /** The editor's current prompts and direction, when asking for new ones. */
+  current?: { imagePrompt: string; videoPrompt: string };
+  instruction?: string;
+};
+
+/** A learning pass: the cases since the last one, each with its pictures (chosen first). */
+export type VisualLearnRequest = {
+  /** prompt_templates "visual.learn" */
+  systemPrompt: string;
+  currentRules: string;
+  /** The newsroom's settings, so lessons that contradict them are not turned into rules. */
+  settings: string;
+  cases: { text: string; images: { label: string; image: ImageReference }[] }[];
+};
+
+export interface VisualAI {
+  readonly provider: string;
+  readonly model: string;
+  /** False for the development stand-in. */
+  readonly live: boolean;
+  imagePrompt(req: ImagePromptRequest): Promise<AiResult<ImagePromptOutput>>;
+  reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>>;
+  learn(req: VisualLearnRequest): Promise<AiResult<LearnBatchOutput>>;
 }
 
 export type Ai = { text: TextAI; image: ImageAI };

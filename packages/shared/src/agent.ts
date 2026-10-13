@@ -1,6 +1,6 @@
 // Contracts for the newsroom agent: the chat in the CMS (/admin/agent/*), the
-// editor agent's settings and learning reports, and the tokens the Claude app
-// uses to connect (MCP).
+// editor agent's settings and learning reports, the visual agent (Google), and
+// the tokens the Claude app uses to connect (MCP).
 import { z } from 'zod';
 
 const id = z.string().uuid();
@@ -35,6 +35,84 @@ export const LearningReportDto = z.object({
   createdAt: iso,
 });
 export type LearningReportDto = z.infer<typeof LearningReportDto>;
+
+// ---------------------------------------------------------------------------
+// The visual agent (Google Gemini): writes the prompts for article images and reels,
+// and learns from what the editors did with them
+// ---------------------------------------------------------------------------
+export const VisualAgentSettings = z.object({
+  /** How article images should look, in the newsroom's words ("צילום עיתונאי ריאליסטי, אור טבעי"). */
+  articleStyle: z.string().trim().max(500).default(''),
+  /** How reels should look and move (pace, mood, camera). */
+  reelStyle: z.string().trim().max(500).default(''),
+  /** Standing instructions for every prompt. */
+  instructions: z.string().trim().max(3000).default(''),
+  /** What never to show or do. */
+  avoid: z.string().trim().max(1000).default(''),
+  /** Learn by itself every few cases (otherwise only on "learn now"). */
+  autoLearn: z.boolean().default(true),
+});
+export type VisualAgentSettings = z.infer<typeof VisualAgentSettings>;
+
+export const VISUAL_FEEDBACK_KINDS = ['article_image', 'reel'] as const;
+export const PROMPT_AUTHORS = ['agent', 'editor'] as const;
+export type PromptAuthor = (typeof PROMPT_AUTHORS)[number];
+
+/** One case the visual agent learns from: what it suggested and what the editor did with it. */
+export const VisualFeedbackDetail = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('article_image'),
+    title: z.string(),
+    section: z.string(),
+    /** Each "create 3 drafts", in order: who wrote the description, and whether the main image came from it. */
+    rounds: z.array(z.object({ by: z.enum(PROMPT_AUTHORS).nullable(), prompt: z.string(), useSource: z.boolean(), chosen: z.boolean() })),
+    /** Where the published main image came from. */
+    outcome: z.enum(['ai', 'upload', 'source', 'none']),
+  }),
+  z.object({
+    kind: z.literal('reel'),
+    title: z.string(),
+    section: z.string(),
+    /** The agent's last suggestion, and the prompts the editor approved. */
+    suggested: z.object({ imagePrompt: z.string(), videoPrompt: z.string() }).nullable(),
+    approved: z.object({ imagePrompt: z.string(), videoPrompt: z.string() }),
+    /** Directions the editor gave when asking for new prompts. */
+    directions: z.array(z.string()),
+    pictures: z.number().int(),
+    videos: z.number().int(),
+  }),
+]);
+export type VisualFeedbackDetail = z.infer<typeof VisualFeedbackDetail>;
+
+export const VisualProfileDto = z.object({
+  id: z.number().int(),
+  rules: z.string(),
+  /** What this learning pass learned, in Hebrew (null for an editor's own edit). */
+  summary: z.string().nullable(),
+  feedbackCount: z.number().int(),
+  isActive: z.boolean(),
+  approvedBy: z.string().nullable(),
+  createdAt: iso,
+});
+export type VisualProfileDto = z.infer<typeof VisualProfileDto>;
+
+export const VisualAgentOverview = z.object({
+  /** live: Gemini answers; otherwise the development stand-in does. */
+  live: z.boolean(),
+  model: z.string(),
+  pending: z.number().int(),
+  learned: z.number().int(),
+  /** Cases needed before it learns by itself. */
+  learnEvery: z.number().int(),
+  recent: z.array(z.object({ id, kind: z.enum(VISUAL_FEEDBACK_KINDS), title: z.string(), status: z.enum(['pending', 'distilled', 'excluded']), createdAt: iso })),
+  profiles: z.array(VisualProfileDto),
+  learning: z.boolean(),
+  /** Why the last learning pass failed, in Hebrew (null when it didn't). */
+  lastError: z.string().nullable(),
+});
+export type VisualAgentOverview = z.infer<typeof VisualAgentOverview>;
+
+export const SaveVisualRulesInput = z.object({ rules: z.string().trim().min(1).max(6000) });
 
 /** Factual data of a draft against its source (numbers, percentages, amounts, years). */
 export const FactCheckDto = z.object({

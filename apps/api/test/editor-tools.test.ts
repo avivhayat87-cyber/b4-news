@@ -172,6 +172,10 @@ describe('images', () => {
         throw new AiNotConnectedError('image');
       },
       video: async () => new PlaceholderVideo(),
+      // The visual agent runs on the same Gemini key.
+      visual: async () => {
+        throw new AiNotConnectedError('image');
+      },
       status: async () => ({ text: 'fake', image: 'none', live: false }),
     };
     await editor.post(`/drafts/${draftId}/images`, {});

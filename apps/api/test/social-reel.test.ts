@@ -1,7 +1,8 @@
-// Reels on the social page, step by step: the AI writes Hebrew prompts, the editor approves them,
-// then the picture, then the video (from the clean picture), and only an approved reel is
-// published. Nothing that costs a picture or a video runs without the editor. No call reaches Google or Meta.
-import { aiJobs, articles, desc, eq, mediaAssets, socialAccounts } from '@b4/db';
+// Reels on the social page, step by step: the visual agent writes Hebrew prompts, the editor
+// approves them, then the picture, then the video (from the clean picture), and only an approved
+// reel is published (and learned from). Nothing that costs a picture or a video runs without the
+// editor. No call reaches Google or Meta.
+import { aiJobs, articles, desc, eq, mediaAssets, socialAccounts, visualFeedback } from '@b4/db';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { VideoAI, VideoRequest } from '../src/services/ai/types';
@@ -56,6 +57,8 @@ describe('reels', () => {
     expect(reel.plan.videoPrompt).toMatch(/[א-ת]/);
     expect(reel.image).toBeNull();
     expect(await costly()).toBe(0);
+    const [written] = await ctx.db.select({ promptKey: aiJobs.promptKey }).from(aiJobs).where(eq(aiJobs.type, 'visual_prompt'));
+    expect(written!.promptKey).toBe('reel.prompts'); // by the visual agent
 
     const edited = await editor.put(`/social/articles/${articleId}/reel/prompts`, { imagePrompt: 'נמל תעשייתי בשקיעה, מכולות צבעוניות', videoPrompt: 'המצלמה נעה לאט הצידה, אור שקיעה חם' });
     expect(edited.status).toBe(200);
@@ -127,6 +130,16 @@ describe('reels', () => {
     const approved = await editor.post(`/social/articles/${articleId}/reel/approve`);
     expect(approved.status).toBe(200);
     expect(approved.body.reel.plan).toMatchObject({ stage: 'approved', approvedAt: expect.any(String) });
+    // The visual agent learns from it: its suggestion against what the editor approved, and the tries.
+    const [learned] = await ctx.db.select().from(visualFeedback).where(eq(visualFeedback.kind, 'reel'));
+    expect(learned!.chosenMediaId).toBe(approved.body.reel.image.id);
+    expect(learned!.detail).toMatchObject({
+      kind: 'reel',
+      approved: { imagePrompt: 'נמל תעשייתי בשקיעה, מכולות צבעוניות', videoPrompt: 'המצלמה נעה לאט הצידה, אור שקיעה חם' },
+      suggested: { imagePrompt: expect.stringMatching(/[א-ת]/) },
+      pictures: 1,
+      videos: 1,
+    });
 
     expect((await editor.post('/social/publish', { articleIds: [articleId], formats: ['reel'], accountIds: [telegram.id] })).status).toBe(202);
     await ctx.drain();

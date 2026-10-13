@@ -78,7 +78,7 @@ export const socialRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, 
   /** 4. Video approved: the reel can be published. */
   app.post('/social/articles/:articleId/reel/approve', { schema: { params, response: { 200: ShareDto } } }, async (req) => {
     const staff = requireStaff(req, 'editor');
-    await reel.approveReel(s, req.params.articleId);
+    await reel.approveReel(s, staff, req.params.articleId);
     await audit(s.db, { userId: staff.id, entity: 'article_share', entityId: String(req.params.articleId), action: 'reel_approve' });
     return shares.getShare(s, req.params.articleId);
   });

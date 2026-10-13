@@ -1,6 +1,6 @@
 'use client';
 // The reel of one article, in steps the editor approves one by one:
-//   1. the AI writes two prompts in Hebrew (the picture, the video), the editor edits them;
+//   1. the visual agent (Google) writes two prompts in Hebrew (the picture, the video), the editor edits them;
 //   2. the picture and its branded cover;
 //   3. the video, made from the clean picture.
 // A picture or a video is made only on the editor's click, and only an approved video is
@@ -15,7 +15,7 @@ import { Badge, Button, Field, Spinner, cx, inputClass, useToast } from '../ui';
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
 const RUNNING: Record<string, string> = {
-  'social.reel_prompts': 'ה-AI כותב את ההנחיות…',
+  'social.reel_prompts': 'סוכן התמונות כותב את ההנחיות…',
   'social.reel_image': 'יוצר את התמונה…',
   'social.reel_video': 'יוצר את הסרטון (דקה-שתיים)…',
 };
@@ -88,7 +88,7 @@ export function ReelPanel({ share, textDirty }: { share: ShareDto; textDirty: bo
   };
   const writePrompts = useMutation({
     mutationFn: () => runStep('prompts', { instruction: direction.trim() || undefined }),
-    onSuccess: doneWith('ה-AI כותב הנחיות. הן יופיעו כאן לעריכה ולאישור.'),
+    onSuccess: doneWith('סוכן התמונות כותב הנחיות. הן יופיעו כאן לעריכה ולאישור.'),
     onError,
   });
   const makeImage = useMutation({ mutationFn: () => runStep('image'), onSuccess: doneWith('התמונה בהכנה.'), onError });
@@ -142,7 +142,7 @@ export function ReelPanel({ share, textDirty }: { share: ShareDto; textDirty: bo
           <Step n={1} title="הנחיות לתמונה ולסרטון" active={!stage || stage === 'prompts'} done={Boolean(stage && stage !== 'prompts')}>
             {!plan ? (
               <>
-                <p className="mb-2 text-sm text-ink-2">ה-AI קורא את הכתבה ומסתכל על התמונות שלה, וכותב בעברית מה רואים בתמונה ומה קורה בסרטון. בלי עלות של תמונה או סרטון.</p>
+                <p className="mb-2 text-sm text-ink-2">סוכן התמונות של Google קורא את הכתבה ומסתכל על התמונות שלה, וכותב בעברית מה רואים בתמונה ומה קורה בסרטון. בלי עלות של תמונה או סרטון. מה שתתקנו ותאשרו מלמד אותו.</p>
                 <Button variant="dark" busy={writePrompts.isPending} disabled={busy || textDirty} onClick={() => writePrompts.mutate()}>
                   כתיבת הנחיות
                 </Button>
@@ -170,9 +170,9 @@ export function ReelPanel({ share, textDirty }: { share: ShareDto; textDirty: bo
                   />
                 </Field>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input value={direction} onChange={(e) => setDirection(e.target.value)} placeholder="כיוון ל-AI להנחיות חדשות (לא חובה)" aria-label="כיוון ל-AI" disabled={busy} className={cx(inputClass, 'max-w-xs py-1.5')} />
+                  <input value={direction} onChange={(e) => setDirection(e.target.value)} placeholder="כיוון לסוכן להנחיות חדשות (לא חובה)" aria-label="כיוון לסוכן" disabled={busy} className={cx(inputClass, 'max-w-xs py-1.5')} />
                   <Button size="sm" variant="ghost" busy={writePrompts.isPending} disabled={busy} onClick={() => writePrompts.mutate()}>
-                    הנחיות חדשות מה-AI
+                    הנחיות חדשות מהסוכן
                   </Button>
                   {promptsDirty && (
                     <Button size="sm" busy={save.isPending} disabled={busy} onClick={() => save.mutate()}>

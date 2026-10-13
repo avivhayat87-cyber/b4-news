@@ -79,6 +79,10 @@ export function imageErrorMessage(raw: string | null): string {
   if (status === '429') return 'הגענו למכסת הבקשות של Gemini. נסו שוב בעוד דקה.';
   if (status === '400' && /api key/i.test(raw)) return 'המפתח של Gemini לא תקין. בדקו אותו ב"הגדרות" > "חיבורים".';
   if (status === '401' || status === '403') return 'Gemini סירב לבקשה (הרשאות המפתח). בדקו אותו ב"הגדרות" > "חיבורים".';
+  if (/^visual agent/.test(raw)) {
+    if (status === '404') return 'המודל של סוכן התמונות לא נמצא. בדקו את שם המודל ב"הגדרות" > "חיבורים" > Gemini.';
+    return `סוכן התמונות לא הצליח לכתוב את התיאור: ${raw.replace(/^visual agent (failed|returned)\s*/, '').slice(0, 200)}`;
+  }
   if (/no image/.test(raw)) return 'Gemini לא החזיר תמונה, כנראה בגלל התיאור. נסו לנסח אותו אחרת.';
   return `יצירת התמונות נכשלה: ${raw.replace(/^image generation failed\s*/, '').slice(0, 200)}`;
 }

@@ -1,5 +1,6 @@
 // Contracts between the CMS (apps/admin) and the admin API (/api/v1/admin/*).
 import { z } from 'zod';
+import { PROMPT_AUTHORS } from './agent';
 import { STAFF_ROLES } from './auth';
 import { CATEGORY_SLUGS } from './categories';
 
@@ -378,6 +379,8 @@ export type ChatMessageDto = z.infer<typeof ChatMessageDto>;
 export const ImageBatchDto = z.object({
   id,
   prompt: z.string(),
+  /** Who wrote the description: the visual agent or the editor (null: before the agent, the writer AI's English prompt). */
+  promptBy: z.enum(PROMPT_AUTHORS).nullable(),
   createdAt: iso,
   images: z.array(MediaDto),
   /** working: the AI is still drawing; failed: nothing came back (error says why, for the editor). */

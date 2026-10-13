@@ -6,6 +6,7 @@ import {
   type DraftColor,
   type DraftStatus,
   type Placement,
+  type PromptAuthor,
   type PublishedArticleDto,
   type ReelMotion,
   type ReelStage,
@@ -14,6 +15,7 @@ import {
   type ShareTemplate,
   type SocialPlatform,
   type SourceStatus,
+  type VisualAgentOverview,
 } from '@b4/shared';
 
 export const categoryName = (slug: string | null | undefined) => CATEGORIES.find((c) => c.slug === slug)?.name ?? 'ללא קטגוריה';
@@ -69,6 +71,16 @@ export const REEL_STAGE: Record<ReelStage, { label: string; tone: Tone }> = {
   video: { label: 'סרטון מחכה לאישור', tone: 'warn' },
   approved: { label: 'מאושר לפרסום', tone: 'ok' },
 };
+
+/** The visual agent's learning cases. */
+export const VISUAL_CASE: Record<VisualAgentOverview['recent'][number]['kind'], string> = { article_image: 'תמונה לכתבה', reel: 'ריל' };
+export const VISUAL_CASE_STATUS: Record<VisualAgentOverview['recent'][number]['status'], { label: string; tone: Tone }> = {
+  pending: { label: 'ממתין ללמידה', tone: 'warn' },
+  distilled: { label: 'נלמד', tone: 'ok' },
+  excluded: { label: 'לא נלמד', tone: 'muted' },
+};
+/** Who wrote an image description. */
+export const PROMPT_BY: Record<PromptAuthor, string> = { agent: 'נכתב ע״י סוכן התמונות', editor: 'נכתב ע״י העורך' };
 
 export const ARTICLE_STATUS: Record<PublishedArticleDto['status'], { label: string; tone: Tone }> = {
   published: { label: 'באתר', tone: 'ok' },

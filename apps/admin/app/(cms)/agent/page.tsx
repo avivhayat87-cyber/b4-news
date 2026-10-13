@@ -1,18 +1,20 @@
 'use client';
-// The newsroom agent: the chat, the editor agent (settings + learning), and the
-// connection to the Claude app.
+// The newsroom agent: the chat, the editor agent (settings + learning), the visual
+// agent (Google: image and reel prompts + learning), and the connection to the Claude app.
 import type { AgentStatusDto } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AgentChat } from '@/components/agent/chat';
 import { ConnectClaude } from '@/components/agent/connect';
 import { EditorAgent } from '@/components/agent/editor-agent';
+import { VisualAgent } from '@/components/agent/visual-agent';
 import { Badge, PageHeader, cx } from '@/components/ui';
 import { admin } from '@/lib/api';
 
 const TABS = [
   ['chat', "צ'אט עם הסוכן"],
   ['editor', 'סוכן העריכה'],
+  ['visual', 'סוכן התמונות (Google)'],
   ['connect', 'חיבור לאפליקציית Claude'],
 ] as const;
 
@@ -36,6 +38,7 @@ export default function AgentPage() {
       </div>
       {tab === 'chat' && <AgentChat status={status.data} />}
       {tab === 'editor' && <EditorAgent />}
+      {tab === 'visual' && <VisualAgent />}
       {tab === 'connect' && <ConnectClaude />}
     </>
   );

@@ -36,7 +36,8 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
   },
   gemini: {
     title: 'Gemini: תמונות וסרטונים',
-    description: 'יוצר 3 טיוטות תמונה מהירות לכל כתבה, את התמונה שנבחרה באיכות מלאה, את תמונות הסטורי (Nano Banana של Google), וסרטוני ריל כשמבקשים (Veo של Google).',
+    description:
+      'סוכן התמונות כותב את התיאורים לתמונות ואת ההנחיות לריל ולומד מהבחירות שלכם. Gemini יוצר 3 טיוטות תמונה מהירות לכל כתבה, את התמונה שנבחרה באיכות מלאה, את תמונות הסטורי (Nano Banana של Google), וסרטוני ריל כשמבקשים (Veo של Google).',
     docsUrl: 'https://aistudio.google.com/apikey',
     fields: [
       {
@@ -47,6 +48,14 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
         // Google has more than one key format (standard "AIza…" keys and newer auth keys).
         pattern: '^[A-Za-z0-9_.\\-]{30,300}$',
         help: 'נוצר ב-aistudio.google.com תחת API Keys. מפתח ישן צריך הגבלה ל-Gemini API בלבד.',
+      },
+      {
+        key: 'agentModel',
+        label: 'מודל לסוכן התמונות',
+        secret: false,
+        defaultValue: 'gemini-3.8-flash',
+        pattern: '^[a-z0-9][a-z0-9.\\-]{2,80}$',
+        help: 'כותב את התיאורים לתמונות ואת ההנחיות לריל, ולומד מהבחירות שלכם. אפשר מודל זול יותר (gemini-3.5-flash-lite) או חזק יותר (gemini-4-argon).',
       },
       {
         key: 'previewModel',

@@ -3,6 +3,7 @@ import type { Handlers } from '../lib/jobs';
 import type { Services } from './context';
 import { FINAL_IMAGE_JOB, markRefineFailed, markRewriteFailed, runFinalImage, runImages, runRefine, runRewrite } from './drafts';
 import { AGENT_TURN_JOB, markTurnFailed, runAgentTurn } from './agent/chat';
+import { VISUAL_LEARN_JOB, runVisualLearning } from './agent/visual';
 import { BATCH_LEARNING_JOB, runBatchLearning, runDistill } from './learning';
 import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
@@ -32,6 +33,7 @@ export const handlers: Handlers<Services> = {
   'publish.run': { run: runPublish, onFailed: markPublishFailed, maxAttempts: 2 },
   'learning.distill': { run: runDistill, maxAttempts: 2 },
   [BATCH_LEARNING_JOB]: { run: runBatchLearning, maxAttempts: 2 },
+  [VISUAL_LEARN_JOB]: { run: runVisualLearning, maxAttempts: 2 },
   [AGENT_TURN_JOB]: { run: runAgentTurn, onFailed: markTurnFailed, maxAttempts: 1 },
   'source.setup': { run: runSourceSetup, maxAttempts: 1 },
   [TRANSLATE_JOB]: { run: runHeadlineTranslation, maxAttempts: 2 },

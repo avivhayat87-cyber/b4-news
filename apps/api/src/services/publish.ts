@@ -31,6 +31,7 @@ import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import type { Services } from './context';
 import { type DraftRow, loadDraft, summariesFor } from './drafts';
 import { queueBatchLearning, recordFeedback } from './learning';
+import { queueVisualLearning, recordImageFeedback } from './agent/visual';
 import { setArticleTags, updateArticleFromDraft } from './article-content';
 import { type SocialPayload, publishToNetwork } from './social-adapters';
 
@@ -207,6 +208,7 @@ async function publishArticle(db: Db, draft: DraftRow, editorId: string): Promis
     if (draft.placement !== 'none') await placeOnHomepage(tx, draft.placement, article!.id);
     await tx.update(articleDrafts).set({ status: 'published', publishedArticleId: article!.id }).where(eq(articleDrafts.id, draft.id));
     await recordFeedback(tx, draft, article!.id, editorId);
+    await recordImageFeedback(tx, draft, article!.id, editorId);
     return { id: article!.id, slug: article!.slug, category: cat?.slug ?? '' };
   });
 }
@@ -363,8 +365,11 @@ export async function runPublish(s: Services, job: JobRow) {
   // 2. Social networks (only after the site is live).
   for (const { draft, article } of published) await postSocial(s, draft, article.id, steps);
 
-  // 3. The learning loop: the whole batch in one learning pass.
-  if (published.length) await queueBatchLearning(s, publishJobId, pj.requestedBy).catch(() => undefined);
+  // 3. The learning loop: the whole batch in one learning pass; the visual agent learns every few cases.
+  if (published.length) {
+    await queueBatchLearning(s, publishJobId, pj.requestedBy).catch(() => undefined);
+    await queueVisualLearning(s, pj.requestedBy).catch(() => undefined);
+  }
 
   const siteFailures = Object.entries(steps).filter(([k, v]) => k.endsWith(':site') && v.startsWith('failed')).length;
   const status = siteFailures && !published.length && !updated.length ? 'failed' : 'succeeded';

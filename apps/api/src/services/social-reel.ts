@@ -1,12 +1,13 @@
 // Reels for the social page, made in steps that each wait for the editor:
-//   1. prompts: the AI reads the article and looks at its pictures, and writes two prompts in
-//      Hebrew (the picture, the video). The editor edits and approves them. No cost yet.
+//   1. prompts: the visual agent (Google) reads the article and looks at its pictures, and writes
+//      two prompts in Hebrew (the picture, the video). The editor edits and approves them.
 //   2. image: a new Gemini picture from the approved prompt (translated to English for the model),
 //      in the spirit of the article's pictures, never a copy; the branded cover is drawn on it.
 //   3. video: Google Veo animates the clean picture (no text in it to warp) by the approved video
 //      prompt. The editor approves the video, or changes the prompt and asks again.
 // Each step is its own job; a picture or a video is made only on the editor's click. Every AI call
-// is tracked in ai_jobs. Instagram's API can't add music from its library: that is done in the app.
+// is tracked in ai_jobs. Approving a reel teaches the visual agent. Instagram's API can't add music
+// from its library: that is done in the app.
 import { randomUUID } from 'node:crypto';
 import { type ReelMotion, type ReelPlan, ReelSettings, type ShareTemplate, VIDEO_PRICE_PER_SECOND } from '@b4/shared';
 import { and, articleDrafts, articleShares, desc, eq, inArray, jobs, mediaAssets, sql } from '@b4/db';
@@ -14,6 +15,7 @@ import sharp from 'sharp';
 import { AppError, errors } from '../errors';
 import { ingestImage } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
+import { recordReelFeedback, writeReelPrompts } from './agent/visual';
 import { activePrompt, tracked } from './ai';
 import type { ImageReference } from './ai/types';
 import { articleBodyText } from './article-content';
@@ -127,27 +129,24 @@ export async function runReelPrompts(s: Services, job: JobRow) {
   });
   const share = await loadShare(s, articleId);
   if (!share?.headline) throw new PermanentJobError('no kit');
-  const prompt = await activePrompt(s.db, 'reel.prompts');
-  const textAi = await s.ai.text();
-  const current = share.reelPlan ? { imagePrompt: share.reelPlan.imagePrompt, videoPrompt: share.reelPlan.videoPrompt } : undefined;
-  const { result } = await tracked(
-    s.db,
-    { type: 'social_caption', provider: textAi.provider, requestedBy: job.createdBy, promptKey: 'reel.prompts', promptVersion: prompt.version },
-    async () =>
-      textAi.reelPrompts({
-        systemPrompt: prompt.body,
-        article: { title: article.title, subtitle: article.subtitle || article.excerpt, body: articleBodyText(article), section: category, hook: share.hook },
-        images: await articlePictures(s, article),
-        current,
-        instruction: job.payload.instruction ? String(job.payload.instruction) : undefined,
-      }),
-  );
+  const plan = share.reelPlan;
+  const instruction = job.payload.instruction ? String(job.payload.instruction) : undefined;
+  // The visual agent (Google) writes them, by the newsroom's settings and what it learned.
+  const written = await writeReelPrompts(s, {
+    requestedBy: job.createdBy,
+    article: { title: article.title, subtitle: article.subtitle || article.excerpt, body: articleBodyText(article), section: category, hook: share.hook },
+    images: await articlePictures(s, article),
+    current: plan ? { imagePrompt: plan.imagePrompt, videoPrompt: plan.videoPrompt } : undefined,
+    instruction,
+  });
   // New prompts don't touch what was already made; the editor decides what to make again.
   await setPlan(s, articleId, {
-    stage: share.reelPlan?.stage ?? 'prompts',
-    imagePrompt: result.data.image_prompt.trim().slice(0, 1500),
-    videoPrompt: result.data.video_prompt.trim().slice(0, 1500),
-    approvedAt: share.reelPlan?.approvedAt ?? null,
+    ...plan,
+    stage: plan?.stage ?? 'prompts',
+    ...written,
+    approvedAt: plan?.approvedAt ?? null,
+    suggested: written,
+    directions: instruction ? [...(plan?.directions ?? []), instruction].slice(-10) : (plan?.directions ?? []),
   });
   return { ok: true };
 }
@@ -207,7 +206,7 @@ export async function runReelImage(s: Services, job: JobRow) {
   const { reel: _video, reelPoster: _poster, ...rest } = share.rendered;
   await s.db
     .update(articleShares)
-    .set({ reelImageMediaId: picture.id, rendered: { ...rest, reelPoster: posterKey }, reelPlan: { ...plan, stage: 'image', approvedAt: null } })
+    .set({ reelImageMediaId: picture.id, rendered: { ...rest, reelPoster: posterKey }, reelPlan: { ...plan, stage: 'image', approvedAt: null, pictures: (plan.pictures ?? 0) + 1 } })
     .where(eq(articleShares.articleId, articleId));
   await s.storage.remove(old).catch(() => undefined);
   return { picture: picture.id };
@@ -267,16 +266,19 @@ export async function runReelVideo(s: Services, job: JobRow) {
   const old = share.rendered.reel;
   await s.db
     .update(articleShares)
-    .set({ rendered: { ...share.rendered, reel: videoKey }, reelPlan: { ...plan, stage: 'video', approvedAt: null } })
+    .set({ rendered: { ...share.rendered, reel: videoKey }, reelPlan: { ...plan, stage: 'video', approvedAt: null, videos: (plan.videos ?? 0) + 1 } })
     .where(eq(articleShares.articleId, articleId));
   if (old) await s.storage.remove([old]).catch(() => undefined);
   return { video: true, model: videoAi.model, seconds: settings.durationSeconds };
 }
 
-/** The editor approved the video: the reel can be published. */
-export async function approveReel(s: Services, articleId: number): Promise<void> {
+/** The editor approved the video: the reel can be published, and the visual agent learns from how it came about. */
+export async function approveReel(s: Services, staff: Staff, articleId: number): Promise<void> {
   const share = await loadShare(s, articleId);
   if (!share) throw errors.notFound('הריל');
   if (!share.reelPlan || share.reelPlan.stage !== 'video' || !share.rendered.reel) throw new AppError(409, 'no_video', 'אין עדיין סרטון לאשר.');
-  await setPlan(s, articleId, { ...share.reelPlan, stage: 'approved', approvedAt: new Date().toISOString() });
+  const plan: ReelPlan = { ...share.reelPlan, stage: 'approved', approvedAt: new Date().toISOString() };
+  await setPlan(s, articleId, plan);
+  const { article, category } = await loadArticle(s, articleId);
+  await recordReelFeedback(s, staff.id, { articleId, title: article.title, section: category, plan, pictureId: share.reelImageMediaId });
 }

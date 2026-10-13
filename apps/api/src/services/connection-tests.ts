@@ -35,11 +35,19 @@ export async function testIntegration(s: Services, id: IntegrationId): Promise<C
       const model = (name: string) => getJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(name)}`, { headers: { 'x-goog-api-key': v.apiKey! } });
       const r = await model(v.imageModel!);
       if (r.status === 200) {
-        if (v.previewModel === v.imageModel) return ok(`מחובר. המודל ${r.body.displayName ?? v.imageModel} זמין.`);
-        const p = await model(v.previewModel!);
-        if (p.status === 200) return ok(`מחובר. זמינים: ${p.body.displayName ?? v.previewModel} לטיוטות, ${r.body.displayName ?? v.imageModel} לתמונה הסופית.`);
-        if (p.status === 404) return fail(`המפתח תקין, אבל מודל הטיוטות "${v.previewModel}" לא זמין בו. בדקו את שם המודל.`);
-        return fail(`Gemini החזיר שגיאה (${p.status}) על מודל הטיוטות.`);
+        // The other models in use: the quick drafts, and the visual agent that writes the prompts.
+        const found = [`${r.body.displayName ?? v.imageModel} לתמונה הסופית`];
+        for (const [name, role] of [
+          [v.previewModel!, 'לטיוטות'],
+          [v.agentModel!, 'לסוכן התמונות'],
+        ] as const) {
+          if (name === v.imageModel) continue;
+          const p = await model(name);
+          if (p.status === 404) return fail(`המפתח תקין, אבל המודל "${name}" (${role}) לא זמין בו. בדקו את שם המודל.`);
+          if (p.status !== 200) return fail(`Gemini החזיר שגיאה (${p.status}) על המודל "${name}" (${role}).`);
+          found.push(`${p.body.displayName ?? name} ${role}`);
+        }
+        return ok(`מחובר. זמינים: ${found.join(', ')}.`);
       }
       if (r.status === 404) return fail(`המפתח תקין, אבל המודל "${v.imageModel}" לא זמין בו. בדקו את שם המודל.`);
       // Google answers a bad key with 400, and a key it won't accept (e.g. unrestricted) with 401/403; its message says which.

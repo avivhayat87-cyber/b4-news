@@ -1,6 +1,6 @@
 // The newsroom agent: the chat in the CMS, the editor agent's settings and
-// learning reports, the fact check, and the tool endpoint the Claude app (MCP)
-// calls with a personal access token.
+// learning reports, the visual agent (Google), the fact check, and the tool
+// endpoint the Claude app (MCP) calls with a personal access token.
 import {
   AgentConversationDto,
   AgentConversationSummary,
@@ -16,7 +16,10 @@ import {
   EditorAgentSettings,
   FactCheckDto,
   LearningReportDto,
+  SaveVisualRulesInput,
   SendAgentMessageInput,
+  VisualAgentOverview,
+  VisualAgentSettings,
 } from '@b4/shared';
 import { fileURLToPath } from 'node:url';
 import { and, desc, eq, isNull, staffApiTokens } from '@b4/db';
@@ -29,6 +32,7 @@ import { STAFF_TOKEN_PREFIX, requireStaff } from '../../plugins/auth';
 import { agentStatus, conversationDto, decideAction, listConversations, sendMessage } from '../../services/agent/chat';
 import { draftFacts, getEditorSettings, saveEditorSettings } from '../../services/agent/editor';
 import { runTool, toolsFor } from '../../services/agent/tools';
+import { activateVisualProfile, getVisualSettings, queueVisualLearning, saveVisualRules, saveVisualSettings, visualOverview } from '../../services/agent/visual';
 import type { Services } from '../../services/context';
 import { learningReportsList } from '../../services/learning';
 
@@ -73,6 +77,40 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
   });
 
   app.get('/agent/learning-reports', { schema: { response: { 200: z.array(LearningReportDto) } } }, async () => learningReportsList(s));
+
+  // --- The visual agent (Google) ------------------------------------------------------------------
+  app.get('/agent/visual', { schema: { response: { 200: VisualAgentOverview } } }, async (req) => {
+    requireStaff(req);
+    return visualOverview(s);
+  });
+
+  app.get('/agent/visual-settings', { schema: { response: { 200: VisualAgentSettings } } }, async () => getVisualSettings(s.db));
+
+  app.put('/agent/visual-settings', { schema: { body: VisualAgentSettings, response: { 200: VisualAgentSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'editor');
+    const saved = await saveVisualSettings(s.db, staff.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'visual-settings', action: 'update' });
+    return saved;
+  });
+
+  app.post('/agent/visual/learn', { schema: { response: { 202: z.object({ jobId: z.string().uuid().nullable() }) } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor');
+    return reply.status(202).send({ jobId: await queueVisualLearning(s, staff.id, true) });
+  });
+
+  app.put('/agent/visual/rules', { schema: { body: SaveVisualRulesInput } }, async (req, reply) => {
+    const staff = requireStaff(req, 'admin');
+    await saveVisualRules(s, staff.id, req.body.rules);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'visual-rules', action: 'update' });
+    return reply.status(204).send();
+  });
+
+  app.post('/agent/visual/profiles/:id/activate', { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } }, async (req, reply) => {
+    const staff = requireStaff(req, 'admin');
+    await activateVisualProfile(s, staff.id, req.params.id);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: `visual-profile:${req.params.id}`, action: 'activate' });
+    return reply.status(204).send();
+  });
 
   app.get('/drafts/:id/facts', { schema: { params: idParam, response: { 200: FactCheckDto } } }, async (req) => draftFacts(s.db, req.params.id));
 

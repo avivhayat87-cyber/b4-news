@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelPlan, type SelectorConfig } from '@b4/shared';
+import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -61,7 +61,20 @@ export const revisionSource = pgEnum('revision_source', ['ai_initial', 'ai_refin
 /** ai_preview: a quick, low-resolution AI draft to choose from; the chosen one is redrawn as an ai_article. */
 export const mediaKind = pgEnum('media_kind', ['upload', 'scraped_original', 'ai_article', 'ai_social', 'ai_preview']);
 export const imagePurpose = pgEnum('image_purpose', ['article', 'social']);
-export const aiJobType = pgEnum('ai_job_type', ['rewrite', 'refine', 'article_images', 'social_caption', 'social_image', 'style_distill', 'classify', 'translate', 'agent_turn', 'social_video']);
+export const aiJobType = pgEnum('ai_job_type', [
+  'rewrite',
+  'refine',
+  'article_images',
+  'social_caption',
+  'social_image',
+  'style_distill',
+  'classify',
+  'translate',
+  'agent_turn',
+  'social_video',
+  'visual_prompt',
+  'visual_learning',
+]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
 export const articleStatus = pgEnum('article_status', ['published', 'scheduled', 'unpublished']);
@@ -516,6 +529,8 @@ export const imageBatches = pgTable(
       .references(() => articleDrafts.id, { onDelete: 'cascade' }),
     purpose: imagePurpose().notNull(),
     prompt: text().notNull(),
+    /** agent | editor: who wrote the description (null: before the visual agent). */
+    promptBy: text(),
     aiJobId: uuid().references(() => aiJobs.id),
     createdBy: uuid().references(() => users.id),
     createdAt: createdAt(),
@@ -915,6 +930,42 @@ export const learningReports = pgTable(
   },
   (t) => [index('learning_reports_created_idx').on(t.createdAt.desc())],
 );
+
+/** What the editors did with the visual agent's suggestions: an article's images, or a reel. */
+export const visualFeedback = pgTable(
+  'visual_feedback',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** One case per subject: "image:<draft id>" or "reel:<article id>:<approved at>". */
+    subjectKey: text().notNull().unique(),
+    /** article_image | reel */
+    kind: text().notNull(),
+    draftId: uuid().references(() => articleDrafts.id, { onDelete: 'set null' }),
+    articleId: bigint({ mode: 'number' }).references(() => articles.id, { onDelete: 'set null' }),
+    detail: jsonb().$type<VisualFeedbackDetail>().notNull(),
+    /** The image the editor chose (or the reel picture they approved), for the agent to look at. */
+    chosenMediaId: uuid().references(() => mediaAssets.id, { onDelete: 'set null' }),
+    /** Options the editor saw and passed over (a few). */
+    rejectedMediaIds: uuid().array().notNull().default(sql`'{}'::uuid[]`),
+    status: feedbackStatus().notNull().default('pending'),
+    createdBy: uuid().references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index('visual_feedback_status_idx').on(t.status, t.createdAt.desc())],
+);
+
+/** The visual agent's learned rules, versioned like the house style (one active). */
+export const visualProfiles = pgTable('visual_profiles', {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  rules: text().notNull(),
+  /** What this learning pass learned, in Hebrew, for the newsroom (null for an editor's own edit). */
+  summary: text(),
+  feedbackCount: integer().notNull().default(0),
+  isActive: boolean().notNull().default(false),
+  aiJobId: uuid().references(() => aiJobs.id),
+  approvedBy: uuid().references(() => users.id),
+  createdAt: createdAt(),
+});
 
 // ---------------------------------------------------------------------------
 // The newsroom agent (chat in the CMS, and the Claude app through MCP)

@@ -84,8 +84,10 @@ src/
   services/         Domain logic (no HTTP). One file or folder per domain:
     context.ts        Services = { db, config, settings, ai, storage, fetch, mailer, log }, wired once
     handlers.ts       Job kind → handler: the only place that maps queued work to code
-    ai/               AiHub and providers (Anthropic text, Gemini images, development stand-ins), types
-    agent/            The newsroom agent: tools over the services, chat, model engine, editor-agent settings
+    ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent;
+                        development stand-ins), types
+    agent/            The newsroom agent: tools over the services, chat, model engine, editor-agent settings,
+                        the visual agent (visual.ts: image and reel prompts, and its learning)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
@@ -164,7 +166,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
 | **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `manual/`, `components/editor/` | | `magazines`, `article_drafts`, `draft_revisions`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
-| **Newsroom agent** | `services/agent/*`, `routes/admin/agent.ts`, `mcp/` | `agent/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens` |
+| **Newsroom agent** | `services/agent/*` (chat, editor agent, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*`, `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
@@ -223,8 +225,12 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   release.
 - **Image and video prompts the editor sees are Hebrew.** The editor reads, edits and approves
   them in Hebrew, and the system sends the model an English translation of the approved text
-  (`TextAI.toEnglish`, the fast model). Changed at the owner's request on 2026-10-13, starting
-  with reels.
+  (`TextAI.toEnglish`, the fast model). Changed at the owner's request on 2026-10-13.
+- **Who writes what:** Claude (`s.ai.text()`) writes the articles and the social text. The
+  visual agent, Google Gemini (`s.ai.visual()`, `services/agent/visual.ts`), writes the
+  descriptions for article images and the reel prompts. It learns from the editors' choices
+  into versioned rules (`visual_profiles`), the way the house style is learned. Decided by the
+  owner on 2026-10-13: the owner manages it from the CMS ("סוכן AI" > "סוכן התמונות").
 - **Right to left:** "start" is the right side.
   - The site and the CMS set `dir="rtl"` on `<html>`, plus the editor canvas.
   - The app sets direction in its component styles.
@@ -288,11 +294,12 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   - throw `PermanentJobError` when a retry can't help;
   - handlers must be safe to run twice.
 - **AI:**
-  - `await s.ai.text()` / `s.ai.image()` inside `tracked(...)` (cost and errors go to `ai_jobs`);
+  - `await s.ai.text()` / `image()` / `video()` / `visual()` inside `tracked(...)` (cost and
+    errors go to `ai_jobs`);
   - output is validated with zod;
   - untrusted text (scraped articles, comments) is passed as marked data;
-  - providers implement `TextAI` / `ImageAI` (`services/ai/types.ts`), with a development
-    stand-in for each.
+  - providers implement `TextAI` / `ImageAI` / `VideoAI` / `VisualAI` (`services/ai/types.ts`),
+    with a development stand-in for each.
 - **Configuration:**
   - every new environment variable goes into `config.ts` (validated, with production guards)
     and `.env.example`;
@@ -455,7 +462,8 @@ code.
 - `apps/mobile/src/app/article/[slug].tsx` builds its own `SITE_URL` from
   `EXPO_PUBLIC_SITE_URL` instead of importing it from `lib/api.ts`.
 - `brand/` and the `public/brand/` copies in the apps are kept in sync by hand.
-- The article images panel in the editor still shows the AI's image prompt in English (the
-  Hebrew-prompt convention starts with reels).
+- The rewrite still asks Claude for an English `image_prompt` (`article_drafts.image_prompt`),
+  which nothing uses since the visual agent writes the descriptions. Drop it with the next
+  version of the `rewrite.system` prompt.
 - `apps/admin/app/(cms)/comments/page.tsx` declares its comment shape locally instead of in
   `@b4/shared`.

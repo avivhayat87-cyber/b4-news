@@ -46,6 +46,13 @@ export const ReelPlan = z.object({
   /** What happens in the video (camera, motion, light, mood), in Hebrew. */
   videoPrompt: ReelPrompt,
   approvedAt: iso.nullable(),
+  /** What the visual agent last suggested, before the editor's edits (it learns from the difference). */
+  suggested: z.object({ imagePrompt: z.string(), videoPrompt: z.string() }).nullable().optional(),
+  /** The directions the editor gave when asking for new prompts. */
+  directions: z.array(z.string()).optional(),
+  /** How many pictures and videos were made until the editor approved. */
+  pictures: z.number().int().optional(),
+  videos: z.number().int().optional(),
 });
 export type ReelPlan = z.infer<typeof ReelPlan>;
 

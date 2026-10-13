@@ -3,10 +3,11 @@ import type { Config } from '../../config';
 import { PermanentJobError } from '../../lib/jobs';
 import type { SettingsStore } from '../settings';
 import { AnthropicText } from './anthropic';
-import { FakeText, PlaceholderImages, PlaceholderVideo } from './fake';
+import { FakeText, FakeVisual, PlaceholderImages, PlaceholderVideo } from './fake';
 import { GeminiImages, type ImageSize } from './gemini-images';
 import { GeminiVideo } from './gemini-video';
-import type { ImageAI, ImageTier, TextAI, Usage, VideoAI } from './types';
+import { GeminiVisual } from './gemini-visual';
+import type { ImageAI, ImageTier, TextAI, Usage, VideoAI, VisualAI } from './types';
 
 /** Drafts are drawn at the lowest resolution every image model supports. */
 const DRAFT_SIZE: ImageSize = '1K';
@@ -18,6 +19,8 @@ export interface AiHub {
   image(tier?: ImageTier): Promise<ImageAI>;
   /** Reel videos (Google Veo); model overrides the one set in Settings. */
   video(model?: string): Promise<VideoAI>;
+  /** The visual agent (Google Gemini): the prompts for article images and reels, and its learning. */
+  visual(): Promise<VisualAI>;
   status(): Promise<{ text: string; image: string; live: boolean }>;
 }
 
@@ -32,11 +35,12 @@ export class AiNotConnectedError extends PermanentJobError {
 }
 
 /** Fixed providers (tests). */
-export function fixedAi(text: TextAI, image: ImageAI, draftImage: ImageAI = image, video: VideoAI = new PlaceholderVideo()): AiHub {
+export function fixedAi(text: TextAI, image: ImageAI, draftImage: ImageAI = image, video: VideoAI = new PlaceholderVideo(), visual: VisualAI = new FakeVisual()): AiHub {
   return {
     text: async () => text,
     image: async (tier = 'final') => (tier === 'draft' ? draftImage : image),
     video: async () => video,
+    visual: async () => visual,
     status: async () => ({ text: text.provider, image: image.provider, live: text.live && image.live }),
   };
 }
@@ -82,10 +86,25 @@ export function createAiHub(config: Config, settings: SettingsStore): AiHub {
     throw new AiNotConnectedError('image');
   };
 
+  const fakeVisual = new FakeVisual();
+  let visualCache: { key: string; ai: VisualAI } | null = null;
+  const visual = async (): Promise<VisualAI> => {
+    if (config.ai.image === 'placeholder') return fakeVisual;
+    const v = await settings.integration('gemini');
+    if (v.apiKey) {
+      const key = `${v.apiKey}|${v.agentModel}`;
+      if (visualCache?.key !== key) visualCache = { key, ai: new GeminiVisual(v.apiKey, v.agentModel!) };
+      return visualCache.ai;
+    }
+    if (config.ai.allowStandIns) return fakeVisual;
+    throw new AiNotConnectedError('image');
+  };
+
   return {
     text,
     image,
     video,
+    visual,
     status: async () => {
       const [t, i] = await Promise.all([text().catch(() => null), image().catch(() => null)]);
       return { text: t?.provider ?? 'none', image: i?.provider ?? 'none', live: Boolean(t?.live && i?.live) };

@@ -101,6 +101,21 @@ Calm, serious broadcast-news tone: no cuts, no transitions, no new objects, no p
 Sound: a subtle, low ambience only; no speech, no singing, no music.
 {{instruction}}`;
 
+/** The visual agent (Gemini): the description of an article's main image, in Hebrew for the editor (output rules are in the code). */
+const VISUAL_IMAGE_PROMPT = [
+  "You are the photo editor of B4 NEW'S, an Israeli economics news site. For each article you write, in Hebrew, a short description of its main image; the editor sees it and an image model draws three options from it.",
+  'Think like a picture desk: what single image tells this story at a glance on the homepage and in the feed? Prefer a concrete place, object or scene that belongs to the story over a generic symbol (no piggy banks, arrows or handshakes unless the story is about them).',
+  'Realistic, high-end editorial photography fits most stories; a clean illustration fits abstract subjects (rates, indices, regulation). The image must work wide (16:9) and cropped to a square.',
+].join('\n');
+
+/** The visual agent's learning pass: what the editors did with its suggestions (the output format is fixed in code). */
+const VISUAL_LEARN_PROMPT = [
+  "You are the visual agent of B4 NEW'S, an Israeli economics news site: you write the descriptions for article images and the prompts for reels. Here you learn from what the editors did with your suggestions: which descriptions they kept, how they rewrote them, which of the drawn images they chose and which they passed over (you can see them), and which reels they approved after how many attempts.",
+  'rules: your updated guide for writing image descriptions and reel prompts, in Hebrew, a numbered list of at most 20 concrete, actionable rules (subjects and scenes that work, composition, light, mood, photography vs illustration, camera moves for reels, what to avoid). Keep rules from the current guide that these cases do not contradict; merge duplicates. Never include facts about specific stories.',
+  'Do not turn a lesson into a rule if it contradicts the newsroom settings; the newsroom sets those.',
+  'summary: three to six short Hebrew sentences for the newsroom: what the editors preferred and rejected in these cases, and which rules you added or changed.',
+].join('\n');
+
 /** Idempotent: safe to run on every start. */
 export async function seedReferenceData(db: Db): Promise<void> {
   await db
@@ -130,6 +145,8 @@ export async function seedReferenceData(db: Db): Promise<void> {
       { key: 'reel.prompts', version: 1, body: REEL_PROMPTS_PROMPT, isActive: true },
       { key: 'reel.image', version: 2, body: REEL_IMAGE_PROMPT_V2, isActive: true },
       { key: 'reel.video', version: 2, body: REEL_VIDEO_PROMPT_V2, isActive: true },
+      { key: 'visual.image', version: 1, body: VISUAL_IMAGE_PROMPT, isActive: true },
+      { key: 'visual.learn', version: 1, body: VISUAL_LEARN_PROMPT, isActive: true },
     ])
     .onConflictDoNothing();
 }

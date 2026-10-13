@@ -144,7 +144,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/drafts/:id/refine` | editor | `RefineInput` → 202 `{ jobId }` |
 | GET | `/admin/drafts/:id/chat` | any | `ChatMessageDto[]` |
 | POST | `/admin/drafts/:id/retry-ai` | editor | re-run the first rewrite |
-| GET/POST | `/admin/drafts/:id/images` | any / editor | batches of 4 · `GenerateImagesInput` → 202 `{ jobId }` |
+| GET/POST | `/admin/drafts/:id/images` | any / editor | `DraftImagesDto` (batches of 3 quick drafts, each with its description and `promptBy`) · `GenerateImagesInput` → 202 `{ jobId }`; without a `prompt` the visual agent writes the description |
 | POST | `/admin/drafts/:id/finalize` · `/reopen` · `/skip` · `/unskip` | editor | text final (opens social) · back to editing · not for publishing |
 | GET | `/admin/drafts/:id/revisions` | any | history |
 | POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
@@ -172,7 +172,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | PUT | `/admin/social/articles/:articleId/reel/prompts` | editor | `UpdateReelPromptsInput` → `ShareDto`: the editor's wording |
 | POST | `/admin/social/articles/:articleId/reel/image` | editor | 202 `{ jobId }`: prompts approved, a new picture (Gemini, from the English translation) and its branded cover; a new picture drops the old video |
 | POST | `/admin/social/articles/:articleId/reel/video` | editor | 202 `{ jobId }`: picture approved, a Veo video from the clean picture; 409 `no_picture` before there is one |
-| POST | `/admin/social/articles/:articleId/reel/approve` | editor | → `ShareDto`: the video is approved; only approved reels are published (`/social/publish` answers 422 `no_reel` otherwise) |
+| POST | `/admin/social/articles/:articleId/reel/approve` | editor | → `ShareDto`: the video is approved; only approved reels are published (`/social/publish` answers 422 `no_reel` otherwise). Recorded as a learning case for the visual agent |
 | GET | `/admin/social/targets` | any | `ShareTargetDto[]`: active accounts, connected or not, which formats post automatically |
 | POST | `/admin/social/publish` | editor | `PublishSharesInput` (articles × formats × accounts) → 202 `{ jobId }`; a post that went out is never sent again |
 | POST | `/admin/social/articles/:articleId/posted` | editor | `{ accountId, format }`: a prepared post was posted by hand |
@@ -187,6 +187,11 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/agent/conversations/:id/decide` | any (the tool checks the role) | `DecideActionInput` (`approve` true/false) for a proposed change |
 | GET / PUT | `/admin/agent/editor-settings` | any / editor | `EditorAgentSettings` (divergence, length, voice, instructions; facts are always kept) |
 | GET | `/admin/agent/learning-reports` | any | `LearningReportDto[]`: one per publish batch |
+| GET | `/admin/agent/visual` | any | `VisualAgentOverview`: the visual agent's model, pending and learned cases, recent cases, rule versions with what each pass learned, last learning error |
+| GET / PUT | `/admin/agent/visual-settings` | any / editor | `VisualAgentSettings` (article style, reel style, instructions, what to avoid, auto-learning) |
+| POST | `/admin/agent/visual/learn` | editor | → 202 `{ jobId }`: learn now from the pending cases (409 `nothing_to_learn` when there are none) |
+| PUT | `/admin/agent/visual/rules` | admin | `{ rules }` → 204: the admin's own wording becomes the active version |
+| POST | `/admin/agent/visual/profiles/:id/activate` | admin | → 204: restore an older version of the rules |
 | GET / POST | `/admin/agent/tokens` | any (own) | `ApiTokenDto[]` · `CreateApiTokenInput` → `CreatedApiToken` (the secret is shown once) |
 | POST | `/admin/agent/tokens/:id/revoke` | any (own) | |
 | GET | `/admin/agent/mcp-config` | any | `McpConfigDto`: the command for the Claude app's config |

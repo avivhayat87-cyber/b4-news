@@ -5,6 +5,7 @@ import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, RewriteRequest, ShareKitRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
+import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
 
 const usage = () => ({ model: 'fake', inputTokens: null, outputTokens: null, latencyMs: 1 });
 const sentences = (text: string) => text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
@@ -115,6 +116,26 @@ export class FakeText implements TextAI {
     };
   }
 
+  /** The stand-in doesn't translate; the image stand-in only guesses a section from the words. */
+  async toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>> {
+    return { data: { texts }, usage: usage() };
+  }
+}
+
+/** The visual agent's stand-in: Hebrew prompts from templates, and a learning pass that only counts. */
+export class FakeVisual implements VisualAI {
+  readonly provider = 'fake';
+  readonly model = 'fake';
+  readonly live = false;
+
+  async imagePrompt(req: ImagePromptRequest): Promise<AiResult<ImagePromptOutput>> {
+    const idea = req.tried.length ? ` (רעיון ${req.tried.length + 1})` : '';
+    return {
+      data: { prompt: `צילום עיתונאי לכתבה "${req.article.title}": מקום וחפצים שקשורים לנושא, אור טבעי, בלי טקסט ובלי אנשים מזוהים.${idea}` },
+      usage: usage(),
+    };
+  }
+
   async reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>> {
     const subject = req.article.title;
     const direction = req.instruction ? ` ${req.instruction}.` : '';
@@ -127,9 +148,15 @@ export class FakeText implements TextAI {
     };
   }
 
-  /** The stand-in doesn't translate; the image stand-in only guesses a section from the words. */
-  async toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>> {
-    return { data: { texts }, usage: usage() };
+  async learn(req: VisualLearnRequest): Promise<AiResult<LearnBatchOutput>> {
+    const pictures = req.cases.reduce((n, c) => n + c.images.length, 0);
+    return {
+      data: {
+        rules: [req.currentRules.trim(), `- (ספק לדוגמה) נלמד מ-${req.cases.length} מקרים ו-${pictures} תמונות.`].filter(Boolean).join('\n'),
+        summary: `(ספק לדוגמה) נקראו ${req.cases.length} מקרים בקריאה אחת, עם ${pictures} תמונות.`,
+      },
+      usage: usage(),
+    };
   }
 }
 

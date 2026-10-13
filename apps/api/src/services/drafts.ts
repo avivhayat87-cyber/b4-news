@@ -7,6 +7,7 @@ import {
   type JobRef,
   type MagazineDetail,
   type MagazineSummary,
+  type PromptAuthor,
   type SavedEdits,
   type SimilarityDto,
   InvalidDocError,
@@ -47,6 +48,7 @@ import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import { decodeText } from '../lib/safe-fetch';
 import { compareWording } from '../lib/similarity';
 import { editorGuidelinesFor } from './agent/editor';
+import { writeImagePrompt } from './agent/visual';
 import { activePrompt, activeStyleRules, tracked } from './ai';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
@@ -417,8 +419,23 @@ export async function requestImages(
 ) {
   const draft = await loadDraft(s.db, draftId);
   if (await activeJob(s.db, draftId, ['draft.images'])) throw new AppError(409, 'images_busy', 'התמונות עוד נוצרות. חכו רגע.');
-  const finalPrompt = (prompt?.trim() || (purpose === 'article' ? draft.imagePrompt : null) || `Editorial news image for: ${draft.title}`).slice(0, 1000);
-  const [batch] = await s.db.insert(imageBatches).values({ draftId, purpose, prompt: finalPrompt, createdBy: staffId }).returning({ id: imageBatches.id });
+  const own = prompt?.trim().slice(0, 1000);
+  let promptBy: PromptAuthor | null = null;
+  if (purpose === 'article') {
+    // Without the editor's own description, the visual agent writes one in the job. The agent's
+    // last description sent back unchanged (a retry) stays the agent's.
+    const [last] = own
+      ? await s.db
+          .select({ prompt: imageBatches.prompt, promptBy: imageBatches.promptBy })
+          .from(imageBatches)
+          .where(and(eq(imageBatches.draftId, draftId), eq(imageBatches.purpose, 'article')))
+          .orderBy(desc(imageBatches.createdAt))
+          .limit(1)
+      : [];
+    promptBy = !own || (last?.promptBy === 'agent' && last.prompt === own) ? 'agent' : 'editor';
+  }
+  const finalPrompt = own || (purpose === 'article' ? '' : `Editorial news image for: ${draft.title}`.slice(0, 1000));
+  const [batch] = await s.db.insert(imageBatches).values({ draftId, purpose, prompt: finalPrompt, promptBy, createdBy: staffId }).returning({ id: imageBatches.id });
   const useSourceImage = Boolean(opts.useSourceImage && draft.scrapedItemId);
   return enqueue(s.db, 'draft.images', { draftId, batchId: batch!.id, purpose, useSourceImage }, { draftId, createdBy: staffId, maxAttempts: 2 });
 }
@@ -439,7 +456,26 @@ export async function runImages(s: Services, job: JobRow) {
   // The images follow the article itself, not only the brief; the original's photo is used only when the editor asked.
   const draft = await loadDraft(s.db, batch.draftId);
   const reference = job.payload.useSourceImage ? await sourceImageReference(s, draft) : null;
-  const prompt = imageBrief(draft, batch.prompt, Boolean(reference));
+  let description = batch.prompt;
+  if (!description) {
+    // The visual agent describes the image (in Hebrew, shown to the editor); earlier descriptions were not what the editor wanted.
+    const tried = await s.db
+      .select({ prompt: imageBatches.prompt })
+      .from(imageBatches)
+      .where(and(eq(imageBatches.draftId, batch.draftId), eq(imageBatches.purpose, 'article'), ne(imageBatches.id, batchId), ne(imageBatches.prompt, '')))
+      .orderBy(desc(imageBatches.createdAt))
+      .limit(5);
+    description = await writeImagePrompt(s, draft, { requestedBy: job.createdBy, images: reference ? [reference] : [], tried: tried.map((t) => t.prompt) });
+    await s.db.update(imageBatches).set({ prompt: description }).where(eq(imageBatches.id, batchId));
+  }
+  // A Hebrew description goes to the image model in English (kept on the images as their prompt).
+  let brief = description;
+  if (/[א-ת]/.test(description)) {
+    const textAi = await s.ai.text();
+    const { result } = await tracked(s.db, { type: 'translate', provider: textAi.provider, draftId: batch.draftId, requestedBy: job.createdBy }, () => textAi.toEnglish([description]));
+    brief = result.data.texts[0] || description;
+  }
+  const prompt = imageBrief(draft, brief, Boolean(reference));
   const { result, aiJobId } = await tracked(
     s.db,
     { type: purpose === 'social' ? 'social_image' : 'article_images', provider: imageAi.provider, model: imageAi.model, draftId: batch.draftId, requestedBy: job.createdBy, imageCount: count },
@@ -451,7 +487,7 @@ export async function runImages(s: Services, job: JobRow) {
     const media = await ingestImage(s.db, s.storage, buffer, {
       kind: purpose === 'social' ? 'ai_social' : 'ai_preview',
       isAiGenerated: true,
-      aiPrompt: batch.prompt,
+      aiPrompt: brief,
       batchId,
       createdBy: job.createdBy,
       credit: 'איור: AI',
@@ -927,6 +963,7 @@ export async function imageBatchesOf(s: Services, draftId: string, purpose: 'art
     return {
       id: b.id,
       prompt: b.prompt,
+      promptBy: (b.promptBy as PromptAuthor | null) ?? null,
       createdAt: b.createdAt.toISOString(),
       images: media.filter((m) => m.generationBatchId === b.id).map((m) => toMediaDto(s.storage, m)),
       status,

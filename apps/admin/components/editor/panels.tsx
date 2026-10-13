@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
-import { COLOR, PLACEMENT, categoryName, formatDateTime, formatTime } from '@/lib/labels';
+import { COLOR, PLACEMENT, PROMPT_BY, categoryName, formatDateTime, formatTime } from '@/lib/labels';
 import { FocalPicker, UploadButton } from '../image-upload';
 import { FactCheck } from './fact-check';
 import { Badge, Button, ColorDot, Field, Spinner, cx, inputClass, useToast } from '../ui';
@@ -297,7 +297,11 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
             </div>
           </div>
         )}
-        <Field label="תיאור לתמונה (אפשר לשנות לפני יצירה)" htmlFor="img-prompt" hint="התמונות נוצרות לפי התיאור ולפי תוכן הכתבה: הכותרת, כותרת המשנה והפתיחה.">
+        <Field
+          label="תיאור לתמונה (אפשר לשנות לפני יצירה)"
+          htmlFor="img-prompt"
+          hint="סוכן התמונות של Google כותב את התיאור לפי הכתבה. בלי שינוי בתיאור, הוא יציע רעיון חדש בכל פעם; שיניתם אותו? התמונות ייווצרו לפי הנוסח שלכם, והסוכן לומד מזה."
+        >
           <textarea
             id="img-prompt"
             rows={2}
@@ -309,13 +313,21 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
         </Field>
         {busy && (
           <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-info" role="status">
-            <Spinner small /> יוצר 3 טיוטות…
+            <Spinner small /> {images.data?.batches[0] && !images.data.batches[0].prompt ? 'סוכן התמונות כותב תיאור ויוצר 3 טיוטות…' : 'יוצר 3 טיוטות…'}
           </p>
         )}
         <div className="mt-3 space-y-4">
           {images.data?.batches.map((b) => (
             <div key={b.id}>
-              <p className="mb-1.5 text-xs text-muted">{formatDateTime(b.createdAt)}</p>
+              <p className="mb-1.5 text-xs text-muted">
+                {formatDateTime(b.createdAt)}
+                {b.promptBy && ` · ${PROMPT_BY[b.promptBy]}`}
+              </p>
+              {b.prompt && (
+                <p className="mb-1.5 line-clamp-2 text-xs text-ink-2" dir="auto" title={b.prompt}>
+                  {b.prompt}
+                </p>
+              )}
               {b.status === 'failed' && b.images.length === 0 && (
                 <div className="rounded-lg bg-brand-soft px-3 py-2.5 text-sm text-brand-deep" role="alert">
                   <p className="font-semibold">{b.error}</p>
