@@ -11,7 +11,7 @@ fixed, checked version and changes only through a release that can't leave it ha
 | What for       | Writing and trying code                    | The site readers use and the CMS editors work in           |
 | Addresses      | API 4000 · site 3000 · CMS 3001            | API 4100 · site **3100** · CMS **3101**                    |
 | Runs           | `npm run dev`: reloads on every file change | A built version, untouched by edits in the workshop        |
-| Data           | `.data/b4`: sample articles, test runs     | `b4-news-live/data`: the real data, never seeded or reset  |
+| Data           | `.data/b4`: test data, or a safe copy of the live data | `b4-news-live/data`: the real data, never seeded or reset  |
 | AI, email      | Stand-ins when no key is set               | Real only (keys in the live CMS, Settings > Connections)   |
 | Changes by     | Editing files                              | `npm run release` only                                     |
 
@@ -36,8 +36,10 @@ npm run release -- <commit>  # or a specific commit, tag or branch
    for a few seconds), the new version's database changes run on the copy, and the counts of
    articles, comments, readers, drafts, media and the rest must not go down.
 4. **Build** the site and the CMS. The site's first pages are rendered from the rehearsal.
-5. **Test the rehearsal.** The home page, an article, a category, the sitemap and the CMS
-   sign-in page must all load. The rehearsal never runs scans, AI, publishing or social posts.
+5. **Test the rehearsal.** On the copy of the live data, the home page, every one of the latest
+   100 articles with its comments, every section, search, the markets page, the sitemap and the
+   CMS sign-in page must all load. One article that breaks stops the release. The rehearsal
+   never runs scans, AI, publishing or social posts.
 6. **Switch over.** The live environment stops, the data is backed up, and the new version
    starts. Its database changes run on the real data.
 7. **Test live.** The same pages are checked again. If anything fails, the release **rolls
@@ -58,7 +60,24 @@ npm run live -- start | stop | restart
 npm run live -- logs [api|web|cms]
 npm run live -- import-sources <file.json>   # news sites set up and tested in the workshop
 npm run live -- import-articles <dir>        # articles from the workshop (backed up first)
+npm run live -- copy-to-workshop             # a safe copy of the live data for the workshop
 ```
+
+### Developing against the real data
+
+Changes made on the live site (articles, comments, settings) never flow into the workshop by
+themselves, and they don't need to for safety: every release rehearses on a copy of the live
+data taken at that moment, and switches over on the real data. To develop against real
+articles and comments, stop `npm run dev` and run `npm run live -- copy-to-workshop`. It copies
+the live data while the live API pauses for a few seconds, then makes the copy safe:
+
+- readers', newsletter subscribers' and takedown requesters' emails and names are replaced;
+- sessions, sign-in codes, access tokens, push devices and the live keys are removed;
+- queued background work is cancelled and every social account is switched off;
+- the workshop's own keys, connection settings and staff sign-ins are put back.
+
+The copy is checked for leftovers before it replaces the workshop's data. The previous data is
+kept in `.data/backup-<time>-before-live-copy`.
 
 Articles are written and published in the **live** CMS; the workshop's articles are test data.
 Only when real articles were made in the workshop are they moved, once: stop `npm run dev`

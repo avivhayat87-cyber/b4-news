@@ -11,6 +11,10 @@
 //                                                          writes every article, with its main image, to a bundle folder
 //   tsx src/cli/live-db.ts import-articles <database-url> <media-dir> <bundle-dir>
 //                                                          adds a bundle's articles (an existing slug is skipped)
+//   tsx src/cli/live-db.ts workshop-copy <copy-url> [<workshop-database-url>]
+//                                                          makes a copy of the live data safe for the workshop
+//                                                          (no personal details, keys or queued work), with the
+//                                                          workshop's own keys and staff sign-ins put back
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -20,6 +24,7 @@ import { z } from 'zod';
 import { hashPassword } from '../lib/password';
 import { LocalStorage } from '../lib/storage';
 import { exportArticles, importArticles } from '../services/article-transfer';
+import { leftovers, prepareWorkshopCopy } from '../services/workshop-copy';
 
 const ImportedSource = z.object({
   name: z.string().trim().min(1).max(80),
@@ -115,6 +120,21 @@ async function main() {
           .onConflictDoNothing({ target: sources.baseUrl })
           .returning({ id: sources.id });
         console.log(`${added.length ? 'added  ' : 'exists '} ${s.name} (${s.baseUrl})`);
+      }
+      return;
+    }
+
+    if (command === 'workshop-copy') {
+      // Here <dir> is the workshop's own database: its keys and staff sign-ins go into the copy.
+      const workshop = dir ? createDb(dir) : null;
+      try {
+        await handle.migrate();
+        const report = await prepareWorkshopCopy(handle.db, workshop?.db ?? null);
+        console.log(JSON.stringify(report));
+        const left = await leftovers(handle.db);
+        if (left.length) throw new Error(`The copy still holds: ${left.join(', ')}`);
+      } finally {
+        await workshop?.close();
       }
       return;
     }

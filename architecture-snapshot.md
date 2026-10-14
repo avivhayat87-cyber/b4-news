@@ -94,6 +94,7 @@ src/
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the social package, network adapters, the social page, branded designs
     newsletter.ts · consent.ts · translate.ts · learning.ts · classify.ts
+    article-transfer.ts · workshop-copy.ts   Moving articles, and a safe copy of the live data, between environments
     settings.ts · site-settings.ts · legal-pages.ts · connection-tests.ts
   lib/              Generic building blocks without newsroom knowledge:
                       jobs (the queue), safe-fetch (SSRF guard), storage, images (renditions), mailer,
@@ -172,7 +173,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
 | **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `services/consent.ts` | `comments/`, `takedowns/` | comments, account, report; app comments and account | `readers`, `comments`, `comment_reports`, `consents`, `takedown_requests` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
-| **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*` | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
+| **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop) | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
 
 ---
 

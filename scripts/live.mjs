@@ -13,6 +13,7 @@
 //   npm run live -- restore [backup]    put a backup back (the current data is kept aside, not deleted)
 //   npm run live -- import-sources <file.json>   add news sites tested in the workshop
 //   npm run live -- import-articles <dir>        add the workshop's articles (a bundle from live-db.ts export-articles)
+//   npm run live -- copy-to-workshop             give the workshop a safe copy of the live data (stop npm run dev first)
 //   npm run live -- logs [api|web|cms]
 //
 // Everything lives in ../b4-news-live (or $B4_LIVE_HOME):
@@ -292,10 +293,20 @@ async function startAll(R, which, keys) {
 }
 
 // --- Checks -----------------------------------------------------------------------------
-/** The pages readers and editors depend on, each rendered by the running version. */
+/** How many of the latest articles every check opens one by one (with their comments). */
+const SMOKE_ARTICLES = 100;
+
+/**
+ * The pages readers and editors depend on, each rendered by the running version from its data:
+ * every recent article with its comments, every section, search, markets, the sitemap and the CMS.
+ * On the rehearsal that data is a copy of the live site, so one article that breaks stops the release.
+ */
 async function smoke(which) {
   const p = PORTS[which];
+  const api = `http://127.0.0.1:${p.api}`;
+  const web = `http://127.0.0.1:${p.web}`;
   const problems = [];
+  const page = (r) => r.status === 200 && r.text.includes('</html>');
   const check = async (label, url, ok = (r) => r.status === 200) => {
     try {
       const r = await get(url, 90_000);
@@ -306,17 +317,29 @@ async function smoke(which) {
       return null;
     }
   };
-  await check('API', `http://127.0.0.1:${p.api}/health`);
-  const home = await check('home page data', `http://127.0.0.1:${p.api}/api/v1/public/home`);
-  const cats = await check('categories', `http://127.0.0.1:${p.api}/api/v1/public/categories`);
-  await check('site home page', `http://127.0.0.1:${p.web}/`, (r) => r.status === 200 && r.text.includes('</html>'));
-  const data = home?.status === 200 ? JSON.parse(home.text) : null;
-  const article = data ? [...(data.main ?? []), ...(data.latest ?? [])][0] : null;
-  if (article) await check(`article page (${article.slug})`, `http://127.0.0.1:${p.web}/article/${encodeURIComponent(article.slug)}`);
-  const category = cats?.status === 200 ? JSON.parse(cats.text)[0] : null;
-  if (category) await check(`category page (${category.slug})`, `http://127.0.0.1:${p.web}/category/${encodeURIComponent(category.slug)}`);
-  await check('sitemap', `http://127.0.0.1:${p.web}/sitemap.xml`);
+  const json = (r) => {
+    try {
+      return r?.status === 200 ? JSON.parse(r.text) : null;
+    } catch {
+      return null;
+    }
+  };
+  await check('API', `${api}/health`);
+  await check('home page data', `${api}/api/v1/public/home`);
+  const cats = json(await check('categories', `${api}/api/v1/public/categories`)) ?? [];
+  await check('site home page', `${web}/`, page);
+  const feed = json(await check('article list', `${api}/api/v1/public/feed?limit=${SMOKE_ARTICLES}`));
+  for (const a of feed?.items ?? []) {
+    const name = `article "${String(a.title).slice(0, 40)}" (${a.slug})`;
+    await check(name, `${web}/article/${encodeURIComponent(a.slug)}`, page);
+    await check(`${name}, comments`, `${api}/api/v1/public/articles/${a.id}/comments`);
+  }
+  for (const c of cats) await check(`section ${c.slug}`, `${web}/category/${encodeURIComponent(c.slug)}`, page);
+  await check('search', `${web}/search?q=${encodeURIComponent('כלכלה')}`, page);
+  await check('markets', `${web}/markets`, page);
+  await check('sitemap', `${web}/sitemap.xml`);
   await check('CMS sign-in page', `http://127.0.0.1:${p.cms}/login`);
+  say(`   checked ${feed?.items?.length ?? 0} articles with their comments, ${cats.length} sections, search, markets, the sitemap and the CMS`);
   return problems;
 }
 
@@ -466,7 +489,7 @@ async function release(ref = 'HEAD') {
     npm(['run', 'build', '--workspace=@b4/admin'], { cwd: R, env: buildEnv('cms', keys), label: 'CMS build' });
     npm(['run', 'build', '--workspace=@b4/web'], { cwd: R, env: buildEnv('web', keys), label: 'site build' });
 
-    say('5/7 Testing the rehearsal: home page, article, category, sitemap, CMS...');
+    say('5/7 Testing the rehearsal: home page, every recent article and its comments, sections, search, markets, sitemap, CMS...');
     await startService(R, 'staging', 'web', keys);
     await startService(R, 'staging', 'cms', keys);
     for (const name of ['web', 'cms']) await until(() => answering(PORTS.staging[name]), 90_000);
@@ -636,6 +659,48 @@ async function importArticles(dir) {
   await refreshSite(keys);
 }
 
+/**
+ * The workshop gets a fresh copy of the live data, made safe there (no personal details, keys or
+ * queued work; social accounts off), with the workshop's own keys and sign-ins put back. The
+ * workshop's previous data is kept aside in .data, never deleted.
+ */
+async function copyToWorkshop() {
+  const state = requireCurrent();
+  if (await answering(4000)) fail('Stop the workshop first (the terminal running "npm run dev"): its database can be open in one place only.');
+  const R = releaseDir(state.current);
+  const keys = secrets();
+  const workshop = path.join(REPO, '.data');
+  const copy = path.join(DIR.staging, 'workshop-copy');
+  takeLock();
+  try {
+    fs.mkdirSync(copy, { recursive: true });
+    await withLiveApiStopped(keys, () => {
+      copyDir(path.join(DIR.data, 'db'), path.join(copy, 'db'));
+      copyDir(path.join(DIR.data, 'media'), path.join(copy, 'media'));
+    });
+    const hasWorkshop = fs.existsSync(path.join(workshop, 'b4'));
+    const out = tsx(R, ['src/cli/live-db.ts', 'workshop-copy', `pglite:${path.join(copy, 'db')}`, ...(hasWorkshop ? [`pglite:${path.join(workshop, 'b4')}`] : [])], {
+      cwd: path.join(R, 'apps', 'api'),
+      env: baseEnv(),
+      label: 'making the copy safe for the workshop',
+    });
+    say(`   ${out.trim().split(/\r?\n/).at(-1)}`);
+    const aside = path.join(workshop, `backup-${stamp()}-before-live-copy`);
+    fs.mkdirSync(aside, { recursive: true });
+    for (const [from, to] of [
+      ['b4', 'db'],
+      ['media', 'media'],
+    ]) {
+      if (fs.existsSync(path.join(workshop, from))) fs.renameSync(path.join(workshop, from), path.join(aside, from));
+      fs.renameSync(path.join(copy, to), path.join(workshop, from));
+    }
+    say(`The workshop now has a copy of the live data (the previous one is in ${aside}). Start it with "npm run dev".`);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+    releaseLock();
+  }
+}
+
 function logs(name = 'api') {
   const file = path.join(DIR.logs, `live-${name}.log`);
   if (!fs.existsSync(file)) fail(`No log yet for ${name}.`);
@@ -661,6 +726,7 @@ const commands = {
   restore: () => restore(arg),
   'import-sources': () => importSources(arg),
   'import-articles': () => importArticles(arg),
+  'copy-to-workshop': copyToWorkshop,
   logs: () => logs(arg),
 };
 
