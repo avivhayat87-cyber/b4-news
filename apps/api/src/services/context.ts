@@ -4,7 +4,7 @@ import type { Db } from '@b4/db';
 import type { Config } from '../config';
 import { ConfiguredMailer, type Mailer } from '../lib/mailer';
 import { safeFetch } from '../lib/safe-fetch';
-import { LocalStorage, type MediaStorage } from '../lib/storage';
+import { BucketStorage, LocalStorage, type MediaStorage } from '../lib/storage';
 import { type AiHub, createAiHub } from './ai';
 import type { Fetcher } from './scraper/collect';
 import { SettingsStore } from './settings';
@@ -36,7 +36,7 @@ export function createServices(config: Config, db: Db, log: Log, overrides: Serv
     config,
     settings,
     ai: overrides.ai ?? createAiHub(config, settings),
-    storage: overrides.storage ?? new LocalStorage(config.mediaDir, config.mediaBaseUrl),
+    storage: overrides.storage ?? (config.mediaBucket ? new BucketStorage(config.mediaBucket, config.mediaBaseUrl) : new LocalStorage(config.mediaDir, config.mediaBaseUrl)),
     fetch: overrides.fetch ?? createFetcher(config),
     mailer:
       overrides.mailer ??

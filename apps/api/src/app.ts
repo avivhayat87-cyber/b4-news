@@ -85,8 +85,8 @@ export async function buildApp({ config, db, logger = true, ...overrides }: AppD
 
   app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true }));
 
-  // Local media files (production serves MEDIA_BASE_URL from a CDN instead).
-  if (!overrides.storage) {
+  // Local media files (in the cloud they live in the bucket, at MEDIA_BASE_URL, and this route isn't needed).
+  if (!overrides.storage && !config.mediaBucket) {
     mkdirSync(config.mediaDir, { recursive: true });
     await app.register(fastifyStatic, {
       root: config.mediaDir,

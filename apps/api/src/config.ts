@@ -33,8 +33,15 @@ const Env = z
     HASH_PEPPER: z.string().optional(),
     /** 32 bytes (base64 or hex) that encrypt the API keys and tokens entered in the CMS. Required in production. */
     SECRETS_KEY: z.string().optional(),
+    /** "local": files under MEDIA_DIR, served by this API at /media. "r2": a Cloudflare R2 bucket (the cloud). */
+    MEDIA_STORAGE: z.enum(['local', 'r2']).default('local'),
     MEDIA_DIR: z.string().default(DEFAULT_MEDIA_DIR),
+    /** The public address of the media files; required with r2 (the bucket's custom domain, e.g. https://media.b4news.co.il). */
     MEDIA_BASE_URL: z.string().default(''),
+    R2_ACCOUNT_ID: z.string().regex(/^[0-9a-f]{32}$/, 'the 32-character Cloudflare account id').optional(),
+    R2_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
+    R2_ACCESS_KEY_ID: z.string().optional(),
+    R2_SECRET_ACCESS_KEY: z.string().optional(),
     SMTP_URL: z.string().optional(),
     MAIL_FROM: z.string().default("B4 NEW'S <no-reply@localhost>"),
     /** Defaults to on in development, off elsewhere. */
@@ -97,6 +104,10 @@ const Env = z
     if (production && (!env.REVALIDATE_SECRET || env.REVALIDATE_SECRET.length < 16)) {
       issue('REVALIDATE_SECRET', 'Production needs REVALIDATE_SECRET (16+ characters, same value as the site)');
     }
+    if (env.MEDIA_STORAGE === 'r2') {
+      for (const name of ['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'] as const) if (!env[name]) issue(name, `MEDIA_STORAGE=r2 needs ${name}`);
+      if (!/^https:\/\//.test(env.MEDIA_BASE_URL)) issue('MEDIA_BASE_URL', 'MEDIA_STORAGE=r2 needs MEDIA_BASE_URL: the bucket\'s public https address');
+    }
 
     return {
       env: env.NODE_ENV,
@@ -111,6 +122,11 @@ const Env = z
       hashPepper: pepper,
       mediaDir: env.MEDIA_DIR,
       mediaBaseUrl: (env.MEDIA_BASE_URL || `${publicApiUrl}/media`).replace(/\/+$/, ''),
+      /** The media bucket (MEDIA_STORAGE=r2); null = files on local disk. */
+      mediaBucket:
+        env.MEDIA_STORAGE === 'r2'
+          ? { endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, bucket: env.R2_BUCKET!, accessKeyId: env.R2_ACCESS_KEY_ID!, secretAccessKey: env.R2_SECRET_ACCESS_KEY! }
+          : null,
       smtpUrl: env.SMTP_URL || undefined,
       mailFrom: env.MAIL_FROM,
       seedSampleContent,

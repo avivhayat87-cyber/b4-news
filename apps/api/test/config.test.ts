@@ -28,6 +28,22 @@ describe('configuration', () => {
     ).toThrow(/DEV_FIXTURES/);
   });
 
+  it('keeps media on local disk by default, and in an R2 bucket only when it is fully configured', () => {
+    expect(loadConfig({ NODE_ENV: 'test' } as NodeJS.ProcessEnv).mediaBucket).toBeNull();
+    expect(() => loadConfig({ NODE_ENV: 'test', MEDIA_STORAGE: 'r2', R2_BUCKET: 'b4-media' } as NodeJS.ProcessEnv)).toThrow(/R2_ACCOUNT_ID[\s\S]*MEDIA_BASE_URL/);
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      MEDIA_STORAGE: 'r2',
+      MEDIA_BASE_URL: 'https://media.b4news.co.il/',
+      R2_ACCOUNT_ID: 'a'.repeat(32),
+      R2_BUCKET: 'b4-media',
+      R2_ACCESS_KEY_ID: 'key',
+      R2_SECRET_ACCESS_KEY: 'secret',
+    } as NodeJS.ProcessEnv);
+    expect(config.mediaBucket).toEqual({ endpoint: `https://${'a'.repeat(32)}.r2.cloudflarestorage.com`, bucket: 'b4-media', accessKeyId: 'key', secretAccessKey: 'secret' });
+    expect(config.mediaBaseUrl).toBe('https://media.b4news.co.il');
+  });
+
   it('reads social tokens from the environment as a fallback', () => {
     const config = loadConfig({ NODE_ENV: 'test', SOCIAL_SECRET_TELEGRAM_BOT: 'token' } as NodeJS.ProcessEnv);
     expect(config.socialSecret('TELEGRAM_BOT')).toBe('token');

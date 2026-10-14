@@ -1,8 +1,9 @@
 // Where media files live. Local disk in development (served at /media); in
-// production point MEDIA_BASE_URL at a CDN in front of the same files, or
-// swap in an object-storage implementation of MediaStorage.
+// production a bucket (Cloudflare R2, through its S3 API), with MEDIA_BASE_URL
+// pointing at the bucket's public address in front of the same files.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { AwsClient } from 'aws4fetch';
 
 export interface MediaStorage {
   put(key: string, data: Buffer, contentType: string): Promise<void>;
@@ -37,6 +38,68 @@ export class LocalStorage implements MediaStorage {
 
   async remove(keys: string[]): Promise<void> {
     await Promise.all(keys.map((k) => rm(this.file(k), { force: true })));
+  }
+
+  url(key: string): string {
+    return `${this.baseUrl}/${key}`;
+  }
+}
+
+export type BucketConfig = {
+  /** https://<account>.r2.cloudflarestorage.com for R2 (any S3-compatible endpoint works) */
+  endpoint: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+};
+
+/**
+ * An S3-compatible bucket (Cloudflare R2 in production). Keys never change once written
+ * (renditions and reels carry a fresh tag), so readers' browsers and the CDN may keep them for good.
+ */
+export class BucketStorage implements MediaStorage {
+  private readonly client: AwsClient;
+  private readonly base: string;
+
+  constructor(
+    config: BucketConfig,
+    private readonly baseUrl: string,
+    private readonly fetchFn: typeof fetch = fetch,
+  ) {
+    this.client = new AwsClient({ accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey, service: 's3', region: 'auto' });
+    this.base = `${config.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(config.bucket)}`;
+  }
+
+  private async send(key: string, init: RequestInit): Promise<Response> {
+    if (!KEY.test(key)) throw new Error(`invalid media key: ${key}`);
+    const request = await this.client.sign(`${this.base}/${key}`, init);
+    return this.fetchFn(request, { signal: AbortSignal.timeout(120_000) });
+  }
+
+  async put(key: string, data: Buffer, contentType: string): Promise<void> {
+    const res = await this.send(key, {
+      method: 'PUT',
+      body: new Uint8Array(data),
+      headers: { 'content-type': contentType, 'cache-control': 'public, max-age=31536000, immutable' },
+    });
+    if (!res.ok) throw new Error(`media upload failed (${res.status}) for ${key}`);
+  }
+
+  async get(key: string): Promise<Buffer> {
+    const res = await this.send(key, { method: 'GET' });
+    if (res.status === 404) throw new Error('not found');
+    if (!res.ok) throw new Error(`media read failed (${res.status}) for ${key}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  async remove(keys: string[]): Promise<void> {
+    // A key that is already gone is fine (204 or 404).
+    await Promise.all(
+      keys.map(async (key) => {
+        const res = await this.send(key, { method: 'DELETE' });
+        if (!res.ok && res.status !== 404) throw new Error(`media delete failed (${res.status}) for ${key}`);
+      }),
+    );
   }
 
   url(key: string): string {
