@@ -216,6 +216,19 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 | PATCH | `/admin/comments/:id` | editor | `{ status: visible \| hidden \| removed, note? }` |
 | POST | `/admin/readers/:id/ban` | editor | `{ reason, hideComments }`; ends the reader's sessions |
 
+### Readers and newsletter subscribers ("מנויים וגולשים")
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/audience` | any | `AudienceOverview`: counts only (readers, subscribers, app devices) and what this environment still needs (outgoing mail, a sender on the site's domain, company details, HTTPS) |
+| GET | `/admin/readers?status=&q=&cursor=` | editor | `ReaderList` (personal details, so not for viewers): comments, hidden comments, signed in now, current terms accepted |
+| POST | `/admin/readers/:id/unban` | editor | → 204; comments hidden by the ban stay hidden |
+| POST | `/admin/readers/:id/sign-out` | editor | → 204: ends every session of the reader |
+| DELETE | `/admin/readers/:id` | admin | → 204: a privacy request; the account and its comments, reports, consents and codes |
+| GET | `/admin/newsletter/subscribers?status=active\|pending\|unsubscribed\|all&q=&cursor=` | editor | `SubscriberList` |
+| POST | `/admin/newsletter/subscribers/:id/unsubscribe` | editor | → 204: off the list; the row stays with the time, as the law asks |
+| DELETE | `/admin/newsletter/subscribers/:id` | admin | → 204: a privacy request; the address and its consent records |
+
 ### Content-removal requests (notice and takedown)
 
 | Method | Path | Role | |

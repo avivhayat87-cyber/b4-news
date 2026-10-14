@@ -656,3 +656,65 @@ export const ChangePasswordInput = z.object({
 
 export const AuthorDto = z.object({ id, displayName: z.string(), title: z.string().nullable() });
 export type AuthorDto = z.infer<typeof AuthorDto>;
+
+// ---------------------------------------------------------------------------
+// Audience: registered readers (comments) and newsletter subscribers
+// ---------------------------------------------------------------------------
+export const READER_FILTERS = ['all', 'active', 'banned'] as const;
+export const ReaderListQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  status: z.enum(READER_FILTERS).default('all'),
+  cursor: z.string().max(200).optional(),
+});
+
+export const AdminReaderDto = z.object({
+  id,
+  email: z.string(),
+  displayName: z.string(),
+  status: z.enum(['active', 'banned']),
+  bannedReason: z.string().nullable(),
+  /** Accepted the current terms version. */
+  termsAccepted: z.boolean(),
+  createdAt: iso,
+  lastLoginAt: iso.nullable(),
+  comments: z.number().int(),
+  hiddenComments: z.number().int(),
+  /** Signed in on a device right now (an unexpired session). */
+  signedIn: z.boolean(),
+});
+export type AdminReaderDto = z.infer<typeof AdminReaderDto>;
+export const ReaderList = z.object({ items: z.array(AdminReaderDto), nextCursor: z.string().nullable() });
+export type ReaderList = z.infer<typeof ReaderList>;
+
+export const SUBSCRIBER_STATUSES = ['active', 'pending', 'unsubscribed'] as const;
+export type SubscriberStatus = (typeof SUBSCRIBER_STATUSES)[number];
+export const SubscriberListQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  status: z.enum([...SUBSCRIBER_STATUSES, 'all']).default('active'),
+  cursor: z.string().max(200).optional(),
+});
+
+export const SubscriberDto = z.object({
+  id,
+  email: z.string(),
+  status: z.enum(SUBSCRIBER_STATUSES),
+  createdAt: iso,
+  confirmedAt: iso.nullable(),
+  unsubscribedAt: iso.nullable(),
+});
+export type SubscriberDto = z.infer<typeof SubscriberDto>;
+export const SubscriberList = z.object({ items: z.array(SubscriberDto), nextCursor: z.string().nullable() });
+export type SubscriberList = z.infer<typeof SubscriberList>;
+
+/** What the readers' and subscribers' flows need to work on this environment. */
+export const AUDIENCE_SETUP = ['mail', 'sender', 'company', 'https'] as const;
+export type AudienceSetupKey = (typeof AUDIENCE_SETUP)[number];
+
+export const AudienceOverview = z.object({
+  readers: z.object({ total: z.number().int(), active30d: z.number().int(), newThisWeek: z.number().int(), banned: z.number().int() }),
+  subscribers: z.object({ active: z.number().int(), pending: z.number().int(), unsubscribed: z.number().int() }),
+  /** App installs that get breaking-news notifications, by platform. */
+  devices: z.object({ ios: z.number().int(), android: z.number().int(), web: z.number().int() }),
+  setup: z.array(z.object({ key: z.enum(AUDIENCE_SETUP), ok: z.boolean() })),
+});
+export type AudienceOverview = z.infer<typeof AudienceOverview>;

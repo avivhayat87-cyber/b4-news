@@ -8,6 +8,7 @@ import { adminCommentRoutes } from '../admin-comments';
 import { adminTakedownRoutes } from '../takedowns';
 import { agentRoutes } from './agent';
 import { articleRoutes } from './articles';
+import { audienceRoutes } from './audience';
 import { discoveryRoutes } from './discovery';
 import { draftRoutes } from './drafts';
 import { mediaRoutes } from './media';
@@ -43,5 +44,6 @@ export const adminRoutes: FastifyPluginAsync<{ s: Services }> = async (app, { s 
   await app.register(socialRoutes, { s });
   await app.register(agentRoutes, { s });
   await app.register(adminCommentRoutes, { db: s.db });
+  await app.register(audienceRoutes, { s });
   await app.register(adminTakedownRoutes, { s });
 };

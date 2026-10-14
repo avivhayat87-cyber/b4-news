@@ -43,6 +43,12 @@ const I = {
     </>
   ),
   comments: <path d="M4 5h16v11H8l-4 4z" />,
+  audience: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .7 3.2 2.5 3.5 5.2" />
+    </>
+  ),
   social: (
     <>
       <circle cx="18" cy="5" r="3" />
@@ -98,6 +104,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/articles', label: 'כתבות באתר', icon: I.articles },
     { href: '/social', label: 'רשתות חברתיות', icon: I.social },
     { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },
+    { href: '/audience', label: 'מנויים וגולשים', icon: I.audience },
     { href: '/comments', label: 'תגובות גולשים', icon: I.comments, badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported || undefined : undefined },
     { href: '/takedowns', label: 'בקשות הסרה', icon: I.takedown, badge: dash.data?.takedowns.open || undefined },
     { href: '/learning', label: 'למידת ה-AI', icon: I.learn },

@@ -1,6 +1,7 @@
 // Hebrew labels for everything the CMS shows.
 import {
   type ARTICLE_LENGTHS,
+  type AudienceSetupKey,
   CATEGORIES,
   type Divergence,
   type DraftColor,
@@ -15,6 +16,7 @@ import {
   type ShareTemplate,
   type SocialPlatform,
   type SourceStatus,
+  type SubscriberStatus,
   type VisualAgentOverview,
 } from '@b4/shared';
 
@@ -81,6 +83,32 @@ export const VISUAL_CASE_STATUS: Record<VisualAgentOverview['recent'][number]['s
 };
 /** Who wrote an image description. */
 export const PROMPT_BY: Record<PromptAuthor, string> = { agent: 'נכתב ע״י סוכן התמונות', editor: 'נכתב ע״י העורך' };
+
+// --- Audience -----------------------------------------------------------------------
+export const SUBSCRIBER_STATUS: Record<SubscriberStatus, { label: string; tone: Tone }> = {
+  active: { label: 'מנוי פעיל', tone: 'ok' },
+  pending: { label: 'ממתין לאישור במייל', tone: 'warn' },
+  unsubscribed: { label: 'הוסר מהרשימה', tone: 'muted' },
+};
+/** What the readers' and subscribers' flows need, and where it is set. */
+export const AUDIENCE_SETUP_LABEL: Record<AudienceSetupKey, { title: string; why: string }> = {
+  mail: {
+    title: 'דואר יוצא מחובר',
+    why: 'בלעדיו גולשים לא מקבלים קוד כניסה ומנויים לא מקבלים מייל אישור. מגדירים ב"הגדרות" > "חיבורים" > "דואר יוצא".',
+  },
+  sender: {
+    title: 'כתובת שולח מהדומיין של האתר',
+    why: 'למשל no-reply@b4news.co.il, עם רשומות SPF ו-DKIM אצל ספק הדומיין, כדי שהמיילים לא ייפלו לספאם. מגדירים באותו מקום, בשדה "שולח".',
+  },
+  company: {
+    title: 'פרטי החברה מלאים',
+    why: 'שם, ח.פ., כתובת ומייל לפניות פרטיות. הם מופיעים בתנאי השימוש, במדיניות הפרטיות ובכל ניוזלטר, כפי שהחוק דורש. מגדירים ב"הגדרות" > "פרטי האתר".',
+  },
+  https: {
+    title: 'האתר בכתובת מאובטחת (https)',
+    why: 'עוגיית ההתחברות של הגולשים נשלחת רק בחיבור מאובטח. מתקיים כשהאתר עולה לדומיין האמיתי.',
+  },
+};
 
 export const ARTICLE_STATUS: Record<PublishedArticleDto['status'], { label: string; tone: Tone }> = {
   published: { label: 'באתר', tone: 'ok' },
