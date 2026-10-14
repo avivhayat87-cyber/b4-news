@@ -34,6 +34,7 @@ import { queueBatchLearning, recordFeedback } from './learning';
 import { queueVisualLearning, recordImageFeedback } from './agent/visual';
 import { setArticleTags, updateArticleFromDraft } from './article-content';
 import { type SocialPayload, publishToNetwork } from './social-adapters';
+import { applyPlan } from './social-plan';
 
 type Staff = { id: string; fullName: string };
 export type PublishTarget = { magazineId: string } | { draftId: string };
@@ -362,8 +363,20 @@ export async function runPublish(s: Services, job: JobRow) {
     steps.revalidate = `failed: ${e instanceof Error ? e.message : e}`;
   }
 
-  // 2. Social networks (only after the site is live).
-  for (const { draft, article } of published) await postSocial(s, draft, article.id, steps);
+  // 2. Social networks (only after the site is live): the distribution plan, or else the editor's older social package.
+  for (const { draft, article } of published) {
+    try {
+      const plan = await applyPlan(s, draft.id, article.id, pj.requestedBy);
+      if (plan.handled) {
+        if (!plan.already) steps[`${draft.id}:social`] = plan.posts || plan.reel ? `plan: ${plan.posts} posts${plan.reel ? ', reel started' : ''}` : 'plan: kept on the social page';
+        continue;
+      }
+    } catch (e) {
+      steps[`${draft.id}:social`] = `failed: ${e instanceof Error ? e.message : e}`;
+      continue;
+    }
+    await postSocial(s, draft, article.id, steps);
+  }
 
   // 3. The learning loop: the whole batch in one learning pass; the visual agent learns every few cases.
   if (published.length) {

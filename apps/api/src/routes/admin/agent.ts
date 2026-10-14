@@ -18,6 +18,8 @@ import {
   LearningReportDto,
   SaveVisualRulesInput,
   SendAgentMessageInput,
+  SocialAgentOverview,
+  SocialAgentSettings,
   VisualAgentOverview,
   VisualAgentSettings,
 } from '@b4/shared';
@@ -31,6 +33,7 @@ import { newToken, sha256 } from '../../lib/crypto';
 import { STAFF_TOKEN_PREFIX, requireStaff } from '../../plugins/auth';
 import { agentStatus, conversationDto, decideAction, listConversations, sendMessage } from '../../services/agent/chat';
 import { draftFacts, getEditorSettings, saveEditorSettings } from '../../services/agent/editor';
+import { saveSocialSettings, socialAgentOverview } from '../../services/agent/social';
 import { runTool, toolsFor } from '../../services/agent/tools';
 import { activateVisualProfile, getVisualSettings, queueVisualLearning, saveVisualRules, saveVisualSettings, visualOverview } from '../../services/agent/visual';
 import type { Services } from '../../services/context';
@@ -77,6 +80,16 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
   });
 
   app.get('/agent/learning-reports', { schema: { response: { 200: z.array(LearningReportDto) } } }, async () => learningReportsList(s));
+
+  // --- The social editor (the distribution plan before publishing) ---------------------------------
+  app.get('/agent/social', { schema: { response: { 200: SocialAgentOverview } } }, async () => socialAgentOverview(s.db));
+
+  app.put('/agent/social-settings', { schema: { body: SocialAgentSettings, response: { 200: SocialAgentSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'editor');
+    const saved = await saveSocialSettings(s.db, staff.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'social-settings', action: 'update' });
+    return saved;
+  });
 
   // --- The visual agent (Google) ------------------------------------------------------------------
   app.get('/agent/visual', { schema: { response: { 200: VisualAgentOverview } } }, async (req) => {

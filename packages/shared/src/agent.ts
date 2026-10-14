@@ -114,6 +114,38 @@ export type VisualAgentOverview = z.infer<typeof VisualAgentOverview>;
 
 export const SaveVisualRulesInput = z.object({ rules: z.string().trim().min(1).max(6000) });
 
+// ---------------------------------------------------------------------------
+// The social editor: the distribution plan of every article before it is published
+// ---------------------------------------------------------------------------
+export const SocialAgentSettings = z.object({
+  /** Write a distribution plan for every article when its text is marked final. */
+  autoPlan: z.boolean().default(true),
+  /** Publishing an article sends its plan out to the networks (a reel only after a person approves it). */
+  autoPost: z.boolean().default(true),
+  /** Standing instructions, in the newsroom's words. */
+  instructions: z.string().trim().max(3000).default(''),
+  /** When a reel is worth its price, in the newsroom's words. */
+  reelGuidance: z.string().trim().max(1000).default(''),
+});
+export type SocialAgentSettings = z.infer<typeof SocialAgentSettings>;
+
+/** A frame, the formats that go out, and a reel (recommended by the AI, or approved by a person). */
+const SocialChoice = z.object({ template: z.string(), formats: z.array(z.string()), reel: z.boolean() });
+
+/** A plan an editor changed: what the social editor chose and what the editor chose instead. */
+export const SocialCorrectionDto = z.object({ draftId: id, title: z.string(), agent: SocialChoice, editor: SocialChoice, at: iso });
+export type SocialCorrectionDto = z.infer<typeof SocialCorrectionDto>;
+
+export const SocialAgentOverview = z.object({
+  settings: SocialAgentSettings,
+  /** The latest corrections; the social editor reads them with every new plan. */
+  corrections: z.array(SocialCorrectionDto),
+  /** Plans written in the last 30 days, and how many an editor changed. */
+  planned: z.number().int(),
+  changed: z.number().int(),
+});
+export type SocialAgentOverview = z.infer<typeof SocialAgentOverview>;
+
 /** Factual data of a draft against its source (numbers, percentages, amounts, years). */
 export const FactCheckDto = z.object({
   hasSource: z.boolean(),

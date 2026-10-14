@@ -9,6 +9,7 @@ import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
 import { runSourceSetup } from './scraper/setup';
 import { runSocialGenerate } from './social';
+import { PLAN_JOB, markPlanFailed, runPlan } from './social-plan';
 import { REEL_JOBS, runReelImage, runReelPrompts, runReelVideo } from './social-reel';
 import { KIT_JOB, SHARE_PUBLISH_JOB, markSharePublishFailed, runKit, runSharePublish } from './social-share';
 import { TRANSLATE_JOB, runHeadlineTranslation } from './translate';
@@ -25,6 +26,7 @@ export const handlers: Handlers<Services> = {
   [FINAL_IMAGE_JOB]: { run: runFinalImage, maxAttempts: 2 },
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   [KIT_JOB]: { run: runKit, maxAttempts: 2 },
+  [PLAN_JOB]: { run: runPlan, onFailed: markPlanFailed, maxAttempts: 2 },
   // A video costs money: one attempt; the editor retries from the CMS (the error is shown there).
   [REEL_JOBS.prompts]: { run: runReelPrompts, maxAttempts: 2 },
   [REEL_JOBS.image]: { run: runReelImage, maxAttempts: 1 },

@@ -1,6 +1,6 @@
 // The newsroom process end to end: site settings -> discovery -> magazine ->
 // AI draft -> editing -> social -> preview -> publish -> learning loop.
-import { articles, eq, homepageSlots, socialPosts, styleFeedback, styleProfiles } from '@b4/db';
+import { articleSharePosts, articles, eq, homepageSlots, socialPosts, styleFeedback, styleProfiles } from '@b4/db';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ORIGIN, setup, signInStaff, staffClient } from './helpers';
@@ -261,11 +261,14 @@ describe('the editorial process', () => {
     const home = await ctx.app.inject({ method: 'GET', url: '/api/v1/public/home' });
     expect(JSON.parse(home.body).main[0].title).toBe('כותרת סופית לכתבה');
 
-    // No tokens in tests: posts are prepared for manual posting, not sent.
-    const posts = await ctx.db.select().from(socialPosts).where(eq(socialPosts.draftId, draftId));
-    expect(posts.every((p) => p.status === 'skipped' && p.payload)).toBe(true);
-    const fb = posts.find((p) => (p.payload as { linkInFirstComment: boolean }).linkInFirstComment);
-    expect(fb).toBeTruthy();
+    // Marking the text final wrote a distribution plan, and the plan is what went out (not the older
+    // social package). No tokens in tests: posts are prepared for manual posting, not sent.
+    expect(job.steps[`${draftId}:social`]).toMatch(/^plan: \d+ posts/);
+    const planned = await ctx.db.select().from(articleSharePosts).where(eq(articleSharePosts.articleId, article!.id));
+    expect(planned.length).toBeGreaterThan(0);
+    expect(planned.every((p) => p.status === 'skipped' && p.lastError)).toBe(true);
+    const packaged = await ctx.db.select().from(socialPosts).where(eq(socialPosts.draftId, draftId));
+    expect(packaged.every((p) => p.status === 'draft')).toBe(true);
 
     expect((await editor.get(`/magazines/${magazineId}`)).body.status).toBe('published');
   });

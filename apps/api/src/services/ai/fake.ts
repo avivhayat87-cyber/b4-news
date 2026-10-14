@@ -3,8 +3,8 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, RewriteRequest, ShareKitRequest, SocialRequest, TextAI, TranslateRequest } from './types';
-import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
+import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
+import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
 
 const usage = () => ({ model: 'fake', inputTokens: null, outputTokens: null, latencyMs: 1 });
@@ -80,6 +80,29 @@ export class FakeText implements TextAI {
         hook: clip(first, short ? 70 : 130),
         caption: `${second ? `${clip(second, 200)} ` : ''}ספרו לנו בתגובות: איך זה משפיע עליכם?`,
         hashtags: [a.section.replace(/["'״׳]/g, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, ''), 'כלכלה'].filter(Boolean),
+      },
+      usage: usage(),
+    };
+  }
+
+  /** The kit above, plus simple rules: a story unless it's a guide, a reel for stories with a visual world. */
+  async socialPlan(req: SocialPlanRequest): Promise<AiResult<SocialPlanOutput>> {
+    const { data: kit } = await this.shareKit({ systemPrompt: req.systemPrompt, article: req.article, instruction: req.instruction });
+    const a = req.article;
+    const visual = /נמל|דירות|דיור|נדל"?ן|בנייה|מחירי|סופר|דלק|רכב|טיסות|תיירות/.test(`${a.title} ${a.subtitle}`);
+    const story = kit.template !== 'explainer';
+    return {
+      data: {
+        ...kit,
+        template_reason: kit.template === 'breaking' ? 'חדשות שקרו עכשיו.' : kit.template === 'explainer' ? 'כתבת שירות.' : 'כתבה רגילה עם כותרת חזקה.',
+        feed: true,
+        story,
+        formats_reason: story ? 'פוסט וסטורי: מעניין רבים ויש בו נקודה חדה.' : 'פוסט בלבד: מדריך ארוך בלי נקודה אחת לסטורי.',
+        reel_recommended: visual,
+        reel_reason: visual ? 'יש לסיפור עולם ויזואלי שאפשר להניע.' : 'אין בסיפור תמונה שזזה.',
+        reel_idea: visual ? `תמונה רחבה של הנושא: ${a.title}. המצלמה מתקרבת לאט.` : '',
+        reel_motion: 'zoom_in',
+        reel_seconds: 8,
       },
       usage: usage(),
     };

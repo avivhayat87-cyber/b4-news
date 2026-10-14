@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, SHARE_TEMPLATES } from '@b4/shared';
+import { CATEGORY_SLUGS, REEL_MOTIONS, SHARE_TEMPLATES } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -42,6 +42,20 @@ export const ShareKitOutput = z.object({
   hashtags: z.array(z.string().max(60)).max(8),
 });
 export type ShareKitOutput = z.infer<typeof ShareKitOutput>;
+
+/** The distribution plan: the kit, plus how the article goes out and whether a reel fits (reasons in Hebrew). */
+export const SocialPlanOutput = ShareKitOutput.extend({
+  template_reason: z.string().max(400),
+  feed: z.boolean(),
+  story: z.boolean(),
+  formats_reason: z.string().max(400),
+  reel_recommended: z.boolean(),
+  reel_reason: z.string().max(400),
+  reel_idea: z.string().max(600),
+  reel_motion: z.enum(REEL_MOTIONS),
+  reel_seconds: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+});
+export type SocialPlanOutput = z.infer<typeof SocialPlanOutput>;
 
 /** Hebrew translation of foreign articles (headlines after discovery, full text for the editor). */
 export const TranslateOutput = z.object({
@@ -94,6 +108,17 @@ export type ShareKitRequest = {
   instruction?: string;
 };
 
+export type SocialPlanRequest = {
+  /** prompt_templates "social.plan" */
+  systemPrompt: string;
+  /** Every option the system has (frames, formats, reel settings and prices, the accounts), generated from the code. */
+  options: string;
+  /** The newsroom's settings and the plans the editors recently changed. */
+  guidance: string;
+  article: ArticleText & { section: string };
+  instruction?: string;
+};
+
 export type TranslateRequest = {
   /** prompt_templates "translate.system" */
   systemPrompt: string;
@@ -125,6 +150,7 @@ export interface TextAI {
   refine(req: RefineRequest): Promise<AiResult<RefineOutput>>;
   social(req: SocialRequest): Promise<AiResult<SocialOutput>>;
   shareKit(req: ShareKitRequest): Promise<AiResult<ShareKitOutput>>;
+  socialPlan(req: SocialPlanRequest): Promise<AiResult<SocialPlanOutput>>;
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;
   distill(req: DistillRequest): Promise<AiResult<DistillOutput>>;
   learnBatch(req: LearnBatchRequest): Promise<AiResult<LearnBatchOutput>>;

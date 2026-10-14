@@ -7,6 +7,7 @@ import {
   type DraftColor,
   type DraftStatus,
   type Placement,
+  type PlanState,
   type PromptAuthor,
   type PublishedArticleDto,
   type ReelMotion,
@@ -72,6 +73,17 @@ export const REEL_STAGE: Record<ReelStage, { label: string; tone: Tone }> = {
   image: { label: 'תמונה מחכה לאישור', tone: 'warn' },
   video: { label: 'סרטון מחכה לאישור', tone: 'warn' },
   approved: { label: 'מאושר לפרסום', tone: 'ok' },
+};
+
+/** Where an article's distribution plan stands. */
+export const PLAN_STATE: Record<PlanState, { label: string; tone: Tone }> = {
+  none: { label: 'אין עדיין תוכנית', tone: 'muted' },
+  writing: { label: 'עורך הרשתות כותב', tone: 'info' },
+  ready: { label: 'תעלה עם הכתבה', tone: 'ok' },
+  stale: { label: 'הטקסט השתנה', tone: 'warn' },
+  failed: { label: 'נכשל', tone: 'danger' },
+  off: { label: 'לא לרשתות', tone: 'muted' },
+  published: { label: 'פורסמה', tone: 'ink' },
 };
 
 /** The visual agent's learning cases. */

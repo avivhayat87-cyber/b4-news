@@ -5,16 +5,19 @@
 //      in the spirit of the article's pictures, never a copy; the branded cover is drawn on it.
 //   3. video: Google Veo animates the clean picture (no text in it to warp) by the approved video
 //      prompt. The editor approves the video, or changes the prompt and asks again.
-// Each step is its own job; a picture or a video is made only on the editor's click. Every AI call
-// is tracked in ai_jobs. Approving a reel teaches the visual agent. Instagram's API can't add music
-// from its library: that is done in the app.
+// Each step is its own job; a picture or a video is made only on the editor's click. A reel that
+// a person approved in a distribution plan runs "express": prompts, picture and video follow one
+// another by themselves, and stop at the video for the editor's approval; once approved, it goes
+// out as the plan said. Every AI call is tracked in ai_jobs. Approving a reel teaches the visual
+// agent. Instagram's API can't add music from its library: that is done in the app.
 import { randomUUID } from 'node:crypto';
 import { type ReelMotion, type ReelPlan, ReelSettings, type ShareTemplate, VIDEO_PRICE_PER_SECOND } from '@b4/shared';
-import { and, articleDrafts, articleShares, desc, eq, inArray, jobs, mediaAssets, sql } from '@b4/db';
+import { and, articleDrafts, articleShares, desc, eq, inArray, jobs, mediaAssets, socialPlans, sql } from '@b4/db';
 import sharp from 'sharp';
 import { AppError, errors } from '../errors';
 import { ingestImage } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
+import { getSocialSettings } from './agent/social';
 import { recordReelFeedback, writeReelPrompts } from './agent/visual';
 import { activePrompt, tracked } from './ai';
 import type { ImageReference } from './ai/types';
@@ -22,15 +25,15 @@ import { articleBodyText } from './article-content';
 import type { Services } from './context';
 import { imageErrorMessage, sourceImageReference } from './image-brief';
 import { renderDesign } from './social-design';
-import { loadArticle, loadShare, siteHost } from './social-share';
+import { loadArticle, loadShare, queueAutoPosts, siteHost } from './social-share';
 
 type Staff = { id: string };
 
 export const REEL_JOBS = { prompts: 'social.reel_prompts', image: 'social.reel_image', video: 'social.reel_video' } as const;
 export const REEL_JOB_KINDS: string[] = Object.values(REEL_JOBS);
 
-/** How the camera moves, as the video model is told. */
-const MOTION: Record<ReelMotion, string> = {
+/** How the camera moves, as the video model (and the social editor) is told. */
+export const REEL_MOTION_TEXT: Record<ReelMotion, string> = {
   zoom_in: 'The camera slowly and smoothly pushes in, about 6% over the whole clip.',
   zoom_out: 'The camera slowly and smoothly pulls back, about 6% over the whole clip.',
   pan: 'The camera drifts slowly and evenly to one side, a gentle lateral move.',
@@ -105,6 +108,21 @@ async function startStep(s: Services, staff: Staff, articleId: number, kind: str
   return enqueue(s.db, kind, { articleId, ...payload }, { createdBy: staff.id, maxAttempts: 1 });
 }
 
+/** In an express reel, each step queues the next (the step itself is still running, so not through startStep). */
+async function nextExpressStep(s: Services, job: JobRow, kind: string) {
+  if (!job.payload.express) return;
+  await enqueue(s.db, kind, { articleId: Number(job.payload.articleId), express: true }, { createdBy: job.createdBy, maxAttempts: 1 });
+}
+
+/**
+ * A reel a person approved in the distribution plan: the prompts (from the plan's idea), the
+ * picture and the video follow one another by themselves; the video waits for the editor.
+ */
+export async function startExpressReel(s: Services, staff: Staff, articleId: number, idea: string): Promise<string> {
+  await shareWithText(s, articleId);
+  return startStep(s, staff, articleId, REEL_JOBS.prompts, { instruction: idea.trim() || null, express: true });
+}
+
 async function shareWithText(s: Services, articleId: number) {
   await loadArticle(s, articleId);
   const share = await loadShare(s, articleId);
@@ -148,6 +166,7 @@ export async function runReelPrompts(s: Services, job: JobRow) {
     suggested: written,
     directions: instruction ? [...(plan?.directions ?? []), instruction].slice(-10) : (plan?.directions ?? []),
   });
+  await nextExpressStep(s, job, REEL_JOBS.image);
   return { ok: true };
 }
 
@@ -209,6 +228,7 @@ export async function runReelImage(s: Services, job: JobRow) {
     .set({ reelImageMediaId: picture.id, rendered: { ...rest, reelPoster: posterKey }, reelPlan: { ...plan, stage: 'image', approvedAt: null, pictures: (plan.pictures ?? 0) + 1 } })
     .where(eq(articleShares.articleId, articleId));
   await s.storage.remove(old).catch(() => undefined);
+  await nextExpressStep(s, job, REEL_JOBS.video);
   return { picture: picture.id };
 }
 
@@ -249,7 +269,7 @@ export async function runReelVideo(s: Services, job: JobRow) {
       videoAi.generate({
         prompt: fill(template.body, {
           prompt: english.data.texts[0] ?? plan.videoPrompt,
-          motion: MOTION[settings.motion],
+          motion: REEL_MOTION_TEXT[settings.motion],
           instruction: settings.instruction ? `Editor's direction: ${settings.instruction}` : '',
         }),
         firstFrame: { data: firstFrame, mimeType: 'image/jpeg' },
@@ -272,7 +292,10 @@ export async function runReelVideo(s: Services, job: JobRow) {
   return { video: true, model: videoAi.model, seconds: settings.durationSeconds };
 }
 
-/** The editor approved the video: the reel can be published, and the visual agent learns from how it came about. */
+/**
+ * The editor approved the video: the reel can be published, and the visual agent learns from how
+ * it came about. A reel from a distribution plan goes out now, as the plan said.
+ */
 export async function approveReel(s: Services, staff: Staff, articleId: number): Promise<void> {
   const share = await loadShare(s, articleId);
   if (!share) throw errors.notFound('הריל');
@@ -281,4 +304,6 @@ export async function approveReel(s: Services, staff: Staff, articleId: number):
   await setPlan(s, articleId, plan);
   const { article, category } = await loadArticle(s, articleId);
   await recordReelFeedback(s, staff.id, { articleId, title: article.title, section: category, plan, pictureId: share.reelImageMediaId });
+  const [planned] = await s.db.select({ enabled: socialPlans.enabled, formats: socialPlans.formats }).from(socialPlans).where(eq(socialPlans.articleId, articleId)).limit(1);
+  if (planned?.enabled && planned.formats.includes('reel') && (await getSocialSettings(s.db)).autoPost) await queueAutoPosts(s, staff.id, articleId, ['reel']);
 }

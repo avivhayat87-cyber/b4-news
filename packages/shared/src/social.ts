@@ -1,8 +1,9 @@
 ﻿// Contracts for the CMS social page (/admin/social/*): articles that are already
 // on the site get a branded post and story, written by the AI and edited by the
-// newsroom, then published to the networks the editor picks.
+// newsroom, then published to the networks the editor picks. Before an article is
+// published, its distribution plan (the social editor's choices) lives here too.
 import { z } from 'zod';
-import { JobRef, MediaDto, SOCIAL_PLATFORMS, SOCIAL_POST_STATUSES } from './cms';
+import { DRAFT_STATUSES, JobRef, MediaDto, SOCIAL_PLATFORMS, SOCIAL_POST_STATUSES } from './cms';
 
 const id = z.string().uuid();
 const iso = z.string();
@@ -223,3 +224,100 @@ export const PublishSharesInput = z.object({
   accountIds: z.array(id).min(1, 'בחרו לפחות חשבון אחד').max(20),
 });
 export type PublishSharesInput = z.infer<typeof PublishSharesInput>;
+
+// ---------------------------------------------------------------------------
+// The distribution plan: when an article's text is marked final, the social editor (AI)
+// decides how it goes out (the frame, a post, a story, whether a reel fits and what it
+// shows) and writes the texts. The newsroom changes it quickly in a report; publishing
+// the article sends it out as planned. The AI only recommends a reel: a person approves
+// it, because it costs a video.
+// ---------------------------------------------------------------------------
+const ReelSeconds = z.union([z.literal(4), z.literal(6), z.literal(8)]);
+
+export const ReelIdea = z.object({
+  /** The AI thinks the article deserves a reel. */
+  recommended: z.boolean(),
+  /** Why, or why not, in one Hebrew sentence. */
+  reason: z.string().max(400),
+  /** What the reel shows and how it moves, in Hebrew; the visual agent writes its prompts from it. */
+  idea: z.string().max(600),
+  motion: z.enum(REEL_MOTIONS),
+  durationSeconds: ReelSeconds,
+});
+export type ReelIdea = z.infer<typeof ReelIdea>;
+
+/**
+ * none: no plan yet; writing: the AI is on it; ready; stale: the text was reopened after the plan
+ * was written; failed; off: this article doesn't go out to the networks; published: the article is
+ * on the site and the plan moved to the social page.
+ */
+export const PLAN_STATES = ['none', 'writing', 'ready', 'stale', 'failed', 'off', 'published'] as const;
+export type PlanState = (typeof PLAN_STATES)[number];
+
+export const SocialPlanDto = z.object({
+  draftId: id,
+  title: z.string(),
+  category: z.string().nullable(),
+  draftStatus: z.enum(DRAFT_STATUSES),
+  state: z.enum(PLAN_STATES),
+  enabled: z.boolean(),
+  template: z.enum(SHARE_TEMPLATES),
+  kicker: z.string(),
+  headline: z.string(),
+  hook: z.string(),
+  caption: z.string(),
+  hashtags: z.array(z.string()),
+  /** What goes out when the article is published. "reel" is there only when a person approved it. */
+  formats: z.array(z.enum(SHARE_FORMATS)),
+  reel: ReelIdea.nullable(),
+  /** Estimated price of the reel's video at its length, in US dollars (null = unknown model). */
+  reelEstimateUsd: z.number().nullable(),
+  /** The AI's reasons, in Hebrew, for the report. */
+  reasons: z.object({ template: z.string(), formats: z.string() }),
+  /** The AI's own choices, so the report shows what a person changed. */
+  aiChoice: z.object({ template: z.enum(SHARE_TEMPLATES), formats: z.array(z.enum(SHARE_FORMATS)), reel: z.boolean() }).nullable(),
+  /** The background photo; null = the article's main image. */
+  image: MediaDto.nullable(),
+  heroUrl: z.string().nullable(),
+  rendered: z.object({ feed: z.string().nullable(), story: z.string().nullable() }),
+  /** Once published: the article, what went out, and where its reel stands. */
+  articleId: z.number().int().nullable(),
+  posts: z.array(SharePostDto),
+  reelStage: z.enum(REEL_STAGES).nullable(),
+  /** Why the AI couldn't write the plan, in Hebrew (null when it could). */
+  error: z.string().nullable(),
+  version: z.number().int(),
+  updatedAt: iso.nullable(),
+});
+export type SocialPlanDto = z.infer<typeof SocialPlanDto>;
+
+/** The report: articles waiting to be published with their plans, and what went out recently. */
+export const SocialPlanReport = z.object({
+  pending: z.array(SocialPlanDto),
+  recent: z.array(SocialPlanDto),
+  /** Publishing an article sends its plan out (the newsroom can turn this off). */
+  autoPost: z.boolean(),
+});
+export type SocialPlanReport = z.infer<typeof SocialPlanReport>;
+
+export const UpdateSocialPlanInput = z.object({
+  version: z.number().int(),
+  /** false = this article doesn't go out to the networks automatically. */
+  enabled: z.boolean().optional(),
+  template: z.enum(SHARE_TEMPLATES).optional(),
+  formats: z.array(z.enum(SHARE_FORMATS)).min(1, 'בחרו לפחות פוסט, סטורי או ריל').optional(),
+  kicker: z.string().trim().max(SHARE_LIMITS.kicker).optional(),
+  headline: z.string().trim().min(1, 'חסרה כותרת').max(SHARE_LIMITS.headline).optional(),
+  hook: z.string().trim().max(SHARE_LIMITS.hook).optional(),
+  caption: z.string().trim().max(SHARE_LIMITS.caption).optional(),
+  hashtags: z.array(Hashtag).max(SHARE_LIMITS.hashtags).optional(),
+  /** What the reel shows, in the editor's words (the AI's idea otherwise). */
+  reelIdea: z.string().trim().max(600).optional(),
+  reelSeconds: ReelSeconds.optional(),
+  /** null = back to the article's main image; omitted = unchanged. */
+  imageMediaId: id.nullable().optional(),
+});
+export type UpdateSocialPlanInput = z.infer<typeof UpdateSocialPlanInput>;
+
+/** "Write the plan again", optionally with a direction for the AI. */
+export const RegenerateSocialPlanInput = z.object({ instruction: z.string().trim().max(1000).optional() });

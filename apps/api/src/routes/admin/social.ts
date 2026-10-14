@@ -1,28 +1,58 @@
-// The social page: published articles, their branded post/story/reel, and publishing to the networks.
+// The social page: published articles, their branded post/story/reel, and publishing to the networks;
+// and the distribution plans of articles before they are published.
 import {
   GenerateSharesInput,
   PublishSharesInput,
   ReelPromptsInput,
+  RegenerateSocialPlanInput,
   SHARE_FORMATS,
   ShareDto,
   ShareList,
   ShareListQuery,
   ShareTargetDto,
+  SocialPlanDto,
+  SocialPlanReport,
   UpdateReelPromptsInput,
   UpdateShareInput,
+  UpdateSocialPlanInput,
 } from '@b4/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
+import * as plans from '../../services/social-plan';
 import * as reel from '../../services/social-reel';
 import * as shares from '../../services/social-share';
 
 const params = z.object({ articleId: z.coerce.number().int().positive() });
+const draftParams = z.object({ draftId: z.string().uuid() });
 const jobId = z.object({ jobId: z.string().uuid() });
 
 export const socialRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
+  // --- Distribution plans, before an article is published (services/social-plan.ts) ---
+  app.get('/social/plans', { schema: { response: { 200: SocialPlanReport } } }, async () => plans.planReport(s));
+
+  app.get('/drafts/:draftId/social-plan', { schema: { params: draftParams, response: { 200: SocialPlanDto } } }, async (req) => plans.getPlan(s, req.params.draftId));
+
+  app.put('/drafts/:draftId/social-plan', { schema: { params: draftParams, body: UpdateSocialPlanInput, response: { 200: SocialPlanDto } } }, async (req) => {
+    const staff = requireStaff(req, 'editor');
+    const plan = await plans.updatePlan(s, staff, req.params.draftId, req.body);
+    // Approving a reel commits a video's price, so who did it is recorded.
+    if (req.body.formats) await audit(s.db, { userId: staff.id, entity: 'social_plan', entityId: req.params.draftId, action: req.body.formats.includes('reel') ? 'formats_with_reel' : 'formats' });
+    return plan;
+  });
+
+  app.post(
+    '/drafts/:draftId/social-plan/regenerate',
+    { schema: { params: draftParams, body: RegenerateSocialPlanInput, response: { 202: jobId } }, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const staff = requireStaff(req, 'editor');
+      return reply.status(202).send({ jobId: await plans.requestPlan(s, staff, req.params.draftId, req.body.instruction) });
+    },
+  );
+
+  // --- Published articles ---
   app.get('/social/articles', { schema: { querystring: ShareListQuery, response: { 200: ShareList } } }, async (req) => shares.listShares(s, req.query));
 
   app.get('/social/targets', { schema: { response: { 200: z.array(ShareTargetDto) } } }, async () => shares.listTargets(s));

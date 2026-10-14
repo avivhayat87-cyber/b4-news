@@ -150,7 +150,20 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
 | GET | `/admin/jobs/:id` | any | `JobRef` (poll an AI job) |
 
-### Social networks (after the text is final)
+### The distribution plan (after the text is final, before publishing)
+
+Marking the text final queues `social.plan` (unless `autoPlan` is off): the social editor chooses the frame, the formats and whether to recommend a reel, with its reasons, and writes the texts. Publishing the article copies the plan to `article_shares` and posts it (when `autoPost` is on).
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/social/plans` | any | `SocialPlanReport`: every draft whose text is final and not yet published with its plan (`pending`), the plans published in the last 3 days with their posts and reel stage (`recent`), and `autoPost` |
+| GET | `/admin/drafts/:id/social-plan` | any | `SocialPlanDto` (`state`: none · writing · ready · stale · failed · off · published) |
+| PUT | `/admin/drafts/:id/social-plan` | editor | `UpdateSocialPlanInput` (optimistic version): frame, `formats` (adding `reel` approves the reel; audited), texts, `enabled`, reel idea and length, background image → `SocialPlanDto`, re-rendered; 409 `plan_applied` once published |
+| POST | `/admin/drafts/:id/social-plan/regenerate` | editor | `RegenerateSocialPlanInput` (`instruction?`) → 202 `{ jobId }` (20/min): new texts; a person's frame, formats and reel stay |
+
+### Social networks: the older package (after the text is final)
+
+The editor's social tab now shows the distribution plan. These endpoints stay for packages made before it; an approved package goes out on publishing only when the draft has no plan.
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
@@ -172,7 +185,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | PUT | `/admin/social/articles/:articleId/reel/prompts` | editor | `UpdateReelPromptsInput` → `ShareDto`: the editor's wording |
 | POST | `/admin/social/articles/:articleId/reel/image` | editor | 202 `{ jobId }`: prompts approved, a new picture (Gemini, from the English translation) and its branded cover; a new picture drops the old video |
 | POST | `/admin/social/articles/:articleId/reel/video` | editor | 202 `{ jobId }`: picture approved, a Veo video from the clean picture; 409 `no_picture` before there is one |
-| POST | `/admin/social/articles/:articleId/reel/approve` | editor | → `ShareDto`: the video is approved; only approved reels are published (`/social/publish` answers 422 `no_reel` otherwise). Recorded as a learning case for the visual agent |
+| POST | `/admin/social/articles/:articleId/reel/approve` | editor | → `ShareDto`: the video is approved; only approved reels are published (`/social/publish` answers 422 `no_reel` otherwise). Recorded as a learning case for the visual agent. A reel approved in the article's distribution plan is posted now, to the accounts that take reels |
 | GET | `/admin/social/targets` | any | `ShareTargetDto[]`: active accounts, connected or not, which formats post automatically |
 | POST | `/admin/social/publish` | editor | `PublishSharesInput` (articles × formats × accounts) → 202 `{ jobId }`; a post that went out is never sent again |
 | POST | `/admin/social/articles/:articleId/posted` | editor | `{ accountId, format }`: a prepared post was posted by hand |
@@ -187,6 +200,8 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/agent/conversations/:id/decide` | any (the tool checks the role) | `DecideActionInput` (`approve` true/false) for a proposed change |
 | GET / PUT | `/admin/agent/editor-settings` | any / editor | `EditorAgentSettings` (divergence, length, voice, instructions; facts are always kept) |
 | GET | `/admin/agent/learning-reports` | any | `LearningReportDto[]`: one per publish batch |
+| GET | `/admin/agent/social` | any | `SocialAgentOverview`: the social editor's settings, the plans the editors changed (which every new plan reads), counts for the last 30 days |
+| PUT | `/admin/agent/social-settings` | editor | `SocialAgentSettings` (`autoPlan`, `autoPost`, instructions, when a reel is worth it) |
 | GET | `/admin/agent/visual` | any | `VisualAgentOverview`: the visual agent's model, pending and learned cases, recent cases, rule versions with what each pass learned, last learning error |
 | GET / PUT | `/admin/agent/visual-settings` | any / editor | `VisualAgentSettings` (article style, reel style, instructions, what to avoid, auto-learning) |
 | POST | `/admin/agent/visual/learn` | editor | → 202 `{ jobId }`: learn now from the pending cases (409 `nothing_to_learn` when there are none) |

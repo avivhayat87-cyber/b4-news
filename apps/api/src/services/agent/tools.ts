@@ -4,7 +4,7 @@
 // button; in the Claude app, its own approval prompt). Every tool checks the
 // person's role, exactly like the CMS screens.
 import { randomUUID } from 'node:crypto';
-import { DIVERGENCE, EditorAgentSettings, SHARE_FORMATS, SOURCE_REGIONS, type StaffRole } from '@b4/shared';
+import { DIVERGENCE, EditorAgentSettings, SHARE_FORMATS, SHARE_TEMPLATES, SOURCE_REGIONS, type SocialPlanDto, type StaffRole } from '@b4/shared';
 import {
   and,
   articleDrafts,
@@ -30,6 +30,7 @@ import { learningReportsList, queueDistill } from '../learning';
 import { startPublish } from '../publish';
 import { startRun } from '../scraper/run';
 import { addSources, approveTestedSources } from '../scraper/setup';
+import { getPlan, planReport, updatePlan } from '../social-plan';
 import { listShares, requestKits, startSharePublish } from '../social-share';
 import { draftFacts, getEditorSettings, saveEditorSettings } from './editor';
 
@@ -59,6 +60,18 @@ const clip = (t: string | null | undefined, n: number) => (!t ? '' : t.length > 
 const israelTime = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 const il = (d: Date | string | null | undefined) => (d ? israelTime.format(new Date(d)) : null);
 const regionName = (r: string) => (r === 'international' ? 'מחו״ל' : 'מישראל');
+/** A distribution plan as the agent reads it. */
+const planView = (p: SocialPlanDto) => ({
+  draftId: p.draftId,
+  title: p.title,
+  state: p.state,
+  frame: p.template,
+  goesOut: p.formats,
+  reel: p.reel ? { recommended: p.reel.recommended, approved: p.formats.includes('reel'), idea: p.reel.idea, why: p.reel.reason, estimateUsd: p.reelEstimateUsd } : null,
+  why: p.reasons,
+  headline: p.headline,
+  cmsLink: `/drafts/${p.draftId}`,
+});
 
 export const TOOLS: AgentTool[] = [
   // --- Reading ---------------------------------------------------------------------
@@ -225,6 +238,24 @@ export const TOOLS: AgentTool[] = [
     },
   },
   {
+    name: 'social_plans',
+    label: () => 'תוכנית ההפצה ברשתות',
+    description:
+      "The social editor's distribution plans. For each article waiting to be published: the design frame, what goes out (feed post, story), whether a reel is recommended or approved and why, and the headline on the image. Also what went out for the articles published in the last days, and whether publishing sends plans out automatically.",
+    schema: object({}),
+    input: z.object({}),
+    write: false,
+    roles: [],
+    run: async (s) => {
+      const r = await planReport(s);
+      return {
+        sentAutomaticallyOnPublish: r.autoPost,
+        waiting: r.pending.map(planView),
+        recentlyPublished: r.recent.map((p) => ({ ...planView(p), articleId: p.articleId, posted: p.posts.filter((x) => x.status === 'posted').map((x) => `${x.platform}/${x.format}`), reelStage: p.reelStage })),
+      };
+    },
+  },
+  {
     name: 'learning_status',
     label: () => 'מה סוכן העריכה למד',
     description: "The editor agent: its current house-style rules (learned from the editors' corrections), its settings, and the latest learning reports (one per publish batch).",
@@ -354,6 +385,29 @@ export const TOOLS: AgentTool[] = [
       return { jobId: await startSharePublish(s, staff, { articleIds: input.articleIds, formats: input.formats, accountIds }) };
     },
     outcome: () => 'הפרסום ברשתות התחיל.',
+  },
+  {
+    name: 'update_social_plan',
+    label: () => 'שינוי תוכנית ההפצה של כתבה',
+    description:
+      "Changes an article's distribution plan before it is published (draft ids from social_plans): the design frame, what goes out (feed, story; adding reel approves the reel, which costs a video), or whether it goes out to the networks at all.",
+    schema: object(
+      {
+        draftId: { type: 'string', format: 'uuid' },
+        frame: { type: 'string', enum: [...SHARE_TEMPLATES] },
+        goesOut: { type: 'array', items: { type: 'string', enum: [...SHARE_FORMATS] }, minItems: 1 },
+        enabled: { type: 'boolean', description: 'false = this article does not go out to the networks automatically' },
+      },
+      ['draftId'],
+    ),
+    input: z.object({ draftId: z.string().uuid(), frame: z.enum(SHARE_TEMPLATES).optional(), goesOut: z.array(z.enum(SHARE_FORMATS)).min(1).optional(), enabled: z.boolean().optional() }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => {
+      const current = await getPlan(s, input.draftId);
+      return planView(await updatePlan(s, staff, input.draftId, { version: current.version, template: input.frame, formats: input.goesOut, enabled: input.enabled }));
+    },
+    outcome: () => 'תוכנית ההפצה עודכנה.',
   },
   {
     name: 'update_editor_agent',

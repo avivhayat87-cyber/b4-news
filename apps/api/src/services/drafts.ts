@@ -37,6 +37,7 @@ import {
   scrapedItems,
   scrapeRunItems,
   socialPackages,
+  socialPlans,
   sources,
   sql,
   users,
@@ -53,6 +54,7 @@ import { activePrompt, activeStyleRules, tracked } from './ai';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
+import { planOnFinalize } from './social-plan';
 import { draftReference, finalBrief, imageBrief, imageErrorMessage, sourceImageReference } from './image-brief';
 import { detectLanguage, translateFullItem } from './translate';
 
@@ -689,6 +691,8 @@ export async function finalizeText(s: Services, staff: Staff, draftId: string) {
   if (!draft.categoryId) problems.push('קטגוריה');
   if (problems.length) throw new AppError(422, 'incomplete', `חסר: ${problems.join(', ')}`);
   await s.db.update(articleDrafts).set({ status: 'text_final', textFinalizedAt: new Date(), updatedBy: staff.id }).where(eq(articleDrafts.id, draftId));
+  // The social editor writes the distribution plan from the final text.
+  await planOnFinalize(s, staff, draftId);
 }
 
 export async function reopenText(s: Services, staff: Staff, draftId: string) {
@@ -696,6 +700,7 @@ export async function reopenText(s: Services, staff: Staff, draftId: string) {
   if (draft.status !== 'text_final') return;
   await s.db.update(articleDrafts).set({ status: 'editing', textFinalizedAt: null, updatedBy: staff.id }).where(eq(articleDrafts.id, draftId));
   await s.db.update(socialPackages).set({ isStale: true, approvedAt: null, approvedBy: null }).where(and(eq(socialPackages.draftId, draftId), ne(socialPackages.caption, '')));
+  await s.db.update(socialPlans).set({ isStale: true }).where(and(eq(socialPlans.draftId, draftId), ne(socialPlans.headline, '')));
 }
 
 export async function skipDraft(s: Services, staff: Staff, draftId: string, reason?: string) {

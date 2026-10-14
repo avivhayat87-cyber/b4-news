@@ -111,8 +111,19 @@ export async function loadShare(s: Services, articleId: number): Promise<ShareRo
   return row ?? null;
 }
 
+/** The AI's kit texts, trimmed to the design's limits; hashtags without "#" and spaces, no repeats. */
+export function kitTexts(kit: { kicker: string; headline: string; hook: string; caption: string; hashtags: string[] }) {
+  return {
+    kicker: kit.kicker.trim().slice(0, SHARE_LIMITS.kicker),
+    headline: kit.headline.trim().slice(0, SHARE_LIMITS.headline),
+    hook: kit.hook.trim().slice(0, SHARE_LIMITS.hook),
+    caption: kit.caption.trim().slice(0, SHARE_LIMITS.caption),
+    hashtags: [...new Set(kit.hashtags.map((h) => h.replace(/^#+/, '').trim().replace(/\s+/g, '_')).filter((h) => h && h.length <= SHARE_LIMITS.hashtag))].slice(0, SHARE_LIMITS.hashtags),
+  };
+}
+
 /** Posts of these articles from this page and from the editor's social module. */
-async function postsOf(s: Services, articleIds: number[]): Promise<Map<number, SharePostDto[]>> {
+export async function postsOf(s: Services, articleIds: number[]): Promise<Map<number, SharePostDto[]>> {
   const out = new Map<number, SharePostDto[]>();
   if (!articleIds.length) return out;
   const cols = {
@@ -427,14 +438,7 @@ export async function runKit(s: Services, job: JobRow) {
   );
   const kit = result.data;
   const formats = Array.isArray(job.payload.formats) ? (job.payload.formats as string[]).filter((f) => (SHARE_FORMATS as readonly string[]).includes(f)) : null;
-  const values = {
-    ...(formats?.length ? { formats } : {}),
-    kicker: kit.kicker.trim().slice(0, SHARE_LIMITS.kicker),
-    headline: kit.headline.trim().slice(0, SHARE_LIMITS.headline),
-    hook: kit.hook.trim().slice(0, SHARE_LIMITS.hook),
-    caption: kit.caption.trim().slice(0, SHARE_LIMITS.caption),
-    hashtags: [...new Set(kit.hashtags.map((h) => h.replace(/^#+/, '').trim().replace(/\s+/g, '_')).filter((h) => h && h.length <= SHARE_LIMITS.hashtag))].slice(0, SHARE_LIMITS.hashtags),
-  };
+  const values = { ...(formats?.length ? { formats } : {}), ...kitTexts(kit) };
   if (!current) {
     await s.db
       .insert(articleShares)
@@ -551,6 +555,26 @@ export async function runSharePublish(s: Services, job: JobRow) {
     }
   }
   return results;
+}
+
+/** What an account takes without a person choosing it: what its network posts automatically, or, without a token, what can be prepared to post by hand. */
+function automaticFormats(target: ShareTargetDto): ShareFormat[] {
+  if (target.connected) return target.autoFormats;
+  return target.platform === 'facebook' || target.platform === 'instagram' ? ['feed', 'story', 'reel'] : ['feed'];
+}
+
+/**
+ * Sends an article's posts to every active account that takes them, as a distribution plan
+ * asks (no person picks the accounts). Returns how many posts were queued.
+ */
+export async function queueAutoPosts(s: Services, staffId: string, articleId: number, formats: ShareFormat[]): Promise<number> {
+  const targets = await listTargets(s);
+  const rows = targets.flatMap((t) => formats.filter((f) => automaticFormats(t).includes(f)).map((format) => ({ articleId, socialAccountId: t.id, format, status: 'queued' as const, requestedBy: staffId })));
+  if (!rows.length) return 0;
+  // A post that already exists (sent, or prepared) is left as it is.
+  await s.db.insert(articleSharePosts).values(rows).onConflictDoNothing();
+  await enqueue(s.db, SHARE_PUBLISH_JOB, { articleIds: [articleId], accountIds: [...new Set(rows.map((r) => r.socialAccountId))], formats }, { createdBy: staffId, maxAttempts: 2 });
+  return rows.length;
 }
 
 /** The editor posted a prepared post by hand: it now counts as posted. */

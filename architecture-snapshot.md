@@ -99,12 +99,14 @@ src/
     ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent;
                         development stand-ins), types
     agent/            The newsroom agent: tools over the services, chat, model engine, editor-agent settings,
-                        the visual agent (visual.ts: image and reel prompts, and its learning)
+                        the visual agent (visual.ts: image and reel prompts, and its learning), the social
+                        editor (social.ts: its settings, and the corrections it learns from)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     publish.ts        Preview, final approval, the publish job
-    social*.ts        Distribution: the social package, network adapters, the social page, branded designs
+    social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
+                        package, network adapters, the social page, branded designs, reels
     newsletter.ts · consent.ts · translate.ts · learning.ts · classify.ts
     article-transfer.ts · workshop-copy.ts   Moving articles, and a safe copy of the live data, between environments
     data-move.ts      The computer's live data to the cloud, once (the database as SQL, the media into the bucket)
@@ -183,7 +185,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent** | `services/agent/*` (chat, editor agent, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
-| **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*`, `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
+| **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
 | **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS) | `comments/`, `takedowns/`, `audience/` ("מנויים וגולשים") | comments, account, report; app comments and account | `readers`, `comments`, `comment_reports`, `consents`, `takedown_requests`, `newsletter_subscribers` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
@@ -246,6 +248,11 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   descriptions for article images and the reel prompts. It learns from the editors' choices
   into versioned rules (`visual_profiles`), the way the house style is learned. Decided by the
   owner on 2026-10-13: the owner manages it from the CMS ("סוכן AI" > "סוכן התמונות").
+- **Who decides how an article goes out:** the social editor (Claude, the fast model,
+  `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
+  final, and only recommends a reel. A person approves a reel (it costs a video), and its video
+  again before it goes out. The options it chooses from are generated from the code, never
+  listed by hand in a prompt. Decided by the owner on 2026-10-14.
 - **Right to left:** "start" is the right side.
   - The site and the CMS set `dir="rtl"` on `<html>`, plus the editor canvas.
   - The app sets direction in its component styles.
@@ -482,3 +489,7 @@ code.
   version of the `rewrite.system` prompt.
 - `apps/admin/app/(cms)/comments/page.tsx` declares its comment shape locally instead of in
   `@b4/shared`.
+- The editor's older social package (`services/social.ts`, `social_packages`, `social_posts`,
+  `/admin/drafts/:id/social*`) is no longer shown in the CMS since the distribution plan
+  (2026-10-14); it stays only so packages approved before it still go out. Don't build on it;
+  remove it in a later release.

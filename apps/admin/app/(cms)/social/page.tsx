@@ -1,9 +1,13 @@
 ﻿'use client';
-// Social networks: every article that is on the site. Pick the ones that haven't
-// gone out yet, let the AI prepare a branded post and story, edit, publish.
+// Social networks, in two views. Before publishing: the report of distribution plans, where the
+// social editor's choices for each article are changed in a click. On the site: every article
+// that is on the site; pick the ones that haven't gone out yet, let the AI prepare a branded post
+// and story, edit, publish.
 import { SHARE_FILTERS, type ShareFilter, type ShareList, type ShareListItem } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { PlanEditor } from '@/components/social/plan-editor';
+import { PlanReport } from '@/components/social/plan-report';
 import { PublishDialog } from '@/components/social/publish-dialog';
 import { ShareEditor } from '@/components/social/share-editor';
 import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, Spinner, Thumb, cx, inputClass, useToast } from '@/components/ui';
@@ -36,7 +40,78 @@ function PostChips({ item }: { item: ShareListItem }) {
   );
 }
 
+const VIEWS = [
+  ['plans', 'לפני פרסום: תוכנית הפצה'],
+  ['site', 'כתבות באתר'],
+] as const;
+
 export default function SocialPage() {
+  const [view, setView] = useState<(typeof VIEWS)[number][0]>('plans');
+  const [openArticle, setOpenArticle] = useState<number | null>(null);
+  const [openDraft, setOpenDraft] = useState<string | null>(null);
+
+  // "/social?article=<id>" (from a published plan) opens that article on the site view.
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('article'));
+    if (id > 0) {
+      setView('site');
+      setOpenArticle(id);
+    }
+  }, []);
+
+  return (
+    <>
+      <PageHeader
+        title="רשתות חברתיות"
+        subtitle="לפני פרסום: עורך הרשתות מחליט לכל כתבה איך היא עולה (מסגרת, פוסט, סטורי, ריל), ומשנים בלחיצה. אחרי פרסום: כל הכתבות שבאתר, עריכה ופרסום ברשתות. הקישור תמיד מוביל לעמוד הכתבה."
+      />
+      <div className="mb-5 inline-flex rounded-xl bg-white p-1 ring-1 ring-line" role="tablist">
+        {VIEWS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={cx('rounded-lg px-5 py-2.5 text-[15px] font-extrabold', view === id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-stone')}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'plans' ? (
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
+            <PlanReport
+              openDraftId={openDraft}
+              onOpen={setOpenDraft}
+              onOpenArticle={(id) => {
+                setView('site');
+                setOpenArticle(id);
+              }}
+            />
+          </div>
+          <aside className="w-full shrink-0 xl:sticky xl:top-0 xl:max-h-[calc(100vh-8rem)] xl:w-[560px] xl:overflow-y-auto xl:rounded-xl">
+            <Card>
+              {openDraft ? (
+                <PlanEditor key={openDraft} draftId={openDraft} />
+              ) : (
+                <div className="space-y-3 py-4">
+                  <p className="font-display text-lg font-extrabold">איך זה עובד</p>
+                  <ol className="list-decimal space-y-1.5 pr-5 text-[15px] text-ink-2">
+                    <li>כשמסמנים טקסט של כתבה כסופי, עורך הרשתות כותב לה תוכנית: מסגרת עיצוב, פוסט, סטורי, והאם מתאים ריל.</li>
+                    <li>כאן רואים את כל ההחלטות שלו ואת הסיבות, ומשנים בלחיצה. כל שינוי נשמר מיד, והוא לומד ממנו.</li>
+                    <li>ריל עולה כסף, ולכן הוא רק ממליץ. &quot;אישור ריל&quot; מפעיל אחרי הפרסום את כל השלבים, והסרטון מחכה לאישור אחרון.</li>
+                    <li>כשהכתבה מתפרסמת באתר, הפוסט והסטורי עולים לרשתות לבד.</li>
+                  </ol>
+                  <p className="text-sm text-muted">לחיצה על כתבה ברשימה פותחת כאן את התוכנית המלאה: העיצובים, הטקסטים והריל.</p>
+                </div>
+              )}
+            </Card>
+          </aside>
+        </div>
+      ) : (
+        <SiteArticles open={openArticle} setOpen={setOpenArticle} />
+      )}
+    </>
+  );
+}
+
+/** The articles that are on the site, and their posts. */
+function SiteArticles({ open, setOpen }: { open: number | null; setOpen(id: number | null): void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [filter, setFilter] = useState<ShareFilter>('pending');
@@ -44,7 +119,6 @@ export default function SocialPage() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<number[]>([]);
-  const [open, setOpen] = useState<number | null>(null);
   const [publishing, setPublishing] = useState<number[] | null>(null);
 
   useEffect(() => {
@@ -80,11 +154,11 @@ export default function SocialPage() {
 
   return (
     <>
-      <PageHeader
-        title="רשתות חברתיות"
-        subtitle="כל הכתבות שעלו לאתר. בוחרים כתבות שעוד לא יצאו לרשתות, ה-AI מכין פוסט וסטורי בעיצוב של B4, עורכים ומפרסמים. הקישור תמיד מוביל לעמוד הכתבה."
-        actions={list.data ? <Badge tone={list.data.pendingCount ? 'warn' : 'ok'}>{list.data.pendingCount} כתבות ממתינות לרשתות</Badge> : null}
-      />
+      {list.data && (
+        <p className="-mt-2 mb-3">
+          <Badge tone={list.data.pendingCount ? 'warn' : 'ok'}>{list.data.pendingCount} כתבות באתר ממתינות לרשתות</Badge>
+        </p>
+      )}
 
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
         <Card className="min-w-0 flex-1">

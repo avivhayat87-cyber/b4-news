@@ -34,7 +34,7 @@ function Counter({ value, max }: { value: string; max: number }) {
 }
 
 /** Thumbnails of the four frames; the chosen one is outlined. */
-function TemplatePicker({ value, onChange, disabled }: { value: ShareTemplate; onChange(t: ShareTemplate): void; disabled?: boolean }) {
+export function TemplatePicker({ value, onChange, disabled }: { value: ShareTemplate; onChange(t: ShareTemplate): void; disabled?: boolean }) {
   const swatch: Record<ShareTemplate, string> = {
     headline: 'bg-gradient-to-b from-stone-400 via-night to-night',
     breaking: 'bg-[linear-gradient(to_bottom,var(--color-brand)_0_18%,#55555c_18%_62%,white_62%)]',
@@ -62,7 +62,7 @@ function TemplatePicker({ value, onChange, disabled }: { value: ShareTemplate; o
   );
 }
 
-function Preview({ src, ratio, label, busy }: { src: string | null; ratio: string; label: string; busy: boolean }) {
+export function Preview({ src, ratio, label, busy }: { src: string | null; ratio: string; label: string; busy: boolean }) {
   return (
     <figure className="min-w-0">
       <div className={cx('relative overflow-hidden rounded-xl bg-stone shadow-md ring-1 ring-line', ratio)}>

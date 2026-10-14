@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
+import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelIdea, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -863,6 +863,55 @@ export const articleSharePosts = pgTable(
     createdAt: createdAt(),
   },
   (t) => [unique('article_share_posts_unique').on(t.articleId, t.socialAccountId, t.format), index('article_share_posts_status_idx').on(t.status)],
+);
+
+/**
+ * The distribution plan of an article before it is published: the social editor's choices
+ * (frame, post, story, a reel idea) and texts, changed by the newsroom in the report.
+ * Publishing the article copies it to article_shares and sends it out.
+ */
+export const socialPlans = pgTable(
+  'social_plans',
+  {
+    draftId: uuid()
+      .primaryKey()
+      .references(() => articleDrafts.id, { onDelete: 'cascade' }),
+    /** false = the article doesn't go out to the networks automatically. */
+    enabled: boolean().notNull().default(true),
+    /** Design frame: headline | breaking | quote | explainer */
+    template: text().notNull().default('headline'),
+    kicker: text().notNull().default(''),
+    headline: text().notNull().default(''),
+    hook: text().notNull().default(''),
+    caption: text().notNull().default(''),
+    hashtags: text().array().notNull().default(sql`'{}'::text[]`),
+    /** What goes out: feed | story | reel. "reel" is set only by a person (it costs a video). */
+    formats: text().array().notNull().default(sql`'{feed,story}'::text[]`),
+    /** The AI's reel suggestion; the idea and length may be the editor's. */
+    reel: jsonb().$type<ReelIdea | null>(),
+    /** The AI's reasons for the report, in Hebrew. */
+    reasons: jsonb().$type<{ template: string; formats: string }>().notNull().default({ template: '', formats: '' }),
+    /** The AI's latest choices, to learn from what the editors changed. */
+    aiChoice: jsonb().$type<{ template: string; formats: string[]; reel: boolean } | null>(),
+    /** agent | editor: once a person changes the frame, the formats or the reel, a new AI text keeps them. */
+    choicesBy: text().notNull().default('agent'),
+    /** Background photo; null = the article's main image. */
+    imageMediaId: uuid().references(() => mediaAssets.id, { onDelete: 'set null' }),
+    /** Preview designs { feed, story, photo } -> storage keys (photo: the media id they were drawn on). */
+    rendered: jsonb().$type<Record<string, string>>().notNull().default({}),
+    /** The article text was reopened after the plan was written. */
+    isStale: boolean().notNull().default(false),
+    /** Why the AI couldn't write the plan, in Hebrew. */
+    lastError: text(),
+    /** Set when the article is published and the plan moves to article_shares. */
+    articleId: bigint({ mode: 'number' }).references(() => articles.id, { onDelete: 'set null' }),
+    appliedAt: tstz(),
+    version: integer().notNull().default(1),
+    updatedBy: uuid().references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('social_plans_article_idx').on(t.articleId)],
 );
 
 // ---------------------------------------------------------------------------
