@@ -1,5 +1,6 @@
 import { type Db, aiJobs, and, desc, eq, promptTemplates, styleProfiles } from '@b4/db';
 import type { Config } from '../../config';
+import { type TokenSource, metadataTokens } from '../../lib/google-auth';
 import { PermanentJobError } from '../../lib/jobs';
 import type { SettingsStore } from '../settings';
 import { AnthropicText } from './anthropic';
@@ -8,6 +9,8 @@ import { GeminiImages, type ImageSize } from './gemini-images';
 import { GeminiVideo } from './gemini-video';
 import { GeminiVisual } from './gemini-visual';
 import type { ImageAI, ImageTier, TextAI, Usage, VideoAI, VisualAI } from './types';
+import { VertexImages } from './vertex-images';
+import { VertexVideo } from './vertex-video';
 
 /** Drafts are drawn at the lowest resolution every image model supports. */
 const DRAFT_SIZE: ImageSize = '1K';
@@ -45,8 +48,9 @@ export function fixedAi(text: TextAI, image: ImageAI, draftImage: ImageAI = imag
   };
 }
 
-export function createAiHub(config: Config, settings: SettingsStore): AiHub {
+export function createAiHub(config: Config, settings: SettingsStore, tokens: TokenSource = metadataTokens()): AiHub {
   const fakeText = new FakeText();
+  const vertex = config.ai.vertex;
   const placeholders: Record<ImageTier, ImageAI> = { draft: new PlaceholderImages('draft'), final: new PlaceholderImages('final') };
   let textCache: { key: string; ai: TextAI } | null = null;
   const imageCache = new Map<ImageTier, { key: string; ai: ImageAI }>();
@@ -66,11 +70,14 @@ export function createAiHub(config: Config, settings: SettingsStore): AiHub {
   const image = async (tier: ImageTier = 'final'): Promise<ImageAI> => {
     if (config.ai.image === 'placeholder') return placeholders[tier];
     const v = await settings.integration('gemini');
-    if (v.apiKey) {
+    if (vertex || v.apiKey) {
       const [model, size] = tier === 'draft' ? [v.previewModel!, DRAFT_SIZE] : [v.imageModel!, v.imageSize as ImageSize];
-      const key = `${v.apiKey}|${model}|${size}`;
+      const key = `${vertex ? `vertex:${vertex.project}` : v.apiKey}|${model}|${size}`;
       let hit = imageCache.get(tier);
-      if (hit?.key !== key) imageCache.set(tier, (hit = { key, ai: new GeminiImages(v.apiKey, model, size) }));
+      if (hit?.key !== key) {
+        const ai = vertex ? new VertexImages({ project: vertex.project, location: vertex.location }, tokens, model, size) : new GeminiImages(v.apiKey!, model, size);
+        imageCache.set(tier, (hit = { key, ai }));
+      }
       return hit.ai;
     }
     if (config.ai.allowStandIns) return placeholders[tier];
@@ -81,6 +88,7 @@ export function createAiHub(config: Config, settings: SettingsStore): AiHub {
   const video = async (model?: string): Promise<VideoAI> => {
     if (config.ai.image === 'placeholder') return placeholderVideo;
     const v = await settings.integration('gemini');
+    if (vertex) return new VertexVideo({ project: vertex.project, location: vertex.videoLocation }, tokens, model || v.videoModel!);
     if (v.apiKey) return new GeminiVideo(v.apiKey, model || v.videoModel!);
     if (config.ai.allowStandIns) return placeholderVideo;
     throw new AiNotConnectedError('image');

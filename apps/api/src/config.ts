@@ -66,6 +66,15 @@ const Env = z
     IMAGE_SIZE: z.enum(['1K', '2K', '4K']).default('2K'),
     /** Draw the first article image drafts automatically after the AI rewrite. */
     AUTO_IMAGES: bool(true),
+    /**
+     * The Google Cloud project for images and reels through Vertex AI (on the cloud server):
+     * billed to that account and authorized by the server's own identity, no key. Empty = the
+     * Gemini API key from the CMS. The visual agent stays on that key either way.
+     */
+    VERTEX_PROJECT: z.string().regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, 'a Google Cloud project id').optional(),
+    VERTEX_LOCATION: z.string().default('global'),
+    /** Veo isn't served from "global". */
+    VERTEX_VIDEO_LOCATION: z.string().default('us-central1'),
 
     // Scraping
     SCRAPER_USER_AGENT: z.string().default('B4NewsBot/1.0 (+https://b4news.co.il/bot)'),
@@ -146,6 +155,8 @@ const Env = z
         imageModel: env.IMAGE_MODEL,
         imageSize: env.IMAGE_SIZE,
         autoImages: env.AUTO_IMAGES,
+        /** Images and reels through Vertex AI; null = the Gemini API key. */
+        vertex: env.VERTEX_PROJECT ? { project: env.VERTEX_PROJECT, location: env.VERTEX_LOCATION, videoLocation: env.VERTEX_VIDEO_LOCATION } : null,
       },
       scraper: { userAgent: env.SCRAPER_USER_AGENT, allowPrivate },
       devFixtures,

@@ -16,8 +16,8 @@ One TypeScript monorepo (npm workspaces). Every part shares the same types and v
                  │  job runner (inline, or `npm run worker` processes)   │
                  └──────┬──────────────────┬───────────────┬────────────┘
                         ▼                  ▼               ▼
-                 PostgreSQL          media files      Anthropic · Gemini images
-                 (PGlite locally)    (disk / CDN)     Meta Graph · Telegram · Expo push
+                 PostgreSQL          media files      Anthropic · Gemini (key or Vertex AI)
+                 (PGlite locally)    (disk / R2)      Meta Graph · Telegram · Expo push
 ```
 
 ## Packages
@@ -121,6 +121,7 @@ Each active source has a watermark (newest `published_at` seen by its last succe
 - **Rewrite** (`rewrite.system` prompt, editable in `prompt_templates`): "an external reporter" rewrite with the same facts, structured JSON output (title, subtitle, paragraphs, section, tags, image prompt). The active house-style rules are injected into the prompt.
 - **Refine**: the editor's comment, optionally on a selected passage, applied to the current text; the reply goes to the chat.
 - **Images**: 3 quick landscape drafts per click for the article (the chosen one is redrawn at full quality); 2 portrait options for stories (the first is preselected). Unless the editor wrote their own description, the visual agent writes it in Hebrew in the job (knowing the descriptions already tried); a Hebrew description reaches the image model in English (`toEnglish`). `image_batches.prompt_by` says who wrote it. Every image goes through `lib/images.ts`.
+- **Where images and reels are made**: with the Gemini API key from the CMS (`gemini-images.ts`, `gemini-video.ts`), or, on the cloud server (`VERTEX_PROJECT`), through Vertex AI (`vertex-images.ts`, `vertex-video.ts`): the same Google models, billed to the Google Cloud account and authorized by the server's own identity (`lib/google-auth.ts`, no key). The model names come from the CMS either way. The visual agent always uses the key.
 - **Learning loop**: at publish, the AI's first version and the final text are diffed (`edit_ratio`); after 5 meaningful corrections (or on demand) the AI distills them into numbered house-style rules, kept as versioned `style_profiles` that an admin can edit or roll back.
 - Untrusted text (scraped articles, editor comments) is passed inside tags the system prompt marks as data; the output is validated with zod and passed through `sanitizeDoc`.
 
@@ -130,7 +131,7 @@ The canvas edits ProseMirror JSON (TipTap) limited to paragraphs, h2/h3, quotes,
 
 ### Images ("automatic pixel management")
 
-Uploads and AI images are validated (type by content, at least 400×225, max 50 MP), rotated by EXIF, stripped of metadata and stored as a WebP master, then cut into `hero` 1600×900, `card` 800×450, `thumb` 320×180, `og` 1200×630, `square` 1080×1080 and `story` 1080×1920 around a focal point the editor can move. Rendition names carry a random tag so a CDN never serves an old crop.
+Uploads and AI images are validated (type by content, at least 400×225, max 50 MP), rotated by EXIF, stripped of metadata and stored as a WebP master, then cut into `hero` 1600×900, `card` 800×450, `thumb` 320×180, `og` 1200×630, `square` 1080×1080 and `story` 1080×1920 around a focal point the editor can move. Rendition names carry a random tag so a CDN never serves an old crop. The files live on local disk (`MEDIA_DIR`, served at `/media`) in the workshop, and in a Cloudflare R2 bucket (`MEDIA_STORAGE=r2`, `BucketStorage`) in the cloud, where `MEDIA_BASE_URL` is the bucket's public address and every file is marked immutable.
 
 ### Publishing
 
