@@ -99,6 +99,7 @@ describe('the visual agent', () => {
     await editor.patch(`/drafts/${draftId}`, { heroMediaId: chosen.id, category: 'israeli-economy' });
     await ctx.drain(); // the full-quality version
     expect((await editor.post(`/drafts/${draftId}/finalize`)).status).toBe(204);
+    await ctx.drain(); // the legal review of the final text
     expect((await editor.post(`/drafts/${draftId}/publish`, { idempotencyKey: 'visual-agent-1' })).status).toBe(202);
     await ctx.drain();
 

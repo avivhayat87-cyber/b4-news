@@ -54,7 +54,8 @@ import { activeStyleRules, tracked, writerPrompt } from './ai';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
-import { planOnFinalize } from './social-plan';
+import { reviewOnFinalize } from './legal-review';
+import { planOnFinalize, requestPlan } from './social-plan';
 import { draftReference, finalBrief, imageBrief, imageErrorMessage, sourceImageReference } from './image-brief';
 import { detectLanguage, translateFullItem } from './translate';
 
@@ -693,8 +694,51 @@ export async function finalizeText(s: Services, staff: Staff, draftId: string) {
   if (!draft.categoryId) problems.push('קטגוריה');
   if (problems.length) throw new AppError(422, 'incomplete', `חסר: ${problems.join(', ')}`);
   await s.db.update(articleDrafts).set({ status: 'text_final', textFinalizedAt: new Date(), updatedBy: staff.id }).where(eq(articleDrafts.id, draftId));
-  // The social editor writes the distribution plan from the final text.
+  // The legal reviewer reads the final text, and the social editor writes the distribution plan from it.
+  await reviewOnFinalize(s, staff, draftId);
   await planOnFinalize(s, staff, draftId);
+}
+
+type FinalEdit = { where: 'title' | 'subtitle' | 'body'; before: string; after: string } | { append: string };
+
+/**
+ * A change to a final text that an editor approved in the legal review (a safer wording of a
+ * passage, or the response of the person concerned): the text stays final, a revision is kept,
+ * and the distribution plan is written again from the new text. False when the passage isn't
+ * in the text any more.
+ */
+export async function amendFinalText(s: Services, staffId: string, draftId: string, edit: FinalEdit): Promise<boolean> {
+  const draft = await loadDraft(s.db, draftId);
+  if (draft.status !== 'text_final' && draft.status !== 'ready') throw draftErrors.textLocked();
+  let { title, subtitle } = draft;
+  const doc = sanitizeDoc(draft.bodyDoc);
+  if ('append' in edit) {
+    doc.content.push(...textToDoc(edit.append).content);
+  } else if (edit.where === 'title' || edit.where === 'subtitle') {
+    const text = edit.where === 'title' ? title : subtitle;
+    if (!text.includes(edit.before)) return false;
+    if (edit.where === 'title') title = text.replace(edit.before, edit.after);
+    else subtitle = text.replace(edit.before, edit.after);
+  } else {
+    // Only the block that holds the passage is rebuilt (it keeps its kind: paragraph, sub-heading, quote, list).
+    const at = doc.content.findIndex((b) => docToText({ type: 'doc', content: [b] }).includes(edit.before));
+    if (at < 0) return false;
+    const block = docToText({ type: 'doc', content: [doc.content[at]!] });
+    doc.content.splice(at, 1, ...textToDoc(block.replace(edit.before, edit.after)).content);
+  }
+  const bodyDoc = sanitizeDoc(doc);
+  const bodyText = docToText(bodyDoc);
+  const [updated] = await s.db
+    .update(articleDrafts)
+    .set({ title, subtitle, bodyDoc, bodyText, version: sql`${articleDrafts.version} + 1`, updatedBy: staffId })
+    .where(and(eq(articleDrafts.id, draftId), inArray(articleDrafts.status, ['text_final', 'ready'])))
+    .returning({ version: articleDrafts.version });
+  if (!updated) throw draftErrors.textLocked();
+  await s.db.insert(draftRevisions).values({ draftId, version: updated.version, source: 'human_checkpoint', title, subtitle, bodyDoc, bodyText, createdBy: staffId });
+  // The posts may quote the old wording.
+  const [plan] = await s.db.select({ appliedAt: socialPlans.appliedAt }).from(socialPlans).where(eq(socialPlans.draftId, draftId)).limit(1);
+  if (plan && !plan.appliedAt) await requestPlan(s, { id: staffId }, draftId);
+  return true;
 }
 
 export async function reopenText(s: Services, staff: Staff, draftId: string) {

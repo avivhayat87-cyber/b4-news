@@ -63,6 +63,7 @@ const I = {
     </>
   ),
   learn: <path d="M12 3 2 8l10 5 10-5zM6 10.5V16c3 2 9 2 12 0v-5.5" />,
+  review: <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6zM9 12l2 2 4-4" />,
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
@@ -101,6 +102,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/discovery/runs', label: 'איתורים קודמים', icon: I.history },
     { href: '/manual', label: 'העלאה ידנית', icon: I.upload },
     { href: '/saved', label: 'עריכות שמורות', icon: I.saved, badge: dash.data ? dash.data.drafts.working + dash.data.drafts.ready : undefined },
+    { href: '/review', label: 'בדיקה משפטית', icon: I.review, badge: dash.data?.review.waiting || undefined },
     { href: '/articles', label: 'כתבות באתר', icon: I.articles },
     { href: '/social', label: 'רשתות חברתיות', icon: I.social },
     { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },

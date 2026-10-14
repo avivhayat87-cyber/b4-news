@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, REEL_MOTIONS, SHARE_TEMPLATES } from '@b4/shared';
+import { CATEGORY_SLUGS, REEL_MOTIONS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -110,6 +110,41 @@ export type ShareKitRequest = {
   instruction?: string;
 };
 
+/** The legal review: only the risks a person must decide on (Hebrew reasons and advice). */
+export const ReviewOutput = z.object({
+  issues: z
+    .array(
+      z.object({
+        flag: z.enum(REVIEW_FLAGS),
+        where: z.enum(REVIEW_WHERE),
+        quote: z.string().max(2000),
+        subject: z.string().max(200),
+        why: z.string().max(600),
+        advice: z.string().max(600),
+      }),
+    )
+    .max(20),
+});
+export type ReviewOutput = z.infer<typeof ReviewOutput>;
+
+export const ReviewFixOutput = z.object({ after: z.string().min(1).max(4000) });
+export type ReviewFixOutput = z.infer<typeof ReviewFixOutput>;
+
+export type ReviewRequest = {
+  /** prompt_templates "review.system" */
+  systemPrompt: string;
+  article: ArticleText & { section: string };
+};
+
+export type ReviewFixRequest = {
+  /** prompt_templates "review.fix" */
+  systemPrompt: string;
+  issue: { flag: string; why: string; advice: string; subject: string };
+  /** The passage to rewrite, and the paragraph around it for context. */
+  quote: string;
+  context: string;
+};
+
 export type SocialPlanRequest = {
   /** prompt_templates "social.plan" */
   systemPrompt: string;
@@ -153,6 +188,8 @@ export interface TextAI {
   social(req: SocialRequest): Promise<AiResult<SocialOutput>>;
   shareKit(req: ShareKitRequest): Promise<AiResult<ShareKitOutput>>;
   socialPlan(req: SocialPlanRequest): Promise<AiResult<SocialPlanOutput>>;
+  review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;
+  reviewFix(req: ReviewFixRequest): Promise<AiResult<ReviewFixOutput>>;
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;
   distill(req: DistillRequest): Promise<AiResult<DistillOutput>>;
   learnBatch(req: LearnBatchRequest): Promise<AiResult<LearnBatchOutput>>;

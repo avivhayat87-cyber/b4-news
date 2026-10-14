@@ -10,6 +10,7 @@ import { AppError, errors } from '../../errors';
 export const AGENT_SKILLS: Record<AgentId, string[]> = {
   chief: ['agent.system'],
   rewrite: ['rewrite.system', 'refine.system'],
+  reviewer: ['review.system', 'review.fix'],
   social: ['social.plan', 'social.kit', 'social.caption'],
   visual: ['visual.image', 'reel.prompts', 'visual.learn', 'reel.image', 'reel.video'],
   translator: ['translate.system'],

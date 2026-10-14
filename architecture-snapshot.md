@@ -106,6 +106,7 @@ src/
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
+    legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
                         package, network adapters, the social page, branded designs, reels
@@ -144,8 +145,8 @@ public/brand/     Logo files
 ```
 app/(cms)/        One folder per CMS screen, behind the sign-in shell ((cms)/layout.tsx):
                     page.tsx (dashboard) · discovery/ (Israeli sites, international/, runs/) · sources/
-                    saved/ · magazines/[id] (+ preview) · drafts/[id] (+ preview) · manual/ · social/
-                    comments/ · takedowns/ · learning/ · agent/ · settings/
+                    saved/ · magazines/[id] (+ preview) · drafts/[id] (+ preview) · review/ · manual/
+                    social/ · comments/ · takedowns/ · learning/ · agent/ · settings/
 app/login/        Sign-in
 components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/
                     primitives in ui.tsx (Button, Card, Field, Badge, Loading, ErrorBox, Empty,
@@ -184,7 +185,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
-| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `manual/`, `components/editor/` | | `magazines`, `article_drafts`, `draft_revisions`, `image_batches`, `media_assets` |
+| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `review.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/`, `components/editor/`, `components/review/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
@@ -260,6 +261,11 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   owner on 2026-10-13: the owner manages it from the CMS ("הגדרות" > "צוות הסוכנים" > "סוכן
   התמונות והווידאו"; every agent's settings moved there on 2026-10-14, and "סוכן AI" keeps only
   the chat with the chief editor and the Claude app connection).
+- **Every article passes the legal review before it is published.** When its text is marked
+  final, the reviewer (`services/legal-review.ts`) looks for the risks a person must decide on,
+  and publishing waits until each one is decided (and recorded with who decided). Changing a
+  final text on the review's behalf goes through `amendFinalText` in `drafts.ts`. Only an admin
+  turns the review off. Decided by the owner on 2026-10-14.
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video

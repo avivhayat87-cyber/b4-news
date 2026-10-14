@@ -32,6 +32,7 @@ import { hashPassword, verifyPassword } from '../../lib/password';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
 import { activateProfile, learningOverview, queueDistill, saveRules } from '../../services/learning';
+import { waitingCount } from '../../services/legal-review';
 
 const params = z.object({ id: z.string().uuid() });
 const count = sql<number>`count(*)::int`;
@@ -81,6 +82,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       sources: { active: src('active'), waitingForDeveloper: src('pending_dev', 'in_development'), broken: src('broken') },
       comments: { toReview: toReview?.n ?? 0, reported: reported?.n ?? 0 },
       takedowns: { open: takedowns?.open ?? 0, overdue: takedowns?.overdue ?? 0 },
+      review: { waiting: await waitingCount(s) },
       failedJobs: failed?.n ?? 0,
       ai: await s.ai.status(),
     };

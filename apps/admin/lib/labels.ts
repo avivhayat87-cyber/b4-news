@@ -13,6 +13,9 @@ import {
   type PublishedArticleDto,
   type ReelMotion,
   type ReelStage,
+  type ReviewAction,
+  type ReviewState,
+  type ReviewWhere,
   type ShareFilter,
   type ShareFormat,
   type ShareTemplate,
@@ -88,6 +91,11 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
     role: 'כותב את הכתבה מהמקור ומתקן לפי ההערות',
     about: 'כותב כתבה חדשה מכל מקור שנשמר לעריכה, ומבצע את ההערות שלכם בעורך ("תקצר", "כותרת חדה יותר"). לומד את סגנון הבית מהתיקונים שלכם אחרי כל פרסום.',
   },
+  reviewer: {
+    name: 'הבודק המשפטי',
+    role: 'עוצר כתבה שיש בה סיכון, עד שתחליטו',
+    about: 'קורא כל כתבה כשהטקסט מסומן כסופי, ומחפש סיכונים: חשד נגד אדם פרטי בשמו, קטינים או נפגעי עבירות מין, צו איסור פרסום, מידע ביטחוני, שמועה על חברה בבורסה, והאשמה בלי תגובה. כתבה עם סיכון לא מתפרסמת עד שמישהו מחליט, והמנהלים מקבלים מייל. זו רשת ביטחון, לא תחליף לעורך דין.',
+  },
   social: {
     name: 'עורך הרשתות',
     role: 'מחליט איך כל כתבה עולה לרשתות',
@@ -115,6 +123,8 @@ export const SKILL: Record<string, { name: string; use: string }> = {
   'agent.system': { name: 'הנחיות העורך הראשי', use: 'איך הוא עונה בצ\'אט ומפעיל את הכלים' },
   'rewrite.system': { name: 'כתיבת כתבה מהמקור', use: 'כל כתבה חדשה. במקום הסימון {{style_rules}} המערכת מכניסה את סגנון הבית שנלמד ואת ההגדרות שלכם.' },
   'refine.system': { name: 'תיקון לפי הערה', use: 'ההערות בעורך: "תקצר", "כותרת חדה יותר"' },
+  'review.system': { name: 'הבדיקה המשפטית', use: 'אילו סיכונים מחפשים בכל כתבה, ומה מסמנים' },
+  'review.fix': { name: 'ניסוח זהיר', use: '"פרסום בזהירות מוגברת": איך מנסחים מחדש קטע עם סיכון' },
   'social.plan': { name: 'תוכנית הפצה', use: 'כשהטקסט סופי: מסגרת, פוסט, סטורי, ריל והטקסטים' },
   'social.kit': { name: 'פוסט וסטורי לכתבה שבאתר', use: 'דף הרשתות: "הכנה עם AI" לכתבות שכבר פורסמו' },
   'social.caption': { name: 'חבילת הרשתות הישנה', use: 'רק לכתבות שהוכנו לפני תוכנית ההפצה' },
@@ -138,6 +148,28 @@ export function modelName(id: string): string {
     })
     .join(' / ');
 }
+
+/** Where an article's legal review stands. */
+export const REVIEW_STATE: Record<ReviewState, { label: string; tone: Tone }> = {
+  checking: { label: 'בבדיקה משפטית', tone: 'info' },
+  clear: { label: 'לא נמצאו סיכונים', tone: 'ok' },
+  flagged: { label: 'נעצרה לבדיקה', tone: 'danger' },
+  resolved: { label: 'כל הסוגיות הוכרעו', tone: 'ok' },
+  failed: { label: 'הבדיקה לא הושלמה', tone: 'warn' },
+  waived: { label: 'אושרה בלי בדיקה', tone: 'muted' },
+};
+
+/** What was decided on a risk. */
+export const REVIEW_ACTION: Record<ReviewAction, string> = {
+  approve: 'אושר לפרסום כמו שזה',
+  caution: 'פורסם בזהירות מוגברת (הנוסח תוקן)',
+  awaiting_response: 'ממתין לתגובה',
+  response_added: 'התגובה נוספה לכתבה',
+  no_response: 'נכתב שלא התקבלה תגובה',
+  reject: 'הוחלט לא לפרסם',
+};
+
+export const REVIEW_WHERE_LABEL: Record<ReviewWhere, string> = { title: 'בכותרת', subtitle: 'בכותרת המשנה', body: 'בגוף הכתבה' };
 
 /** Where an article's distribution plan stands. */
 export const PLAN_STATE: Record<PlanState, { label: string; tone: Tone }> = {

@@ -30,6 +30,7 @@ import { learningReportsList, queueDistill } from '../learning';
 import { startPublish } from '../publish';
 import { startRun } from '../scraper/run';
 import { addSources, approveTestedSources } from '../scraper/setup';
+import { reviewQueue } from '../legal-review';
 import { getPlan, planReport, updatePlan } from '../social-plan';
 import { listShares, requestKits, startSharePublish } from '../social-share';
 import { draftFacts, getEditorSettings, saveEditorSettings } from './editor';
@@ -254,6 +255,26 @@ export const TOOLS: AgentTool[] = [
         recentlyPublished: r.recent.map((p) => ({ ...planView(p), articleId: p.articleId, posted: p.posts.filter((x) => x.status === 'posted').map((x) => `${x.platform}/${x.format}`), reelStage: p.reelStage })),
       };
     },
+  },
+  {
+    name: 'legal_reviews',
+    label: () => 'כתבות שנעצרו בבדיקה המשפטית',
+    description:
+      'Articles the legal review stopped before publishing, with each risk (a suspicion against a named private person, a minor or a victim, a possible gag order, security information, an unverified report about a listed company, an accusation without a response), the passage, why, the advice, and what was decided. Only a person decides, in the CMS (/review).',
+    schema: object({}),
+    input: z.object({}),
+    write: false,
+    roles: [],
+    run: async (s) =>
+      (await reviewQueue(s)).map((r) => ({
+        draftId: r.draftId,
+        title: r.title,
+        state: r.state,
+        waiting: r.openCount,
+        error: r.error,
+        issues: r.issues.map((i) => ({ risk: i.flag, passage: i.quote, why: i.why, advice: i.advice, decided: i.decision?.action ?? null })),
+        cmsLink: `/drafts/${r.draftId}`,
+      })),
   },
   {
     name: 'learning_status',

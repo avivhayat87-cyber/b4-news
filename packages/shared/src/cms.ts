@@ -621,10 +621,89 @@ export const DashboardDto = z.object({
   comments: z.object({ toReview: z.number().int(), reported: z.number().int() }),
   /** Content-removal requests not decided yet. */
   takedowns: z.object({ open: z.number().int(), overdue: z.number().int() }),
+  /** Articles the legal review stopped, waiting for a person's decision. */
+  review: z.object({ waiting: z.number().int() }),
   failedJobs: z.number().int(),
   ai: z.object({ text: z.string(), image: z.string(), live: z.boolean() }),
 });
 export type DashboardDto = z.infer<typeof DashboardDto>;
+
+// ---------------------------------------------------------------------------
+// The legal review: every article is checked when its text is marked final. A risk stops it
+// until a person decides: approve (with a reason), publish with extra caution (the AI rewrites
+// only the sensitive passage, the editor approves the change), wait for a response, or don't
+// publish. The admins get an email.
+// ---------------------------------------------------------------------------
+export const REVIEW_FLAGS = ['private_suspect', 'minor_or_victim', 'gag_order', 'security', 'market_rumor', 'no_response'] as const;
+export type ReviewFlag = (typeof REVIEW_FLAGS)[number];
+
+/** Each risk in Hebrew, for the CMS and the admins' email. */
+export const REVIEW_FLAG_NAME: Record<ReviewFlag, string> = {
+  private_suspect: 'חשד נגד אדם פרטי בשמו',
+  minor_or_victim: 'קטין או נפגע עבירת מין',
+  gag_order: 'חשש לצו איסור פרסום',
+  security: 'מידע ביטחוני (צנזורה)',
+  market_rumor: 'מידע לא מאומת על חברה בבורסה',
+  no_response: 'האשמה בלי תגובה',
+};
+
+export const REVIEW_WHERE = ['title', 'subtitle', 'body'] as const;
+export type ReviewWhere = (typeof REVIEW_WHERE)[number];
+
+/**
+ * approve: publish as is, with a reason; caution: the AI's safer wording was put in the article;
+ * awaiting_response: waiting for the person's response (still blocks); response_added: their
+ * response was added; no_response: "no response was received" was added; reject: don't publish.
+ */
+export const REVIEW_ACTIONS = ['approve', 'caution', 'awaiting_response', 'response_added', 'no_response', 'reject'] as const;
+export type ReviewAction = (typeof REVIEW_ACTIONS)[number];
+
+/** checking; clear (nothing found); flagged (decisions waiting); resolved; failed (the check didn't finish); waived (published without a check, by a person). */
+export const REVIEW_STATES = ['checking', 'clear', 'flagged', 'resolved', 'failed', 'waived'] as const;
+export type ReviewState = (typeof REVIEW_STATES)[number];
+
+export const ReviewIssueDto = z.object({
+  id: z.string(),
+  flag: z.enum(REVIEW_FLAGS),
+  where: z.enum(REVIEW_WHERE),
+  /** The passage, word for word. */
+  quote: z.string(),
+  /** The person or company it is about ('' when none). */
+  subject: z.string(),
+  why: z.string(),
+  advice: z.string(),
+  /** The AI's safer wording of the passage, for "publish with extra caution". */
+  fix: z.object({ status: z.enum(['writing', 'ready', 'failed']), after: z.string(), error: z.string().nullable() }).nullable(),
+  decision: z.object({ action: z.enum(REVIEW_ACTIONS), reason: z.string(), response: z.string(), by: z.string(), at: iso }).nullable(),
+  /** Still waiting for a person (no decision, or waiting for a response). */
+  open: z.boolean(),
+});
+export type ReviewIssueDto = z.infer<typeof ReviewIssueDto>;
+
+export const DraftReviewDto = z.object({
+  draftId: id,
+  title: z.string(),
+  draftStatus: z.enum(DRAFT_STATUSES),
+  /** null: the article was never checked (marked final before the review existed, or the review is off). */
+  state: z.enum(REVIEW_STATES).nullable(),
+  issues: z.array(ReviewIssueDto),
+  openCount: z.number().int(),
+  error: z.string().nullable(),
+  checkedAt: iso.nullable(),
+  waived: z.object({ by: z.string(), at: iso, reason: z.string() }).nullable(),
+});
+export type DraftReviewDto = z.infer<typeof DraftReviewDto>;
+
+export const DecideReviewInput = z.object({
+  action: z.enum(REVIEW_ACTIONS),
+  /** Why it may be published as is (approve), or why not (reject). */
+  reason: z.string().trim().max(1000).optional(),
+  /** The response as it should appear in the article (response_added). */
+  response: z.string().trim().max(2000).optional(),
+});
+export type DecideReviewInput = z.infer<typeof DecideReviewInput>;
+
+export const WaiveReviewInput = z.object({ reason: z.string().trim().min(3, 'כתבו בקצרה למה מפרסמים בלי בדיקה').max(1000) });
 
 export const StaffUserDto = z.object({
   id,

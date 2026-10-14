@@ -19,6 +19,7 @@ import {
   EditorAgentSettings,
   FactCheckDto,
   LearningReportDto,
+  ReviewerSettings,
   SaveVisualRulesInput,
   SendAgentMessageInput,
   SocialAgentOverview,
@@ -36,6 +37,7 @@ import { newToken, sha256 } from '../../lib/crypto';
 import { STAFF_TOKEN_PREFIX, requireStaff } from '../../plugins/auth';
 import { agentStatus, conversationDto, decideAction, listConversations, sendMessage } from '../../services/agent/chat';
 import { draftFacts, getEditorSettings, saveEditorSettings } from '../../services/agent/editor';
+import { getReviewerSettings, saveReviewerSettings } from '../../services/agent/reviewer';
 import { getSkill, restoreSkill, saveSkill } from '../../services/agent/skills';
 import { saveSocialSettings, socialAgentOverview } from '../../services/agent/social';
 import { agentTeam } from '../../services/agent/team';
@@ -110,6 +112,17 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
       return skill;
     },
   );
+
+  // --- The legal reviewer --------------------------------------------------------------------------
+  app.get('/agent/reviewer-settings', { schema: { response: { 200: ReviewerSettings } } }, async () => getReviewerSettings(s.db));
+
+  // Turning the review off lets risky articles through: only an admin, and it is recorded.
+  app.put('/agent/reviewer-settings', { schema: { body: ReviewerSettings, response: { 200: ReviewerSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const saved = await saveReviewerSettings(s.db, staff.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'reviewer-settings', action: 'update', details: saved });
+    return saved;
+  });
 
   // --- The social editor (the distribution plan before publishing) ---------------------------------
   app.get('/agent/social', { schema: { response: { 200: SocialAgentOverview } } }, async () => socialAgentOverview(s.db));

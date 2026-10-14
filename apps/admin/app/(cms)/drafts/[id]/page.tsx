@@ -1,7 +1,7 @@
 'use client';
 // The split-screen editor: the canvas on the right (Hebrew reading start), the
 // read-only original and the tools on the left. Everything autosaves.
-import type { DraftDetail, MediaDto } from '@b4/shared';
+import type { DraftDetail, DraftReviewDto, MediaDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -9,13 +9,14 @@ import { use, useState } from 'react';
 import { Canvas } from '@/components/editor/canvas';
 import { AiPanel, ImagesPanel, MetaPanel, OriginalPane } from '@/components/editor/panels';
 import { SocialPanel } from '@/components/editor/social-panel';
+import { ReviewPanel } from '@/components/review/review-panel';
 import { type SaveState, useAutosave } from '@/components/editor/use-autosave';
 import { Badge, Button, ColorDot, ErrorBox, Loading, Spinner, cx, useToast } from '@/components/ui';
 import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { DRAFT_STATUS, formatTime } from '@/lib/labels';
 
-type Tab = 'original' | 'ai' | 'images' | 'meta' | 'social';
+type Tab = 'original' | 'ai' | 'images' | 'meta' | 'review' | 'social';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   saved: 'נשמר',
@@ -45,6 +46,15 @@ function Editor({ id }: { id: string }) {
     refetchInterval: (q) => (q.state.data && (q.state.data.activeJob || ['queued_ai', 'ai_processing'].includes(q.state.data.status)) ? 2000 : false),
   });
   const draft = draftQ.data;
+  // The legal review of the final text: a red bar while a risk waits for a decision.
+  const final = draft?.status === 'text_final' || draft?.status === 'ready';
+  const reviewQ = useQuery({
+    queryKey: ['review', id],
+    queryFn: () => admin.get<DraftReviewDto>(`/drafts/${id}/review`),
+    enabled: final,
+    refetchInterval: (q) => (q.state.data?.state === 'checking' ? 2000 : false),
+  });
+  const stopped = final && (reviewQ.data?.state === 'flagged' || reviewQ.data?.state === 'failed');
   const aiBusy = !!draft && (!!draft.activeJob || draft.status === 'queued_ai' || draft.status === 'ai_processing');
   const editable = !!draft && canEdit && !aiBusy && (draft.status === 'editing' || draft.status === 'ai_failed');
   const autosave = useAutosave(draft, editable);
@@ -114,6 +124,7 @@ function Editor({ id }: { id: string }) {
     { id: 'ai', label: 'עוזר AI', dot: aiBusy },
     { id: 'images', label: 'תמונות', dot: !draft.hero },
     { id: 'meta', label: 'מיקום ותגיות', dot: !draft.category },
+    { id: 'review', label: 'בדיקה משפטית', dot: stopped },
     { id: 'social', label: 'רשתות חברתיות' },
   ];
 
@@ -153,6 +164,17 @@ function Editor({ id }: { id: string }) {
           )}
         </div>
       </header>
+
+      {stopped && reviewQ.data && (
+        <div className="flex flex-wrap items-center gap-3 bg-brand px-5 py-2.5 text-sm font-bold text-white" role="alert">
+          {reviewQ.data.state === 'failed'
+            ? 'הבדיקה המשפטית לא הושלמה. עד שתבדקו שוב או תאשרו, אי אפשר לפרסם.'
+            : `הכתבה נעצרה לבדיקה משפטית: ${reviewQ.data.openCount === 1 ? 'סוגיה אחת מחכה' : `${reviewQ.data.openCount} סוגיות מחכות`} להחלטה שלך.`}
+          <Button size="sm" className="mr-auto" onClick={() => setTab('review')}>
+            לפרטים ולהחלטה
+          </Button>
+        </div>
+      )}
 
       {liveEdit && (
         <p className="bg-info-soft px-5 py-2 text-sm font-semibold text-info" role="note">
@@ -236,6 +258,11 @@ function Editor({ id }: { id: string }) {
             {tab === 'ai' && <AiPanel draft={draft} selection={selection} busyJob={draft.activeJob} onQueued={refetch} />}
             {tab === 'images' && <ImagesPanel draft={draft} onHero={(m) => setHero.mutate(m)} />}
             {tab === 'meta' && <MetaPanel draft={draft} onSaved={refetch} onShowSource={() => setTab('original')} />}
+            {tab === 'review' && (
+              <div className="p-5">
+                <ReviewPanel draftId={id} final={final} />
+              </div>
+            )}
             {tab === 'social' && <SocialPanel draft={draft} onFinalize={() => action.mutate('finalize')} />}
           </div>
         </section>

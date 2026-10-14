@@ -3,7 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
+import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
 
@@ -106,6 +106,36 @@ export class FakeText implements TextAI {
       },
       usage: usage(),
     };
+  }
+
+  /** Finds the risky sentences by a few words, so the review flow works without an AI key. */
+  async review(req: ReviewRequest): Promise<AiResult<ReviewOutput>> {
+    const RULES: [ReviewOutput['issues'][number]['flag'], RegExp, string][] = [
+      ['private_suspect', /נחשד ב/, 'להסיר את השם ולייחס את החשד למשטרה'],
+      ['minor_or_victim', /קטין בן|קטינה בת|נפגעת עבירת מין/, 'להסיר את הפרטים המזהים'],
+      ['gag_order', /צו איסור פרסום/, 'לבדוק אם הותר לפרסם'],
+      ['security', /מבצע צבאי/, 'להעביר לצנזורה לפני פרסום'],
+      ['market_rumor', /לפי שמועות/, 'לייחס במפורש ולציין שלא אושר'],
+      ['no_response', /הטעתה את הלקוחות/, 'לפנות לתגובה'],
+    ];
+    const a = req.article;
+    const fields: [ReviewOutput['issues'][number]['where'], string][] = [
+      ['title', a.title],
+      ['subtitle', a.subtitle],
+      ['body', a.body],
+    ];
+    const issues: ReviewOutput['issues'] = [];
+    for (const [where, text] of fields) {
+      for (const sentence of text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter(Boolean)) {
+        const rule = RULES.find(([, re]) => re.test(sentence));
+        if (rule && !issues.some((i) => i.quote === sentence)) issues.push({ flag: rule[0], where, quote: sentence, subject: '', why: 'נמצאה מילה שמעידה על סיכון.', advice: rule[2] });
+      }
+    }
+    return { data: { issues }, usage: usage() };
+  }
+
+  async reviewFix(req: ReviewFixRequest): Promise<AiResult<ReviewFixOutput>> {
+    return { data: { after: `לכאורה, ${req.quote.replace(/^\s+/, '')}` }, usage: usage() };
   }
 
   /** Marks the text instead of translating it, so the flow is visible without an AI key. */

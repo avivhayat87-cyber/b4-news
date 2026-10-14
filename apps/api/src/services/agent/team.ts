@@ -23,6 +23,7 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   article_images: 'visual',
   social_image: 'visual',
   social_video: 'visual',
+  legal_review: 'reviewer',
 };
 
 /** Anthropic's list prices, US dollars per million tokens (input, output). */
@@ -84,6 +85,8 @@ export async function agentTeam(s: Services): Promise<AgentTeamDto> {
   const model: Record<AgentId, { provider: string; model: string; live: boolean }> = {
     chief: { provider: 'anthropic', model: AGENT_MODEL, live: Boolean(chief?.live) },
     rewrite: { provider: 'anthropic', model: claude.model ?? '', live: Boolean(text?.live) },
+    // The check on the fast model; a safer wording of a passage on the main one.
+    reviewer: { provider: 'anthropic', model: [claude.modelFast, claude.model].filter(Boolean).join(' / '), live: Boolean(text?.live) },
     social: { provider: 'anthropic', model: claude.modelFast ?? '', live: Boolean(text?.live) },
     visual: { provider: 'google', model: gemini.agentModel ?? '', live: Boolean(visual?.live) },
     // Headlines go to the fast model, a whole article to the main one.

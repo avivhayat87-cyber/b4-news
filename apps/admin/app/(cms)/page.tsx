@@ -42,6 +42,14 @@ export default function Dashboard() {
         }
       />
 
+      {d.review.waiting > 0 && (
+        <Link href="/review" className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-brand px-5 py-4 text-white shadow-sm" role="alert">
+          <span className="font-display text-2xl font-extrabold">{d.review.waiting}</span>
+          <span className="text-[15px] font-bold">{d.review.waiting === 1 ? 'כתבה מחכה להחלטה שלך' : 'כתבות מחכות להחלטה שלך'} בבדיקה המשפטית</span>
+          <span className="mr-auto text-sm font-semibold underline">לבדיקה</span>
+        </Link>
+      )}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="בעריכה" value={d.drafts.working} href="/saved" />
         <Stat label="מוכנות לפרסום" value={d.drafts.ready} href="/saved" tone={d.drafts.ready ? 'brand' : undefined} />

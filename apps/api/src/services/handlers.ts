@@ -7,6 +7,7 @@ import { VISUAL_LEARN_JOB, runVisualLearning } from './agent/visual';
 import { BATCH_LEARNING_JOB, runBatchLearning, runDistill } from './learning';
 import { DIGEST_TICK_JOB, ensureDigestTick, runDigestTick } from './digest';
 import { DIGEST_JOB, NOTIFY_JOB, runDigest, runNotify } from './notifications';
+import { FIX_JOB, REVIEW_JOB, markFixFailed, markReviewFailed, runFix, runReview } from './legal-review';
 import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
 import { runSourceSetup } from './scraper/setup';
@@ -25,6 +26,9 @@ export const handlers: Handlers<Services> = {
   'draft.rewrite': { run: runRewrite, onFailed: (s, job) => markRewriteFailed(s, job) },
   'draft.refine': { run: runRefine, onFailed: markRefineFailed, maxAttempts: 2 },
   'draft.images': { run: runImages, maxAttempts: 2 },
+  // One attempt (the AI client already retries): a failure shows at once, with "check again".
+  [REVIEW_JOB]: { run: runReview, onFailed: markReviewFailed, maxAttempts: 1 },
+  [FIX_JOB]: { run: runFix, onFailed: markFixFailed, maxAttempts: 1 },
   [FINAL_IMAGE_JOB]: { run: runFinalImage, maxAttempts: 2 },
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   [KIT_JOB]: { run: runKit, maxAttempts: 2 },

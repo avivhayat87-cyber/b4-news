@@ -27,6 +27,8 @@ const Env = z
     // Site (3000), CMS (3001), the app's web build (8081)
     CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001,http://localhost:8081'),
     PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
+    /** The CMS, for links in the staff's emails (an article stopped by the legal review). */
+    CMS_URL: z.string().url().default('http://localhost:3001'),
     /** This API's own public origin (links to media and the development sample sites). */
     PUBLIC_API_URL: z.string().url().optional(),
     COOKIE_DOMAIN: z.string().optional(),
@@ -128,6 +130,7 @@ const Env = z
       databaseUrl: env.DATABASE_URL || undefined,
       corsOrigins: env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
       publicSiteUrl: env.PUBLIC_SITE_URL.replace(/\/+$/, ''),
+      cmsUrl: env.CMS_URL.replace(/\/+$/, ''),
       publicApiUrl,
       cookieDomain: env.COOKIE_DOMAIN || undefined,
       hashPepper: pepper,

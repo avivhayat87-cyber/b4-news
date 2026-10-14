@@ -10,8 +10,8 @@ const iso = z.string();
 // The agent team: who the agents are, their skills (editable instructions, in Hebrew, versioned
 // in prompt_templates), the newsroom rules every agent follows, and what each one cost this month.
 // ---------------------------------------------------------------------------
-/** chief: the chat agent that runs the others. */
-export const AGENT_IDS = ['chief', 'rewrite', 'social', 'visual', 'translator', 'learning'] as const;
+/** chief: the chat agent that runs the others; reviewer: the legal review before publishing. */
+export const AGENT_IDS = ['chief', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning'] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
 
 /** skill: an agent's instructions; template: a technical text sent to an image or video model (English on purpose); rules: the newsroom rules every writing agent follows. */
@@ -206,6 +206,15 @@ export const SocialAgentSettings = z.object({
   reelGuidance: z.string().trim().max(1000).default(''),
 });
 export type SocialAgentSettings = z.infer<typeof SocialAgentSettings>;
+
+/** The legal reviewer: whether every article is checked when its text is final, and who is told. */
+export const ReviewerSettings = z.object({
+  /** Check every article when its text is marked final. */
+  enabled: z.boolean().default(true),
+  /** Email every admin when an article is stopped. */
+  emailAdmins: z.boolean().default(true),
+});
+export type ReviewerSettings = z.infer<typeof ReviewerSettings>;
 
 /** A frame, the formats that go out, and a reel (recommended by the AI, or approved by a person). */
 const SocialChoice = z.object({ template: z.string(), formats: z.array(z.string()), reel: z.boolean() });

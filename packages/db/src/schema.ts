@@ -74,6 +74,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'social_video',
   'visual_prompt',
   'visual_learning',
+  'legal_review',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -531,6 +532,44 @@ export const draftRevisions = pgTable(
   },
   (t) => [index('draft_revisions_draft_idx').on(t.draftId, t.id.desc())],
 );
+
+/** One risk the legal review found, with the AI's safer wording and a person's decision. */
+export type ReviewIssueRecord = {
+  id: string;
+  flag: string;
+  where: string;
+  quote: string;
+  subject: string;
+  why: string;
+  advice: string;
+  fix: { status: 'writing' | 'ready' | 'failed'; after: string; error: string | null } | null;
+  decision: { action: string; reason: string; response: string; by: string; byId: string; at: string } | null;
+};
+
+/**
+ * The legal review of a draft, run when its text is marked final: the risks found and the
+ * decisions on them. Publishing waits until every risk is decided.
+ */
+export const draftReviews = pgTable('draft_reviews', {
+  draftId: uuid()
+    .primaryKey()
+    .references(() => articleDrafts.id, { onDelete: 'cascade' }),
+  /** checking | clear | flagged | failed (resolved and waived are worked out from the decisions) */
+  status: text().notNull().default('checking'),
+  issues: jsonb().$type<ReviewIssueRecord[]>().notNull().default([]),
+  /** Why the check didn't finish, in Hebrew. */
+  lastError: text(),
+  checkedAt: tstz(),
+  /** A person published without a finished check. */
+  waivedBy: uuid().references(() => users.id),
+  waivedAt: tstz(),
+  waiveReason: text(),
+  /** When the admins were emailed about this check. */
+  notifiedAt: tstz(),
+  version: integer().notNull().default(1),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
 
 /** The "ask the AI again" chat beside the canvas. */
 export const aiChatMessages = pgTable(

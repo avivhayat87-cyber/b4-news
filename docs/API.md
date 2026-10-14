@@ -72,7 +72,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/dashboard` | any | `DashboardDto` |
+| GET | `/admin/dashboard` | any | `DashboardDto` (with `review.waiting`: articles the legal review stopped) |
 | GET | `/admin/learning` | any | `LearningOverview` |
 | POST | `/admin/learning/distill` | editor | learn now from pending corrections |
 | POST | `/admin/learning/profiles/:id/activate` | admin | roll back / forward the style rules |
@@ -168,6 +168,19 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
 | GET | `/admin/jobs/:id` | any | `JobRef` (poll an AI job) |
 
+### The legal review (after the text is final, before publishing)
+
+Marking the text final queues `review.check` (unless the reviewer is turned off). While a risk waits for a decision, or the check is running or didn't finish, the preview lists it as a problem and publishing answers 422 `not_ready`.
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/reviews` | any | `DraftReviewDto[]`: the final drafts the review stopped (`flagged`) or whose check didn't finish (`failed`) |
+| GET | `/admin/drafts/:id/review` | any | `DraftReviewDto`: `state` (checking · clear · flagged · resolved · failed · waived, `null` when never checked), every risk with the passage, why, the advice, the AI's safer wording and the decision |
+| POST | `/admin/drafts/:id/review` | editor | → 202 `{ jobId }` (20/min): check again; a decision on a passage that is still there carries over |
+| POST | `/admin/drafts/:id/review/issues/:issueId/decide` | editor | `DecideReviewInput` → `DraftReviewDto` (audited): `approve` (needs a `reason`), `caution` (puts the safer wording into the text; 409 `no_fix` before there is one, 422 `passage_gone`), `awaiting_response` (still blocks), `response_added` (needs the `response`, added at the end of the article), `no_response` (adds "no response was received"), `reject` (the draft is marked "don't publish") |
+| POST | `/admin/drafts/:id/review/issues/:issueId/fix` | editor | → 202 `{ jobId }` (20/min): the AI writes a safer wording of the passage (the main model); nothing changes in the text until `caution` |
+| POST | `/admin/drafts/:id/review/waive` | editor | `WaiveReviewInput` (`reason`) → `DraftReviewDto` (audited): publish without a check that didn't finish; 409 otherwise |
+
 ### The distribution plan (after the text is final, before publishing)
 
 Marking the text final queues `social.plan` (unless `autoPlan` is off): the social editor chooses the frame, the formats and whether to recommend a reel, with its reasons, and writes the texts. Publishing the article copies the plan to `article_shares` and posts it (when `autoPost` is on).
@@ -227,6 +240,7 @@ The editor's social tab now shows the distribution plan. These endpoints stay fo
 | POST | `/admin/agent/conversations/:id/decide` | any (the tool checks the role) | `DecideActionInput` (`approve` true/false) for a proposed change |
 | GET / PUT | `/admin/agent/editor-settings` | any / editor | `EditorAgentSettings` (divergence, length, voice, instructions; facts are always kept) |
 | GET | `/admin/agent/learning-reports` | any | `LearningReportDto[]`: one per publish batch |
+| GET / PUT | `/admin/agent/reviewer-settings` | any / admin | `ReviewerSettings` (`enabled`: check every final text; `emailAdmins`); a change is audited |
 | GET | `/admin/agent/social` | any | `SocialAgentOverview`: the social editor's settings, the plans the editors changed (which every new plan reads), counts for the last 30 days |
 | PUT | `/admin/agent/social-settings` | editor | `SocialAgentSettings` (`autoPlan`, `autoPost`, instructions, when a reel is worth it) |
 | GET | `/admin/agent/visual` | any | `VisualAgentOverview`: the visual agent's model, pending and learned cases, recent cases, rule versions with what each pass learned, last learning error |

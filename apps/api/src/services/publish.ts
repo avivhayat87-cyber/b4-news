@@ -34,6 +34,7 @@ import { queueBatchLearning, recordFeedback } from './learning';
 import { queueVisualLearning, recordImageFeedback } from './agent/visual';
 import { setArticleTags, updateArticleFromDraft } from './article-content';
 import { type SocialPayload, publishToNetwork } from './social-adapters';
+import { reviewProblems } from './legal-review';
 import { applyPlan } from './social-plan';
 
 type Staff = { id: string; fullName: string };
@@ -41,11 +42,19 @@ export type PublishTarget = { magazineId: string } | { draftId: string };
 
 const PUBLISHABLE = ['text_final', 'ready'];
 
-/** draftHeroes: main images that are still a quick AI draft (their full-quality version isn't ready). */
-export function problemsOf(d: Pick<DraftRow, 'status' | 'title' | 'bodyText' | 'categoryId' | 'heroMediaId'>, draftHeroes: ReadonlySet<string> = new Set()): string[] {
+/**
+ * draftHeroes: main images that are still a quick AI draft (their full-quality version isn't ready).
+ * reviews: what the legal review still waits for, per draft (legal-review.ts).
+ */
+export function problemsOf(
+  d: Pick<DraftRow, 'id' | 'status' | 'title' | 'bodyText' | 'categoryId' | 'heroMediaId'>,
+  draftHeroes: ReadonlySet<string> = new Set(),
+  reviews: ReadonlyMap<string, string> = new Map(),
+): string[] {
   if (d.status === 'skipped' || d.status === 'published') return [];
   const p: string[] = [];
   if (!PUBLISHABLE.includes(d.status)) p.push('הטקסט עוד לא סומן כסופי');
+  else if (reviews.has(d.id)) p.push(reviews.get(d.id)!);
   if (d.title.trim().length < 5) p.push('חסרה כותרת');
   if (d.bodyText.trim().length < 100) p.push('גוף הכתבה קצר מדי');
   if (!d.categoryId) p.push('לא נבחרה קטגוריה');
@@ -73,6 +82,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     ? await s.db.select().from(mediaAssets).where(inArray(mediaAssets.id, rows.flatMap((r) => (r.heroMediaId ? [r.heroMediaId] : []))))
     : [];
   const draftHeroes = new Set(media.filter((m) => m.kind === 'ai_preview').map((m) => m.id));
+  const reviews = await reviewProblems(s.db, rows.map((r) => r.id));
   const packages = rows.length ? await s.db.select().from(socialPackages).where(inArray(socialPackages.draftId, rows.map((r) => r.id))) : [];
   const originalIds = rows.flatMap((r) => (r.scrapedItemId ? [r.scrapedItemId] : []));
   const originals = originalIds.length
@@ -102,7 +112,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
         tags: r.tagNames,
         editorName: staff.fullName,
         social: { ready: Boolean(pkg?.approvedAt), platforms: posts.filter((p) => p.draftId === r.id).map((p) => p.platform) },
-        problems: problemsOf(r, draftHeroes),
+        problems: problemsOf(r, draftHeroes, reviews),
         warnings: copied && r.status !== 'published' && r.status !== 'skipped' ? [copied] : [],
       },
     ];
@@ -111,7 +121,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     publishDate: new Date().toISOString(),
     editorName: staff.fullName,
     items,
-    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && problemsOf(r, draftHeroes).length === 0).length,
+    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && problemsOf(r, draftHeroes, reviews).length === 0).length,
     skippedCount: rows.filter((r) => r.status === 'skipped').length,
   };
 }
@@ -129,13 +139,14 @@ export async function startPublish(s: Services, staff: Staff, target: PublishTar
   const pending = rows.filter((r) => r.status !== 'skipped' && r.status !== 'published');
   if (pending.length === 0) throw new AppError(409, 'nothing_to_publish', 'אין כתבות שממתינות לפרסום.');
   const draftHeroes = await draftHeroesOf(s.db, pending);
-  const blocked = pending.filter((r) => problemsOf(r, draftHeroes).length > 0);
+  const reviews = await reviewProblems(s.db, pending.map((r) => r.id));
+  const blocked = pending.filter((r) => problemsOf(r, draftHeroes, reviews).length > 0);
   if (blocked.length) {
     const first = blocked[0]!;
     throw new AppError(
       422,
       'not_ready',
-      `${blocked.length} כתבות עוד לא מוכנות (למשל "${first.title.slice(0, 40)}": ${problemsOf(first, draftHeroes).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
+      `${blocked.length} כתבות עוד לא מוכנות (למשל "${first.title.slice(0, 40)}": ${problemsOf(first, draftHeroes, reviews).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
     );
   }
 
@@ -303,6 +314,8 @@ export async function runPublish(s: Services, job: JobRow) {
   // Articles already on the site whose draft was edited: updated in place (no push, posts or learning again).
   const updated: { id: number; slug: string; categories: string[] }[] = [];
   const draftHeroes = await draftHeroesOf(s.db, rows);
+  // Checked again at publishing time: a decision may have changed since the job was queued.
+  const reviews = await reviewProblems(s.db, rows.map((r) => r.id));
 
   // 1. The site.
   for (const draft of rows) {
@@ -312,8 +325,8 @@ export async function runPublish(s: Services, job: JobRow) {
       if (a) published.push({ draft, article: { ...a, category: '' } });
       continue;
     }
-    if (problemsOf(draft, draftHeroes).length) {
-      steps[`${draft.id}:site`] = `failed: ${problemsOf(draft, draftHeroes).join(', ')}`;
+    if (problemsOf(draft, draftHeroes, reviews).length) {
+      steps[`${draft.id}:site`] = `failed: ${problemsOf(draft, draftHeroes, reviews).join(', ')}`;
       continue;
     }
     if (draft.publishedArticleId) {

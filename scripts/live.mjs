@@ -249,6 +249,7 @@ function apiEnv(which, keys, token) {
     PUBLIC_API_URL: live ? urls.api : `http://localhost:${p.api}`,
     MEDIA_BASE_URL: urls.media,
     PUBLIC_SITE_URL: live ? urls.site : `http://localhost:${p.web}`,
+    CMS_URL: live ? urls.cms : `http://localhost:${p.cms}`,
     CORS_ORIGINS: live ? `${urls.site},${urls.cms}` : `http://localhost:${p.web},http://localhost:${p.cms}`,
     SITE_REVALIDATE_URL: `http://127.0.0.1:${p.web}/api/revalidate`,
     SEED_SAMPLE_CONTENT: 'false',

@@ -237,6 +237,9 @@ describe('the editorial process', () => {
     expect(ctx.storage.files.size).toBeGreaterThan(6);
     await editor.patch(`/drafts/${second.id}`, { heroMediaId: hero.body.id, placement: 'trending' });
     expect((await editor.post(`/drafts/${second.id}/finalize`)).status).toBe(204);
+    // Not while the legal review of the final text is still running.
+    expect((await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-early' })).status).toBe(422);
+    await ctx.drain();
 
     const started = await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-2' });
     expect(started.status).toBe(202);

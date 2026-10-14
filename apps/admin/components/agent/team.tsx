@@ -9,6 +9,7 @@ import { admin } from '@/lib/api';
 import { AGENT, SKILL, modelName } from '@/lib/labels';
 import { Badge, Card, ErrorBox, LinkButton, Loading, cx } from '../ui';
 import { EditorAgent } from './editor-agent';
+import { ReviewerAgent } from './reviewer-agent';
 import { SkillEditor } from './skill-editor';
 import { SocialAgent } from './social-agent';
 import { VisualAgent } from './visual-agent';
@@ -43,6 +44,7 @@ function AgentCard({ agent, picked, onPick, lead }: { agent: AgentCardDto; picke
 
 function Settings({ id }: { id: AgentId }) {
   if (id === 'rewrite') return <EditorAgent />;
+  if (id === 'reviewer') return <ReviewerAgent />;
   if (id === 'social') return <SocialAgent />;
   if (id === 'visual') return <VisualAgent />;
   if (id === 'chief')
@@ -166,7 +168,7 @@ export function AgentTeam() {
         </div>
         <div aria-hidden className="mx-auto h-6 w-px bg-line" />
         <div aria-hidden className="mx-[8%] hidden h-px bg-line lg:block" />
-        <div className="mt-0 grid gap-3 pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-0 grid gap-3 pt-4 sm:grid-cols-2 lg:grid-cols-4">
           {others.map((a) => (
             <AgentCard key={a.id} agent={a} picked={picked === a.id} onPick={() => setPicked(a.id)} />
           ))}
