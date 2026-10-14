@@ -95,6 +95,32 @@ function SentRow({ plan, onOpenArticle }: { plan: SocialPlanDto; onOpenArticle(i
   );
 }
 
+/** "Approve all": every reel the social editor recommended, in one click (each one is saved and audited on its own). */
+function ApproveAllReels({ plans }: { plans: SocialPlanDto[] }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const canEdit = useCan('editor');
+  const approve = useMutation({
+    mutationFn: async () => {
+      for (const p of plans) await admin.put(`/drafts/${p.draftId}/social-plan`, { version: p.version, formats: [...p.formats, 'reel'] });
+    },
+    onSuccess: () => toast(plans.length > 1 ? `${plans.length} ריילים אושרו. הם ייבנו אחרי פרסום הכתבות.` : 'הריל אושר. הוא ייבנה אחרי פרסום הכתבה.'),
+    onError: (e) => toast(errorMessage(e), 'danger'),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['social-plans'] }),
+  });
+  if (!plans.length) return null;
+  const known = plans.filter((p) => p.reelEstimateUsd !== null);
+  const total = known.reduce((sum, p) => sum + (p.reelEstimateUsd ?? 0), 0);
+  return canEdit ? (
+    <Button size="sm" variant="dark" busy={approve.isPending} onClick={() => approve.mutate()}>
+      אישור כל הריילים המומלצים ({plans.length}
+      {known.length ? ` · כ-$${total.toFixed(2)}` : ''})
+    </Button>
+  ) : (
+    <Badge tone="warn">{plans.length} ריל מומלץ מחכה לאישור</Badge>
+  );
+}
+
 export function PlanReport({ openDraftId, onOpen, onOpenArticle }: { openDraftId: string | null; onOpen(draftId: string): void; onOpenArticle(articleId: number): void }) {
   const report = useQuery({
     queryKey: ['social-plans'],
@@ -104,14 +130,11 @@ export function PlanReport({ openDraftId, onOpen, onOpenArticle }: { openDraftId
   if (report.isPending) return <Loading />;
   if (report.isError) return <ErrorBox error={report.error} onRetry={() => report.refetch()} />;
   const { pending, recent, autoPost } = report.data;
-  const reels = pending.filter((p) => p.reel?.recommended && !p.formats.includes('reel') && p.enabled).length;
+  const reels = pending.filter((p) => p.reel?.recommended && !p.formats.includes('reel') && p.enabled && p.state !== 'writing');
 
   return (
     <div className="space-y-6">
-      <Card
-        title={`לפני פרסום: ${pending.length} כתבות`}
-        actions={reels ? <Badge tone="warn">{reels} ריל מומלץ מחכה לאישור</Badge> : null}
-      >
+      <Card title={`לפני פרסום: ${pending.length} כתבות`} actions={<ApproveAllReels plans={reels} />}>
         <p className={cx('-mt-1 mb-3 text-sm', autoPost ? 'text-muted' : 'font-semibold text-warn')}>
           {autoPost
             ? 'עורך הרשתות הכין לכל כתבה תוכנית. כשהכתבה מתפרסמת, התוכנית עולה לרשתות לבד. משנים כאן בלחיצה.'
