@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type ReelIdea, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
+import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type DigestPrefs, type ReelIdea, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -140,6 +140,9 @@ export const readers = pgTable('readers', {
   /** Replies, likes and the editors' pick: by mail (gathered, at most once an hour) and in the app. */
   notifyEmail: boolean().notNull().default(true),
   notifyPush: boolean().notNull().default(true),
+  /** "העיתון שלי" for a signed-in reader: topics (also their feed), time and how (null: not set up). */
+  digest: jsonb().$type<DigestPrefs>(),
+  lastDigestAt: tstz(),
   createdAt: createdAt(),
   lastLoginAt: tstz(),
 });
@@ -1236,6 +1239,9 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
   confirmTokenHash: text().unique(),
   confirmedAt: tstz(),
   unsubscribedAt: tstz(),
+  /** "העיתון שלי": topics, time and frequency (null: every topic, 07:00, daily). */
+  digest: jsonb().$type<DigestPrefs>(),
+  lastDigestAt: tstz(),
   createdAt: createdAt(),
 });
 

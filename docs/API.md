@@ -21,13 +21,15 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | GET | `/public/markets` | `MarketQuote[]`: Bank of Israel representative rates (empty when unavailable) |
 | GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles, `consent` (terms version to accept) |
 | GET | `/public/pages/:slug` | `PublicPage`: about, contact, advertise, accessibility, privacy, terms, comment-rules (company details filled in) |
-| POST | `/public/newsletter` · `/public/newsletter/confirm` | `NewsletterSignupInput` (terms checkbox required, recorded in `consents`); double opt-in |
+| POST | `/public/newsletter` · `/public/newsletter/confirm` | `NewsletterSignupInput` (terms checkbox required, recorded in `consents`); double opt-in. `confirm` answers `{ id, token }` so the page can offer the personal issue right away |
+| GET / PUT | `/public/newsletter/preferences/:id/:token` | `DigestPrefs` of a subscriber without an account (the signed link in every issue): topics in order, the hour, daily or weekly; always by mail |
 | POST | `/public/newsletter/unsubscribe` | `UnsubscribeInput` (signed link from every newsletter) |
 | POST | `/public/newsletter/unsubscribe/:id/:token` | one-click unsubscribe from the mail client (RFC 8058, the `List-Unsubscribe` header) |
 | POST | `/public/consent` | `VisitorConsentInput`: the consent banner (site) or welcome screen (app); 409 `terms_changed` for an old version |
 | POST | `/public/takedown` | `TakedownInput`: a content-removal request from anyone; 5/hour; mails a confirmation |
 | POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app); with the reader's bearer token the device is linked to them (replies and likes reach it), without it the link is cleared |
 | POST | `/public/notifications/mail-off/:id/:token` | one-click stop of the mails about replies and likes (the List-Unsubscribe header of those mails) |
+| POST | `/public/digest/mail-off/:id/:token` | one-click stop of a reader's personal issue by mail (the List-Unsubscribe header of that mail) |
 
 ## Comments and readers
 
@@ -49,6 +51,8 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | GET | `/auth/reader/notifications` | `ReaderNotificationList`: the latest 30 (replies, likes, the editors' pick) and the unread count |
 | POST | `/auth/reader/notifications/read` | `{ ids? }` → 204; without ids, all. Seen notices are not mailed |
 | GET / PUT | `/auth/reader/prefs` | `ReaderPrefs` (`notifyEmail`: one gathered mail at most an hour after the first notice; `notifyPush`) |
+| GET / PUT | `/auth/reader/digest` | `DigestPrefs`, "העיתון שלי": topics in the reader's order, the hour (Israel time), `daily` or `weekly` (Sunday), by mail and/or phone push. Off until the reader turns a channel on |
+| GET | `/auth/reader/feed?mode=for-you\|new\|popular&cursor=&seed=` | `FeedPage`: articles in the reader's topics (all topics when none are chosen) with the comment count and the top comment (the editors' pick, then the most liked) and its replies. `for-you` mixes fresh and lively with a light shuffle per `seed` (one per visit); `popular` is the week's most discussed |
 
 ## Staff sign-in
 

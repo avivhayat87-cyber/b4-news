@@ -1,5 +1,6 @@
 // Reader comments: registered readers post, everyone reads.
 import { z } from 'zod';
+import { ArticleCard } from './content';
 
 export const COMMENT_LIMITS = {
   minLength: 2,
@@ -40,6 +41,25 @@ export type CommentList = z.infer<typeof CommentList>;
 
 export const LikeResult = z.object({ likeCount: z.number().int(), likedByMe: z.boolean() });
 export type LikeResult = z.infer<typeof LikeResult>;
+
+// ---------------------------------------------------------------------------
+// "הפיד שלי": articles in the reader's topics, with the conversation around them
+// ---------------------------------------------------------------------------
+/** for-you: fresh and talked-about, a little different on every visit; new; popular (the week). */
+export const FEED_MODES = ['for-you', 'new', 'popular'] as const;
+export type FeedMode = (typeof FEED_MODES)[number];
+
+export const FeedItemDto = z.object({
+  article: ArticleCard,
+  commentCount: z.number().int(),
+  /** The editors' pick, else the most liked comment. */
+  topComment: z
+    .object({ id: z.string().uuid(), author: z.string(), body: z.string(), likeCount: z.number().int(), picked: z.boolean(), replies: z.number().int() })
+    .nullable(),
+});
+export type FeedItemDto = z.infer<typeof FeedItemDto>;
+export const FeedPage = z.object({ items: z.array(FeedItemDto), nextCursor: z.string().nullable(), sections: z.array(z.string()) });
+export type FeedPage = z.infer<typeof FeedPage>;
 
 // ---------------------------------------------------------------------------
 // What a reader is told about: replies to them, likes, the editors' pick

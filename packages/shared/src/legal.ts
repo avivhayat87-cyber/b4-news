@@ -26,6 +26,24 @@ export const AcceptTermsInput = z.object({ version: LegalVersion, accept: mustAc
 
 export const NewsletterSignupInput = z.object({ email: Email, acceptTerms: mustAccept });
 
+// ---------------------------------------------------------------------------
+// "העיתון שלי": the personal newsletter (topics, time, how)
+// ---------------------------------------------------------------------------
+export const DIGEST_FREQUENCIES = ['daily', 'weekly'] as const;
+
+export const DigestPrefs = z.object({
+  /** Category slugs in the reader's order (empty: everything). */
+  sections: z.array(z.string().max(40)).max(20).default([]),
+  /** The hour it arrives, Israel time (0-23). */
+  hour: z.number().int().min(0).max(23).default(7),
+  /** Weekly issues go out on Sunday. */
+  frequency: z.enum(DIGEST_FREQUENCIES).default('daily'),
+  email: z.boolean().default(true),
+  /** A notification on the phone (signed in to the app). */
+  push: z.boolean().default(false),
+});
+export type DigestPrefs = z.infer<typeof DigestPrefs>;
+
 export const UnsubscribeInput = z.object({
   id: z.string().uuid(),
   token: z.string().regex(/^[0-9a-f]{64}$/, 'הקישור לא תקין'),

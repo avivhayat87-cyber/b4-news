@@ -4,6 +4,9 @@
 // terms version) requires accepting the terms, and readers can delete their account themselves.
 import {
   AcceptTermsInput,
+  DigestPrefs,
+  FEED_MODES,
+  FeedPage,
   MarkNotificationsInput,
   ReaderDto,
   ReaderLinkSession,
@@ -24,6 +27,8 @@ import { keyedHash, newSixDigitCode, newToken, safeEqualHex } from '../lib/crypt
 import { clearSessionCookie, createSession, destroySession, requireReader, setSessionCookie } from '../plugins/auth';
 import { recordConsent } from '../services/consent';
 import type { Services } from '../services/context';
+import { readerDigest, saveReaderDigest } from '../services/digest';
+import { feed } from '../services/feed';
 import { getPrefs, listNotifications, markRead, setPrefs } from '../services/notifications';
 import { completeSignIn, readerDto as dto, signInMail } from '../services/reader-signin';
 import { legalVersion } from '../services/site-settings';
@@ -210,6 +215,26 @@ export const readerAuthRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (a
   });
 
   app.get('/prefs', { schema: { response: { 200: ReaderPrefs } } }, async (req) => getPrefs(s, requireReader(req).id));
+
+  // --- "הפיד שלי": articles in the reader's topics with the conversation around them ------------------
+  app.get(
+    '/feed',
+    {
+      schema: {
+        querystring: z.object({ mode: z.enum(FEED_MODES).default('for-you'), cursor: z.string().max(200).optional(), seed: z.coerce.number().int().min(0).max(1_000_000).default(0) }),
+        response: { 200: FeedPage },
+      },
+    },
+    async (req, reply) => {
+      reply.header('cache-control', 'no-store');
+      return feed(db, config, requireReader(req).id, req.query.mode, req.query.cursor, req.query.seed);
+    },
+  );
+
+  // --- "העיתון שלי": topics (also the feed), the hour, mail and/or phone ------------------------------
+  app.get('/digest', { schema: { response: { 200: DigestPrefs } } }, async (req) => readerDigest(s, requireReader(req).id));
+
+  app.put('/digest', { schema: { body: DigestPrefs, response: { 200: DigestPrefs } } }, async (req) => saveReaderDigest(s, requireReader(req).id, req.body));
 
   app.put('/prefs', { schema: { body: ReaderPrefs, response: { 200: ReaderPrefs } } }, async (req) => setPrefs(s, requireReader(req).id, req.body));
 

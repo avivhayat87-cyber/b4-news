@@ -1,6 +1,6 @@
 // Newsletter sign-up (double opt-in, with the terms accepted) and unsubscribe,
 // the consent banner's answer, and push-notification devices: /api/v1/public/*
-import { NewsletterSignupInput, UnsubscribeInput, VisitorConsentInput } from '@b4/shared';
+import { DigestPrefs, NewsletterSignupInput, UnsubscribeInput, VisitorConsentInput } from '@b4/shared';
 import { and, devices, eq, isNull, newsletterSubscribers, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod, ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -8,7 +8,8 @@ import { AppError } from '../errors';
 import { newToken, sha256 } from '../lib/crypto';
 import { recordConsent } from '../services/consent';
 import type { Services } from '../services/context';
-import { validUnsubscribeToken } from '../services/newsletter';
+import { saveSubscriberDigest, stopReaderDigestMail, subscriberDigest } from '../services/digest';
+import { unsubscribeToken, validUnsubscribeToken } from '../services/newsletter';
 import { stopMails } from '../services/notifications';
 import { legalVersion } from '../services/site-settings';
 
@@ -54,16 +55,31 @@ export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
 
   app.post(
     '/newsletter/confirm',
-    { schema: { body: z.object({ token: z.string().min(20).max(200) }) }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
-    async (req, reply) => {
+    {
+      schema: { body: z.object({ token: z.string().min(20).max(200) }), response: { 200: z.object({ id: z.string().uuid(), token: z.string() }) } },
+      config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
+    },
+    async (req) => {
       const [row] = await db
         .update(newsletterSubscribers)
         .set({ confirmedAt: new Date(), confirmTokenHash: null, unsubscribedAt: null })
         .where(eq(newsletterSubscribers.confirmTokenHash, sha256(req.body.token)))
         .returning({ id: newsletterSubscribers.id });
       if (!row) throw new AppError(400, 'token_invalid', 'הקישור לא תקין או שכבר נעשה בו שימוש');
-      return reply.status(204).send();
+      // Straight on to "העיתון שלי": topics and time, with the same key as every issue's links.
+      return { id: row.id, token: unsubscribeToken(config, row.id) };
     },
+  );
+
+  const prefsParams = UnsubscribeInput;
+  app.get('/newsletter/preferences/:id/:token', { schema: { params: prefsParams, response: { 200: DigestPrefs } } }, async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    return subscriberDigest(s, req.params.id, req.params.token);
+  });
+  app.put(
+    '/newsletter/preferences/:id/:token',
+    { schema: { params: prefsParams, body: DigestPrefs, response: { 200: DigestPrefs } }, config: { rateLimit: { max: 30, timeWindow: '1 hour' } } },
+    async (req) => saveSubscriberDigest(s, req.params.id, req.params.token, req.body),
   );
 
   const unsubscribe = async (id: string, token: string) => {
@@ -89,6 +105,15 @@ export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       { schema: { params: UnsubscribeInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
       async (req, reply) => {
         await unsubscribe(req.params.id, req.params.token);
+        return reply.status(204).send();
+      },
+    );
+    // A signed-in reader's personal issue by mail.
+    scope.withTypeProvider<ZodTypeProvider>().post(
+      '/digest/mail-off/:id/:token',
+      { schema: { params: UnsubscribeInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
+      async (req, reply) => {
+        await stopReaderDigestMail(s, req.params.id, req.params.token);
         return reply.status(204).send();
       },
     );

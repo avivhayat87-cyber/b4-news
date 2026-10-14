@@ -7,6 +7,9 @@ import type {
   CategoryRef,
   CommentDto,
   CommentList,
+  DigestPrefs,
+  FeedMode,
+  FeedPage,
   HomeData,
   LikeResult,
   Page,
@@ -99,6 +102,10 @@ export const api = {
   unlikeComment: (id: string) => call<LikeResult>(`/comments/${id}/like`, { method: 'DELETE' }),
   notifications: () => call<ReaderNotificationList>('/auth/reader/notifications'),
   markNotificationsRead: () => call<void>('/auth/reader/notifications/read', { method: 'POST', body: json({}) }),
+  myFeed: (mode: FeedMode, cursor: string | null, seed: number) =>
+    call<FeedPage>(withCursor(`/auth/reader/feed?mode=${mode}&seed=${seed}`, cursor)),
+  digest: () => call<DigestPrefs>('/auth/reader/digest'),
+  saveDigest: (prefs: DigestPrefs) => call<DigestPrefs>('/auth/reader/digest', { method: 'PUT', body: json(prefs) }),
   prefs: () => call<ReaderPrefs>('/auth/reader/prefs'),
   savePrefs: (prefs: ReaderPrefs) => call<ReaderPrefs>('/auth/reader/prefs', { method: 'PUT', body: json(prefs) }),
   postComment: (articleId: number, body: string, parentId?: string) =>

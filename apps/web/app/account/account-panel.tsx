@@ -1,9 +1,10 @@
 'use client';
 
-import { DisplayName, type ReaderPrefs } from '@b4/shared';
+import { type DigestPrefs, DisplayName, type ReaderPrefs } from '@b4/shared';
 import Link from 'next/link';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { SignIn } from '@/components/comments';
+import { DigestForm } from '@/components/digest-form';
 import { ApiFailure, readerApi } from '@/lib/client-api';
 import type { ReaderDto } from '@/lib/types';
 
@@ -43,6 +44,13 @@ export function AccountPanel() {
     );
   }
   return <SignedIn reader={state.reader} onChange={(reader) => setState({ kind: 'signed-in', reader })} onGone={(kind) => setState({ kind })} />;
+}
+
+/** "העיתון שלי": the topics (also the reader's feed), the hour, mail and/or phone. Off until turned on. */
+function MyPaper() {
+  const load = useCallback(() => readerApi.digest(), []);
+  const save = useCallback((p: DigestPrefs) => readerApi.saveDigest(p), []);
+  return <DigestForm load={load} save={save} allowPush intro="כתבות מהתחומים שלך, בשעה שבחרת. התחומים קובעים גם מה יופיע ב&quot;הפיד שלי&quot;." />;
 }
 
 /** How the reader hears about replies, likes and the editors' pick (the bell on the site is always on). */
@@ -171,6 +179,13 @@ function SignedIn({ reader, onChange, onGone }:{ reader: ReaderDto; onChange: (r
         <button type="button" onClick={signOut} className="self-start text-[15px] font-bold text-brand underline-offset-2 hover:underline">
           התנתקות
         </button>
+      </section>
+
+      <section id="my-paper" aria-labelledby="acc-paper" className="flex flex-col gap-3 rounded-xl border border-line p-5">
+        <h2 id="acc-paper" className="text-xl font-extrabold">
+          העיתון שלי
+        </h2>
+        <MyPaper />
       </section>
 
       <NotificationPrefs />

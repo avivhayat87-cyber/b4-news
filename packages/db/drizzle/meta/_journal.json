@@ -127,6 +127,13 @@
       "when": 1792000673604,
       "tag": "0017_community",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792001587201,
+      "tag": "0018_personal_digest",
+      "breakpoints": true
     }
   ]
 }

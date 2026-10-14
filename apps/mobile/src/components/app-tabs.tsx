@@ -9,6 +9,10 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>בית</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="my">
+        <NativeTabs.Trigger.Label>הפיד שלי</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} md="person" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="categories">
         <NativeTabs.Trigger.Label>קטגוריות</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="square.grid.2x2" md="grid_view" />

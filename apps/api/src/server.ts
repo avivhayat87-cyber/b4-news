@@ -6,6 +6,7 @@ import { loadConfig } from './config';
 import { CATEGORY_SLUGS } from '@b4/shared';
 import { illustrateSampleArticles } from './dev/illustrations';
 import { ensureDevAdmin, seedDevSources } from './dev/seed';
+import { ensureDigestTick } from './services/digest';
 import { revalidateSite } from './services/publish';
 import { JobRunner } from './lib/jobs';
 import { handlers } from './services/handlers';
@@ -64,6 +65,8 @@ if (shutdownToken) {
 await app.listen({ host: config.host, port: config.port });
 // The embedded database has a single worker (this process), so jobs a restart cut off resume right away.
 if (runner && handle.kind === 'pglite') await runner.recoverInterrupted();
+// "העיתון שלי": the recurring job that sends personal issues at each reader's hour.
+if (runner) await ensureDigestTick(handle.db);
 runner?.start();
 const ai = await app.services.ai.status();
 app.log.info(`AI: text=${ai.text} images=${ai.image}; worker=${config.worker.mode}`);

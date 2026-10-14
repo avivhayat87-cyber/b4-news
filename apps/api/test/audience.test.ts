@@ -71,7 +71,7 @@ describe('newsletter subscribers', () => {
     expect((await signup('pending@example.com')).statusCode).toBe(202);
     expect((await signup('reader@example.com')).statusCode).toBe(202);
     const token = ctx.mailer.lastTo('reader@example.com')!.text.match(/token=([^\s]+)/)![1]!;
-    expect((await ctx.app.inject({ method: 'POST', url: '/api/v1/public/newsletter/confirm', payload: { token: decodeURIComponent(token) }, headers: { origin: ORIGIN } })).statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/v1/public/newsletter/confirm', payload: { token: decodeURIComponent(token) }, headers: { origin: ORIGIN } })).statusCode).toBe(200);
 
     expect((await editor.get('/newsletter/subscribers')).body.items.map((s: { email: string }) => s.email)).toEqual(['reader@example.com']);
     expect((await editor.get('/newsletter/subscribers?status=pending')).body.items.map((s: { email: string }) => s.email)).toEqual(['pending@example.com']);

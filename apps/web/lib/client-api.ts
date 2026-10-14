@@ -1,6 +1,6 @@
 // Browser-side calls for reader features (sign-in, comments). The API session
 // cookie is httpOnly, so it is sent with `credentials: 'include'` and never read here.
-import type { ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
+import type { DigestPrefs, FeedMode, FeedPage, ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
 import type { CommentDto, CommentList, ReaderDto, ReaderSession } from './types';
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -53,11 +53,19 @@ export const readerApi = {
   markRead: (ids?: string[]) => call<void>('/auth/reader/notifications/read', { method: 'POST', body: json(ids ? { ids } : {}) }),
   prefs: () => call<ReaderPrefs>('/auth/reader/prefs'),
   savePrefs: (prefs: ReaderPrefs) => call<ReaderPrefs>('/auth/reader/prefs', { method: 'PUT', body: json(prefs) }),
+  feed: (mode: FeedMode, cursor: string | undefined, seed: number) =>
+    call<FeedPage>(`/auth/reader/feed?mode=${mode}&seed=${seed}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+  digest: () => call<DigestPrefs>('/auth/reader/digest'),
+  saveDigest: (prefs: DigestPrefs) => call<DigestPrefs>('/auth/reader/digest', { method: 'PUT', body: json(prefs) }),
 };
 
 export const newsletterApi = {
   subscribe: (email: string) => call<void>('/public/newsletter', { method: 'POST', body: json({ email, acceptTerms: true }) }),
-  confirm: (token: string) => call<void>('/public/newsletter/confirm', { method: 'POST', body: json({ token }) }),
+  /** Returns the key for the preferences ("העיתון שלי") that every issue links to as well. */
+  confirm: (token: string) => call<{ id: string; token: string }>('/public/newsletter/confirm', { method: 'POST', body: json({ token }) }),
+  prefs: (id: string, token: string) => call<DigestPrefs>(`/public/newsletter/preferences/${encodeURIComponent(id)}/${encodeURIComponent(token)}`),
+  savePrefs: (id: string, token: string, prefs: DigestPrefs) =>
+    call<DigestPrefs>(`/public/newsletter/preferences/${encodeURIComponent(id)}/${encodeURIComponent(token)}`, { method: 'PUT', body: json(prefs) }),
   unsubscribe: (id: string, token: string) => call<void>('/public/newsletter/unsubscribe', { method: 'POST', body: json({ id, token }) }),
 };
 

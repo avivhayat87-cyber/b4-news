@@ -65,7 +65,12 @@ export function ReaderBell({ className = '' }: { className?: string }) {
       </button>
       {open ? (
         <div className="absolute end-0 top-12 z-50 w-80 max-w-[90vw] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-line">
-          <p className="border-b border-line px-4 py-3 font-extrabold">התראות</p>
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <p className="font-extrabold">התראות</p>
+            <Link href="/my" onClick={() => setOpen(false)} className="text-sm font-bold text-brand hover:underline">
+              הפיד שלי ←
+            </Link>
+          </div>
           {state.items.length === 0 ? (
             <p className="px-4 py-6 text-sm text-ink-2">עוד אין התראות. כשיגיבו לתגובות שלך או יאהבו אותן, זה יופיע כאן.</p>
           ) : (

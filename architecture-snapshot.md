@@ -109,7 +109,8 @@ src/
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
                         package, network adapters, the social page, branded designs, reels
-    newsletter.ts · consent.ts · translate.ts · learning.ts · classify.ts
+    newsletter.ts · digest.ts (the personal issue) · feed.ts (the reader's feed) · consent.ts ·
+      translate.ts · learning.ts · classify.ts
     article-transfer.ts · workshop-copy.ts   Moving articles, and a safe copy of the live data, between environments
     data-move.ts      The computer's live data to the cloud, once (the database as SQL, the media into the bucket)
     settings.ts · site-settings.ts · legal-pages.ts · connection-tests.ts
@@ -129,7 +130,7 @@ assets/fonts/       Fonts for server-side image rendering (with their licenses)
 
 ```
 app/              Routes (App Router): home, article/[slug], category/[slug], search, markets,
-                    account, newsletter/*, report, [page] (info pages), a/[id] (short links),
+                    account, my (the reader's feed), newsletter/*, report, [page] (info pages), a/[id] (short links),
                     api/revalidate (cache refresh after publishing), sitemap.ts, robots.ts
 components/       Flat, one file per piece of UI: header, footer, hero, carousels, comments,
                     sidebar, share…; primitives in ui.tsx; hooks named use-*.ts
@@ -156,7 +157,7 @@ lib/              api.ts (the only way to call the server) · auth.tsx (session,
 ### 2.4 `apps/mobile/`: the app
 
 ```
-src/app/          Screens only (Expo Router): (tabs)/ (home, categories, saved, search),
+src/app/          Screens only (Expo Router): (tabs)/ (home, my feed, categories, saved, search),
                     article/[slug], category/[slug], a/[id], account, _layout.tsx
 src/components/   UI pieces (top bar, tabs, article body, comments, welcome…)
 src/lib/          api.ts · token.ts (Bearer token in secure storage) · push.ts · saved.ts ·
@@ -187,9 +188,9 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
-| **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
+| **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, `digest.ts` (the personal issue at the reader's hour, a self-rescheduling job), push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages (incl. preferences), "העיתון שלי" in account, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
-| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `lib/expo-push.ts` | `comments/`, `takedowns/`, `audience/` ("מנויים וגולשים") | comments, the bell, account (notification settings), report; app comments and account | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
+| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `lib/expo-push.ts` | `comments/`, `takedowns/`, `audience/` ("מנויים וגולשים") | comments, the bell, account (notification settings), `my/` (the feed), report; app comments, account and the "הפיד שלי" tab | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
 | **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop), `services/data-move.ts`, `services/two-factor.ts` + `lib/totp.ts` (staff two-step sign-in), `routes/staff-auth.ts`, `routes/admin/security.ts`, `scripts/*`, `deploy/cloud/*` | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
 
