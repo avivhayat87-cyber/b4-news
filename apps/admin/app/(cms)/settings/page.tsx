@@ -6,7 +6,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AgentTeam } from '@/components/agent/team';
 import { Connections } from '@/components/settings/connections';
 import { SiteDetails } from '@/components/settings/site-details';
-import { Button, Card, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
+import { SecurityCard, TwoFactorCard } from '@/components/settings/two-factor';
+import { Badge, Button, Card, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
 import { useCan, useStaff } from '@/lib/auth';
 import { ROLE, timeAgo } from '@/lib/labels';
@@ -76,9 +77,18 @@ function StaffCard() {
     onSuccess: setSecret,
     onError,
   });
+  const reset2fa = useMutation({
+    mutationFn: (u: StaffUserDto) => admin.post(`/users/${u.id}/reset-2fa`),
+    onSuccess: () => {
+      toast('האימות הדו-שלבי אופס והמשתמש נותק. בכניסה הבאה הוא יגדיר אותו מחדש.');
+      refresh();
+    },
+    onError,
+  });
 
   return (
     <Card title="צוות המערכת">
+      <SecurityCard />
       {secret && (
         <div className="mb-4 rounded-lg bg-warn-soft p-4 text-warn" role="alert">
           <p className="font-bold">סיסמה זמנית ל-{secret.who} (מוצגת פעם אחת בלבד):</p>
@@ -100,6 +110,7 @@ function StaffCard() {
               <th className="py-2">שם</th>
               <th className="py-2">מייל</th>
               <th className="py-2">תפקיד</th>
+              <th className="py-2">אימות דו-שלבי</th>
               <th className="py-2">כניסה אחרונה</th>
               <th className="py-2" />
             </tr>
@@ -120,6 +131,9 @@ function StaffCard() {
                     ))}
                   </select>
                 </td>
+                <td className="py-2">
+                  <Badge tone={u.twoFactor ? 'ok' : 'muted'}>{u.twoFactor ? 'פעיל' : 'לא הופעל'}</Badge>
+                </td>
                 <td className="py-2 text-muted">{timeAgo(u.lastLoginAt)}</td>
                 <td className="py-2">
                   {u.id !== me.id && (
@@ -127,6 +141,11 @@ function StaffCard() {
                       <Button size="sm" variant="ghost" onClick={() => reset.mutate(u)}>
                         איפוס סיסמה
                       </Button>
+                      {u.twoFactor && (
+                        <Button size="sm" variant="ghost" onClick={() => confirm(`לאפס את האימות הדו-שלבי של ${u.fullName}? (למשל כשאבד הטלפון)`) && reset2fa.mutate(u)}>
+                          איפוס אימות
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: u.id, isActive: !u.isActive })}>
                         {u.isActive ? 'השבתה' : 'הפעלה'}
                       </Button>
@@ -179,7 +198,7 @@ export default function SettingsPage() {
     { id: 'agents', label: 'צוות הסוכנים', show: true },
     { id: 'site', label: 'פרטי האתר', show: true },
     { id: 'team', label: 'צוות', show: isAdmin },
-    { id: 'password', label: 'הסיסמה שלי', show: true },
+    { id: 'password', label: 'החשבון שלי', show: true },
   ];
   const visible = tabs.filter((t) => t.show);
   const [tab, setTab] = useState<Tab>(visible[0]!.id);
@@ -211,7 +230,12 @@ export default function SettingsPage() {
       {tab === 'agents' && <AgentTeam />}
       {tab === 'site' && <SiteDetails canEdit={isAdmin} />}
       {tab === 'team' && isAdmin && <StaffCard />}
-      {tab === 'password' && <PasswordCard />}
+      {tab === 'password' && (
+        <div className="space-y-6">
+          <PasswordCard />
+          <TwoFactorCard />
+        </div>
+      )}
     </>
   );
 }

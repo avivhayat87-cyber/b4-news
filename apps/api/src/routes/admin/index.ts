@@ -13,6 +13,7 @@ import { discoveryRoutes } from './discovery';
 import { draftRoutes } from './drafts';
 import { mediaRoutes } from './media';
 import { overviewRoutes } from './overview';
+import { securityRoutes } from './security';
 import { settingsRoutes } from './settings';
 import { socialRoutes } from './social';
 import { socialAccountRoutes } from './social-accounts';
@@ -25,15 +26,18 @@ export const adminRoutes: FastifyPluginAsync<{ s: Services }> = async (app, { s 
     const route = req.routeOptions.url ?? '';
     // A personal access token (the Claude app) reaches only the agent's tools, which check roles themselves.
     if (staff.apiTokenId && !route.includes('/admin/agent/tools')) throw errors.forbidden();
-    // Viewers may chat with the agent (it gives them read-only tools); everything else they may only read.
+    // Viewers may chat with the agent (it gives them read-only tools) and manage their own sign-in
+    // (password, two-step); everything else they may only read.
     const chat = /\/admin\/agent\/(messages|conversations\/)/.test(route);
-    if (staff.role === 'viewer' && req.method !== 'GET' && !chat) throw errors.forbidden();
+    const ownAccount = /\/admin\/me\//.test(route);
+    if (staff.role === 'viewer' && req.method !== 'GET' && !chat && !ownAccount) throw errors.forbidden();
   });
   app.addHook('onSend', async (_req, reply) => {
     reply.header('cache-control', 'no-store');
   });
 
   await app.register(overviewRoutes, { s });
+  await app.register(securityRoutes, { s });
   await app.register(settingsRoutes, { s });
   await app.register(socialAccountRoutes, { s });
   await app.register(sourceRoutes, { s });

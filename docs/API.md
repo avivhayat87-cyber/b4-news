@@ -49,7 +49,9 @@ Cookie-authenticated writes must send an allowed `Origin`.
 
 | Method | Path | |
 | --- | --- | --- |
-| POST | `/auth/staff/login` | `StaffLoginInput` → `StaffDto` + cookie (10 attempts / 15 min) |
+| POST | `/auth/staff/login` | `StaffLoginInput` → `StaffLoginResult`: signed in (`staff` + cookie), or `twoFactor: code \| setup` with a `challenge` (5 minutes, 5 tries) when two-step sign-in is on or required (10 attempts / 15 min) |
+| POST | `/auth/staff/login/2fa-setup` | `{ challenge }` → `TwoFactorSetupDto` (QR code and secret), when required but not set up yet |
+| POST | `/auth/staff/login/2fa` | `{ challenge, code }` (6 digits from the app, or a recovery code) → `StaffTwoFactorResult` + cookie; right after a setup, the 10 recovery codes once. 400 `code_invalid`, 401 `challenge_expired` |
 | GET | `/auth/staff/me` | `StaffDto` |
 | POST | `/auth/staff/logout` | |
 
@@ -73,6 +75,12 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | PATCH | `/admin/users/:id` | admin | `UpdateStaffInput` (can't demote or disable yourself) |
 | POST | `/admin/users/:id/reset-password` | admin | one-time temporary password; signs the user out |
 | POST | `/admin/me/password` | any | `ChangePasswordInput`; signs out other sessions |
+| GET | `/admin/me/2fa` | any | `TwoFactorStatus` (on since, recovery codes left, required by the newsroom) |
+| POST | `/admin/me/2fa/setup` · `/admin/me/2fa/enable` | any | the QR code, then `{ code }` from the app → `{ recoveryCodes }` (shown once) |
+| POST | `/admin/me/2fa/disable` | any | `{ password, code }`; refused (409 `required`) when the newsroom requires it |
+| POST | `/admin/me/2fa/recovery-codes` | any | `{ code }` → ten new recovery codes (the old ones stop working) |
+| POST | `/admin/users/:id/reset-2fa` | admin | a lost phone: clears the setup and signs the user out |
+| GET / PUT | `/admin/security` | admin | `SecuritySettings` (`requireTwoFactor`); 409 `enable_yourself_first` for an admin without it |
 
 ### Settings (admin)
 

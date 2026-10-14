@@ -122,6 +122,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     isActive: u.isActive,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
+    twoFactor: Boolean(u.totpEnabledAt),
   });
 
   app.get('/users', { schema: { response: { 200: z.array(StaffUserDto) } } }, async (req) => {

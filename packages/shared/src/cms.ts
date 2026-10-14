@@ -634,6 +634,8 @@ export const StaffUserDto = z.object({
   isActive: z.boolean(),
   lastLoginAt: iso.nullable(),
   createdAt: iso,
+  /** Signs in with a code from an authenticator app as well. */
+  twoFactor: z.boolean(),
 });
 export type StaffUserDto = z.infer<typeof StaffUserDto>;
 

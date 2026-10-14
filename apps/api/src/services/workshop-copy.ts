@@ -20,6 +20,7 @@ import {
   socialAccounts,
   sql,
   staffApiTokens,
+  staffLoginChallenges,
   takedownRequests,
   users,
 } from '@b4/db';
@@ -34,7 +35,10 @@ export async function prepareWorkshopCopy(copy: Db, workshop: Db | null): Promis
   report.accessTokens = await n(copy.delete(staffApiTokens).returning({ id: staffApiTokens.id }));
   report.pushDevices = await n(copy.delete(devices).returning({ id: devices.id }));
   report.liveKeys = await n(copy.delete(secrets).returning({ key: secrets.key }));
-  await copy.update(users).set({ passwordHash: null });
+  await copy.delete(staffLoginChallenges);
+  // Staff sign-ins, including the authenticator secrets (sealed with the live key anyway), and the live rule requiring them.
+  await copy.update(users).set({ passwordHash: null, totpSecret: null, totpPendingSecret: null, totpEnabledAt: null, totpLastStep: null, totpRecoveryHashes: [] });
+  await copy.delete(appSettings).where(eq(appSettings.key, 'security.staff'));
 
   // People, replaced by stand-ins (the content they wrote stays).
   report.readers = await n(
@@ -62,10 +66,24 @@ export async function prepareWorkshopCopy(copy: Db, workshop: Db | null): Promis
   report.socialAccountsOff = await n(copy.update(socialAccounts).set({ isActive: false }).where(eq(socialAccounts.isActive, true)).returning({ id: socialAccounts.id }));
 
   if (workshop) {
-    // The workshop's staff keep signing in with their own passwords.
+    // The workshop's staff keep signing in with their own passwords. Someone who is new to the copy
+    // keeps their id, and with it their two-step setup (its secret is sealed with that id); someone
+    // the live site has too gets the live id, and signs in with the password alone.
     for (const u of await workshop.select().from(users)) {
       const [match] = await copy.update(users).set({ passwordHash: u.passwordHash, isActive: true }).where(eq(users.email, u.email)).returning({ id: users.id });
-      if (!match) await copy.insert(users).values({ email: u.email, fullName: u.fullName, role: u.role, passwordHash: u.passwordHash });
+      if (!match) {
+        await copy.insert(users).values({
+          id: u.id,
+          email: u.email,
+          fullName: u.fullName,
+          role: u.role,
+          passwordHash: u.passwordHash,
+          totpSecret: u.totpSecret,
+          totpEnabledAt: u.totpEnabledAt,
+          totpLastStep: u.totpLastStep,
+          totpRecoveryHashes: u.totpRecoveryHashes,
+        });
+      }
     }
     // The workshop's own keys (encrypted with its own key) and connection settings.
     const keys = await workshop.select().from(secrets);

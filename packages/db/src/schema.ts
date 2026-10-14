@@ -103,8 +103,28 @@ export const users = pgTable('users', {
   passwordHash: text(),
   isActive: boolean().notNull().default(true),
   lastLoginAt: tstz(),
+  /** Two-step sign-in: the authenticator app's secret, encrypted with SECRETS_KEY (null = off). */
+  totpSecret: text(),
+  /** A secret being set up, until the first code from the app confirms it. */
+  totpPendingSecret: text(),
+  totpEnabledAt: tstz(),
+  /** The last 30-second step a code was accepted for (a code works once). */
+  totpLastStep: integer(),
+  /** One-time recovery codes for a lost phone (keyed hashes). */
+  totpRecoveryHashes: text().array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+});
+
+/** After the password, before the session: waits for the authenticator code (id = sha256 of the token). */
+export const staffLoginChallenges = pgTable('staff_login_challenges', {
+  id: text().primaryKey(),
+  userId: uuid()
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  attempts: smallint().notNull().default(0),
+  expiresAt: tstz().notNull(),
+  createdAt: createdAt(),
 });
 
 /** Registered readers (comments). Sign-in is by one-time email code; no passwords. */

@@ -86,6 +86,47 @@ export const StaffDto = z.object({
 });
 export type StaffDto = z.infer<typeof StaffDto>;
 
+// ---------------------------------------------------------------------------
+// Two-step sign-in for staff (a code from an authenticator app)
+// ---------------------------------------------------------------------------
+/** After the password: signed in (`staff`), or the authenticator code is next ("code"), or setting the app up first ("setup"). */
+export const StaffLoginResult = z.object({
+  staff: StaffDto.nullable(),
+  twoFactor: z.enum(['code', 'setup']).nullable(),
+  /** Ties the next step to this password check (5 minutes, a few tries). */
+  challenge: z.string().nullable(),
+});
+export type StaffLoginResult = z.infer<typeof StaffLoginResult>;
+
+/** A 6-digit code from the app, or a recovery code ("abcd-efgh"). */
+export const TwoFactorCode = z.string().trim().min(6, 'קוד בן 6 ספרות').max(20);
+export const StaffTwoFactorInput = z.object({ challenge: z.string().min(20).max(100), code: TwoFactorCode });
+export const StaffChallengeInput = z.object({ challenge: z.string().min(20).max(100) });
+
+/** What the authenticator app scans (and the secret, to type in by hand). */
+export const TwoFactorSetupDto = z.object({ secret: z.string(), otpauthUrl: z.string(), qrSvg: z.string() });
+export type TwoFactorSetupDto = z.infer<typeof TwoFactorSetupDto>;
+
+/** Signed in; `recoveryCodes` only right after the app was set up (shown once). */
+export const StaffTwoFactorResult = z.object({ staff: StaffDto, recoveryCodes: z.array(z.string()).nullable() });
+export type StaffTwoFactorResult = z.infer<typeof StaffTwoFactorResult>;
+
+export const TwoFactorStatus = z.object({
+  enabled: z.boolean(),
+  enabledAt: z.string().nullable(),
+  recoveryCodesLeft: z.number().int(),
+  /** The newsroom requires it for everyone (then it can't be turned off, only reset by an admin). */
+  required: z.boolean(),
+});
+export type TwoFactorStatus = z.infer<typeof TwoFactorStatus>;
+
+export const ConfirmTwoFactorInput = z.object({ code: z.string().trim().regex(/^\d{6}$/, 'קוד בן 6 ספרות מהאפליקציה') });
+export const DisableTwoFactorInput = z.object({ password: z.string().min(1).max(200), code: TwoFactorCode });
+export const RecoveryCodesDto = z.object({ recoveryCodes: z.array(z.string()) });
+
+export const SecuritySettings = z.object({ requireTwoFactor: z.boolean() });
+export type SecuritySettings = z.infer<typeof SecuritySettings>;
+
 /** Error body for every non-2xx response. `message` is safe to show to the user. */
 export const ApiError = z.object({
   code: z.string(),
