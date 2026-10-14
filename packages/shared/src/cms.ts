@@ -708,6 +708,21 @@ export type SubscriberDto = z.infer<typeof SubscriberDto>;
 export const SubscriberList = z.object({ items: z.array(SubscriberDto), nextCursor: z.string().nullable() });
 export type SubscriberList = z.infer<typeof SubscriberList>;
 
+/** One reader's comments, for the CMS (every status). */
+export const AdminReaderComment = z.object({
+  id,
+  body: z.string(),
+  status: z.enum(['visible', 'hidden', 'removed']),
+  likeCount: z.number().int(),
+  picked: z.boolean(),
+  isReply: z.boolean(),
+  createdAt: iso,
+  article: z.object({ id: z.number().int(), slug: z.string(), title: z.string() }),
+});
+export type AdminReaderComment = z.infer<typeof AdminReaderComment>;
+
+export const PickCommentInput = z.object({ picked: z.boolean() });
+
 /** What the readers' and subscribers' flows need to work on this environment. */
 export const AUDIENCE_SETUP = ['mail', 'sender', 'company', 'https'] as const;
 export type AudienceSetupKey = (typeof AUDIENCE_SETUP)[number];

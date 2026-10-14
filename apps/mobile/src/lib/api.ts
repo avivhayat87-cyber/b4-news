@@ -8,9 +8,12 @@ import type {
   CommentDto,
   CommentList,
   HomeData,
+  LikeResult,
   Page,
   PublicSite,
   ReaderDto,
+  ReaderNotificationList,
+  ReaderPrefs,
   ReaderSession,
 } from '@b4/shared';
 import Constants from 'expo-constants';
@@ -91,7 +94,13 @@ export const api = {
   recordConsent: (visitorId: string, version: string) =>
     call<void>('/public/consent', { method: 'POST', body: json({ visitorId, version, ads: false, channel: 'app' }) }),
 
-  comments: (articleId: number, cursor?: string | null) => call<CommentList>(withCursor(`/public/articles/${articleId}/comments`, cursor)),
+  comments: (articleId: number, cursor?: string | null, sort: 'top' | 'new' = 'top') => call<CommentList>(withCursor(`/public/articles/${articleId}/comments?sort=${sort}`, cursor)),
+  likeComment: (id: string) => call<LikeResult>(`/comments/${id}/like`, { method: 'POST' }),
+  unlikeComment: (id: string) => call<LikeResult>(`/comments/${id}/like`, { method: 'DELETE' }),
+  notifications: () => call<ReaderNotificationList>('/auth/reader/notifications'),
+  markNotificationsRead: () => call<void>('/auth/reader/notifications/read', { method: 'POST', body: json({}) }),
+  prefs: () => call<ReaderPrefs>('/auth/reader/prefs'),
+  savePrefs: (prefs: ReaderPrefs) => call<ReaderPrefs>('/auth/reader/prefs', { method: 'PUT', body: json(prefs) }),
   postComment: (articleId: number, body: string, parentId?: string) =>
     call<CommentDto>(`/articles/${articleId}/comments`, { method: 'POST', body: json({ body, parentId }) }),
   deleteComment: (id: string) => call<void>(`/comments/${id}`, { method: 'DELETE' }),

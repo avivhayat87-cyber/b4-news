@@ -9,6 +9,7 @@ import { newToken, sha256 } from '../lib/crypto';
 import { recordConsent } from '../services/consent';
 import type { Services } from '../services/context';
 import { validUnsubscribeToken } from '../services/newsletter';
+import { stopMails } from '../services/notifications';
 import { legalVersion } from '../services/site-settings';
 
 export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
@@ -91,6 +92,15 @@ export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
         return reply.status(204).send();
       },
     );
+    // The same for the mails about replies and likes.
+    scope.withTypeProvider<ZodTypeProvider>().post(
+      '/notifications/mail-off/:id/:token',
+      { schema: { params: UnsubscribeInput }, config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
+      async (req, reply) => {
+        await stopMails(s, req.params.id, req.params.token);
+        return reply.status(204).send();
+      },
+    );
   });
 
   // The consent banner (site) and the welcome screen (app). Anonymous: a random id from the browser or device.
@@ -121,10 +131,12 @@ export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     { schema: { body: DeviceInput }, config: { rateLimit: { max: 30, timeWindow: '1 hour' } } },
     async (req, reply) => {
       const { platform, pushToken, topics, appVersion } = req.body;
+      // Signed in to the app (its bearer token): replies and likes reach this phone; signed out, they stop.
+      const readerId = req.reader?.id ?? null;
       await db
         .insert(devices)
-        .values({ platform, pushToken, topics, appVersion })
-        .onConflictDoUpdate({ target: devices.pushToken, set: { platform, topics, appVersion, lastSeenAt: new Date() } });
+        .values({ platform, pushToken, topics, appVersion, readerId })
+        .onConflictDoUpdate({ target: devices.pushToken, set: { platform, topics, appVersion, readerId, lastSeenAt: new Date() } });
       return reply.status(204).send();
     },
   );

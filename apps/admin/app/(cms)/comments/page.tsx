@@ -12,6 +12,8 @@ type AdminComment = {
   body: string;
   status: 'visible' | 'hidden' | 'removed';
   reportCount: number;
+  likeCount: number;
+  picked: boolean;
   moderationNote: string | null;
   createdAt: string;
   article: { id: number; title: string; slug: string };
@@ -40,6 +42,14 @@ export default function CommentsPage() {
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: AdminComment['status'] }) => admin.patch(`/comments/${id}`, { status }),
     onSuccess: refresh,
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  const pick = useMutation({
+    mutationFn: ({ id, picked }: { id: string; picked: boolean }) => admin.post(`/comments/${id}/pick`, { picked }),
+    onSuccess: (_r, v) => {
+      toast(v.picked ? 'התגובה נבחרה ל"בחירת העורכים": היא תופיע ראשונה, והכותב קיבל הודעה.' : 'התגובה הוצאה מ"בחירת העורכים".');
+      refresh();
+    },
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
   const ban = useMutation({
@@ -83,6 +93,8 @@ export default function CommentsPage() {
                 </a>
                 <Badge tone={STATUS[c.status].tone}>{STATUS[c.status].label}</Badge>
                 {c.reportCount > 0 && <Badge tone="danger">{c.reportCount} דיווחים</Badge>}
+                {c.likeCount > 0 && <span className="text-muted">♥ {c.likeCount}</span>}
+                {c.picked && <Badge tone="info">בחירת העורכים</Badge>}
               </div>
               <p className="mt-2 whitespace-pre-wrap text-[15px]">{c.body}</p>
               {c.moderationNote && <p className="mt-1 text-xs text-muted">סיבה: {c.moderationNote}</p>}
@@ -96,6 +108,11 @@ export default function CommentsPage() {
                   {c.status === 'visible' && (
                     <Button size="sm" onClick={() => setStatus.mutate({ id: c.id, status: 'hidden' })}>
                       הסתרה
+                    </Button>
+                  )}
+                  {c.status === 'visible' && (
+                    <Button size="sm" variant="ghost" busy={pick.isPending && pick.variables?.id === c.id} onClick={() => pick.mutate({ id: c.id, picked: !c.picked })}>
+                      {c.picked ? 'הוצאה מבחירת העורכים' : 'בחירת העורכים'}
                     </Button>
                   )}
                   {c.status !== 'removed' && (

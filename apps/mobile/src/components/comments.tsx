@@ -6,6 +6,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 import { ApiFailure, SITE_URL, api } from '@/lib/api';
 import { relativeTime } from '@/lib/format';
 import { colors, fonts, rtl, space } from '@/lib/theme';
+import { relinkDevice } from '@/lib/push';
 import { setToken } from '@/lib/token';
 import { TermsCheckbox, openSitePage } from './terms-checkbox';
 import { SectionHeader } from './ui';
@@ -19,9 +20,11 @@ export function useReader() {
 export function Comments({ articleId, articleSlug, enabled }: { articleId: number; articleSlug: string; enabled: boolean }) {
   const qc = useQueryClient();
   const reader = useReader();
+  // "top": the editors' picks, then the most liked; "new": the latest first.
+  const [sort, setSort] = useState<'top' | 'new'>('top');
   const list = useInfiniteQuery({
-    queryKey: ['comments', articleId],
-    queryFn: ({ pageParam }) => api.comments(articleId, pageParam),
+    queryKey: ['comments', articleId, sort],
+    queryFn: ({ pageParam }) => api.comments(articleId, pageParam, sort),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
@@ -33,6 +36,20 @@ export function Comments({ articleId, articleSlug, enabled }: { articleId: numbe
     <View style={{ gap: space.md }}>
       <SectionHeader title={`תגובות (${total})`} />
       <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
+        {total > 1 ? (
+          <View style={s.sortRow} accessibilityRole="tablist">
+            {(
+              [
+                ['top', 'מובילות'],
+                ['new', 'חדשות'],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable key={id} onPress={() => setSort(id)} style={[s.sortTab, sort === id && s.sortTabOn]} accessibilityRole="tab" accessibilityState={{ selected: sort === id }}>
+                <Text style={[s.sortText, sort === id && { color: colors.white }]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {!enabled ? (
           <Text style={s.note}>התגובות לכתבה הזאת סגורות.</Text>
         ) : reader.data ? (
@@ -97,6 +114,20 @@ function CommentRow({
   onChanged: () => void;
 }) {
   const [replying, setReplying] = useState(false);
+  const [likes, setLikes] = useState({ count: comment.likeCount, mine: comment.likedByMe });
+  const canLike = signedIn && !comment.isMine && !comment.pending;
+  const toggleLike = async () => {
+    if (!canLike) return;
+    const before = likes;
+    setLikes({ count: likes.count + (likes.mine ? -1 : 1), mine: !likes.mine });
+    try {
+      const r = before.mine ? await api.unlikeComment(comment.id) : await api.likeComment(comment.id);
+      setLikes({ count: r.likeCount, mine: r.likedByMe });
+    } catch (e) {
+      setLikes(before);
+      Alert.alert('שגיאה', errorText(e));
+    }
+  };
   // The formal removal request is a form on the site, open to anyone.
   const takedown = () =>
     void Linking.openURL(`${SITE_URL}/report?url=${encodeURIComponent(`${SITE_URL}/article/${articleSlug}#comments`)}&comment=${comment.id}`);
@@ -137,12 +168,26 @@ function CommentRow({
           <Text style={s.name}>{comment.author.displayName}</Text>
           <Text style={s.small}>{relativeTime(comment.createdAt)}</Text>
           {comment.pending ? <Text style={s.pending}>ממתינה לאישור</Text> : null}
+          {comment.picked ? <Text style={s.picked}>בחירת העורכים</Text> : null}
         </View>
+        {comment.replyTo && comment.replyTo.id !== comment.parentId ? <Text style={s.small}>בתגובה ל-@{comment.replyTo.displayName}</Text> : null}
         <Text style={s.body} selectable>
           {comment.body}
         </Text>
         <View style={{ flexDirection: 'row', gap: space.lg }}>
-          {canReply && !comment.parentId && !comment.pending ? (
+          <Pressable
+            onPress={toggleLike}
+            disabled={!canLike}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: likes.mine, disabled: !canLike }}
+            accessibilityLabel={likes.mine ? `ביטול לייק (${likes.count})` : `לייק (${likes.count})`}
+          >
+            <Text style={[s.action, likes.mine && { color: colors.brand }]}>
+              {likes.mine ? '♥' : '♡'} {likes.count > 0 ? likes.count : ''}
+            </Text>
+          </Pressable>
+          {canReply && !comment.pending ? (
             <Pressable onPress={() => setReplying((v) => !v)} hitSlop={8} accessibilityRole="button">
               <Text style={s.action}>הגבה</Text>
             </Pressable>
@@ -313,6 +358,8 @@ export function SignIn({ onSignedIn, title = 'רוצים להגיב?' }: { onSig
     run(async () => {
       const session = await api.verify(email.trim(), value, { displayName: step === 'name' ? name.trim() : undefined, acceptTerms: accepted });
       if (session.token) await setToken(session.token);
+      // Replies and likes reach this phone from now on.
+      void relinkDevice();
       onSignedIn(session.reader);
     });
   const verify = () => verifyWith(code);
@@ -400,6 +447,11 @@ const s = StyleSheet.create({
   avatarText: { fontFamily: fonts.display, fontSize: 17, color: colors.ink2 },
   name: { fontFamily: fonts.textBold, fontSize: 14, color: colors.ink },
   pending: { fontFamily: fonts.textBold, fontSize: 11, color: colors.pendingText, backgroundColor: colors.pending, borderRadius: 999, paddingHorizontal: 8, overflow: 'hidden' },
+  picked: { fontFamily: fonts.textBold, fontSize: 11, color: colors.white, backgroundColor: colors.brand, borderRadius: 999, paddingHorizontal: 8, overflow: 'hidden' },
+  sortRow: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: colors.stone, borderRadius: 999, padding: 3, gap: 2 },
+  sortTab: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  sortTabOn: { backgroundColor: colors.ink },
+  sortText: { fontFamily: fonts.textBold, fontSize: 13, color: colors.ink2 },
   body: { fontFamily: fonts.text, fontSize: 16, lineHeight: 24, color: colors.ink },
   action: { fontFamily: fonts.textSemi, fontSize: 13, color: colors.muted },
   inlineLink: { fontFamily: fonts.textBold, color: colors.ink2, textDecorationLine: 'underline' },

@@ -69,6 +69,15 @@ export type ReaderLinkSession = z.infer<typeof ReaderLinkSession>;
 
 export const UpdateReaderInput = z.object({ displayName: DisplayName });
 
+/** How a reader hears about replies, likes and the editors' pick (always on the site and in the app). */
+export const ReaderPrefs = z.object({
+  /** One mail gathering what happened, at most once an hour. */
+  notifyEmail: z.boolean(),
+  /** A notification on the phone (the app, signed in). */
+  notifyPush: z.boolean(),
+});
+export type ReaderPrefs = z.infer<typeof ReaderPrefs>;
+
 export const STAFF_ROLES = ['admin', 'editor', 'developer', 'viewer'] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 

@@ -2,7 +2,19 @@
 // /api/v1/auth/reader/*. No passwords to leak; codes and link tokens are hashed,
 // short-lived, single-use and attempt-limited. Signing up (and signing in after a new
 // terms version) requires accepting the terms, and readers can delete their account themselves.
-import { AcceptTermsInput, ReaderDto, ReaderLinkSession, ReaderSession, RequestCodeInput, UpdateReaderInput, VerifyCodeInput, VerifyLinkInput } from '@b4/shared';
+import {
+  AcceptTermsInput,
+  MarkNotificationsInput,
+  ReaderDto,
+  ReaderLinkSession,
+  ReaderNotificationList,
+  ReaderPrefs,
+  ReaderSession,
+  RequestCodeInput,
+  UpdateReaderInput,
+  VerifyCodeInput,
+  VerifyLinkInput,
+} from '@b4/shared';
 import { and, desc, eq, gt, isNull, loginCodes, readers, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -12,6 +24,7 @@ import { keyedHash, newSixDigitCode, newToken, safeEqualHex } from '../lib/crypt
 import { clearSessionCookie, createSession, destroySession, requireReader, setSessionCookie } from '../plugins/auth';
 import { recordConsent } from '../services/consent';
 import type { Services } from '../services/context';
+import { getPrefs, listNotifications, markRead, setPrefs } from '../services/notifications';
 import { completeSignIn, readerDto as dto, signInMail } from '../services/reader-signin';
 import { legalVersion } from '../services/site-settings';
 
@@ -184,6 +197,21 @@ export const readerAuthRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (a
     clearSessionCookie(reply, config, 'reader');
     return reply.status(204).send();
   });
+
+  // --- The bell: replies, likes, the editors' pick; and how to hear about them -----------------------
+  app.get('/notifications', { schema: { response: { 200: ReaderNotificationList } } }, async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    return listNotifications(s, requireReader(req).id);
+  });
+
+  app.post('/notifications/read', { schema: { body: MarkNotificationsInput } }, async (req, reply) => {
+    await markRead(s, requireReader(req).id, req.body.ids);
+    return reply.status(204).send();
+  });
+
+  app.get('/prefs', { schema: { response: { 200: ReaderPrefs } } }, async (req) => getPrefs(s, requireReader(req).id));
+
+  app.put('/prefs', { schema: { body: ReaderPrefs, response: { 200: ReaderPrefs } } }, async (req) => setPrefs(s, requireReader(req).id, req.body));
 
   app.post('/logout', async (req, reply) => {
     if (req.reader) await destroySession(db, req.reader.sessionId);

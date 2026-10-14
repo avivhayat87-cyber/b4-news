@@ -26,13 +26,15 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | POST | `/public/newsletter/unsubscribe/:id/:token` | one-click unsubscribe from the mail client (RFC 8058, the `List-Unsubscribe` header) |
 | POST | `/public/consent` | `VisitorConsentInput`: the consent banner (site) or welcome screen (app); 409 `terms_changed` for an old version |
 | POST | `/public/takedown` | `TakedownInput`: a content-removal request from anyone; 5/hour; mails a confirmation |
-| POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app) |
+| POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app); with the reader's bearer token the device is linked to them (replies and likes reach it), without it the link is cleared |
+| POST | `/public/notifications/mail-off/:id/:token` | one-click stop of the mails about replies and likes (the List-Unsubscribe header of those mails) |
 
 ## Comments and readers
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/public/articles/:id/comments?cursor=` | `CommentList`; the viewer also sees their own comments held for review |
+| GET | `/public/articles/:id/comments?sort=top\|new&cursor=` | `CommentList` (`top`: the editors' picks, then the most liked); each comment has `likeCount`, `likedByMe`, `picked` and `replyTo` ("@name"); the viewer also sees their own comments held for review |
+| POST / DELETE | `/comments/:id/like` | → `LikeResult`; one like each, never your own (400 `own_comment`); the author is notified (likes on one comment gather into one notice) |
 | POST | `/articles/:id/comments` | `CreateCommentInput`; reader session; automatic filter; 5/min, 50/day; 409 `terms_required` after a new terms version |
 | DELETE | `/comments/:id` | own comment |
 | POST | `/comments/:id/report` | `ReportCommentInput`; 3 reports hide the comment |
@@ -44,6 +46,9 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | POST | `/auth/reader/terms` | `AcceptTermsInput` → `ReaderDto`; 409 `terms_changed` for an old version |
 | DELETE | `/auth/reader/me` | deletes the account, its comments, reports, sessions and consents (also allowed for banned readers) |
 | POST | `/auth/reader/logout` | |
+| GET | `/auth/reader/notifications` | `ReaderNotificationList`: the latest 30 (replies, likes, the editors' pick) and the unread count |
+| POST | `/auth/reader/notifications/read` | `{ ids? }` → 204; without ids, all. Seen notices are not mailed |
+| GET / PUT | `/auth/reader/prefs` | `ReaderPrefs` (`notifyEmail`: one gathered mail at most an hour after the first notice; `notifyPush`) |
 
 ## Staff sign-in
 
@@ -255,6 +260,8 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 | --- | --- | --- | --- |
 | GET | `/admin/audience` | any | `AudienceOverview`: counts only (readers, subscribers, app devices) and what this environment still needs (outgoing mail, a sender on the site's domain, company details, HTTPS) |
 | GET | `/admin/readers?status=&q=&cursor=` | editor | `ReaderList` (personal details, so not for viewers): comments, hidden comments, signed in now, current terms accepted |
+| GET | `/admin/readers/:id/comments` | editor | `AdminReaderComment[]`: everything the reader wrote, with status, likes and picks |
+| POST | `/admin/comments/:id/pick` | editor | `{ picked }` → 204: "בחירת העורכים"; shown first, and the author is notified once |
 | POST | `/admin/readers/:id/unban` | editor | → 204; comments hidden by the ban stay hidden |
 | POST | `/admin/readers/:id/sign-out` | editor | → 204: ends every session of the reader |
 | DELETE | `/admin/readers/:id` | admin | → 204: a privacy request; the account and its comments, reports, consents and codes |

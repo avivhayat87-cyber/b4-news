@@ -4,6 +4,7 @@ import { formatToday } from '@/lib/format';
 import { SITE } from '@/lib/site';
 import type { MarketQuote } from '@/lib/types';
 import { SearchIcon } from './icons';
+import { ReaderBell } from './reader-bell';
 import { SectionNav } from './section-nav';
 import { wrap } from './ui';
 
@@ -34,10 +35,16 @@ export async function SiteHeader() {
                 לפני כולם.
               </span>
             </Link>
-            <SearchLink className="flex lg:hidden" />
+            <div className="flex items-center gap-2 lg:hidden">
+              <ReaderBell />
+              <SearchLink className="flex" />
+            </div>
           </div>
           <SectionNav />
-          <SearchLink className="hidden lg:flex" />
+          <div className="hidden items-center gap-2 lg:flex">
+            <ReaderBell />
+            <SearchLink className="flex" />
+          </div>
         </div>
       </header>
     </>

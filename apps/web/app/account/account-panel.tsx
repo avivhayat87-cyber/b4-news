@@ -1,6 +1,6 @@
 'use client';
 
-import { DisplayName } from '@b4/shared';
+import { DisplayName, type ReaderPrefs } from '@b4/shared';
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { SignIn } from '@/components/comments';
@@ -45,7 +45,53 @@ export function AccountPanel() {
   return <SignedIn reader={state.reader} onChange={(reader) => setState({ kind: 'signed-in', reader })} onGone={(kind) => setState({ kind })} />;
 }
 
-function SignedIn({ reader, onChange, onGone }: { reader: ReaderDto; onChange: (r: ReaderDto) => void; onGone: (kind: 'anonymous' | 'deleted') => void }) {
+/** How the reader hears about replies, likes and the editors' pick (the bell on the site is always on). */
+function NotificationPrefs() {
+  const [prefs, setPrefs] = useState<ReaderPrefs | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  useEffect(() => {
+    readerApi.prefs().then(setPrefs).catch(() => undefined);
+  }, []);
+  if (!prefs) return null;
+  const save = async (next: ReaderPrefs) => {
+    setPrefs(next);
+    try {
+      setPrefs(await readerApi.savePrefs(next));
+      setStatus('נשמר.');
+    } catch (err) {
+      setStatus(message(err));
+    }
+  };
+  return (
+    <section id="notifications" aria-labelledby="acc-notify" className="flex flex-col gap-3 rounded-xl border border-line p-5">
+      <h2 id="acc-notify" className="text-xl font-extrabold">
+        התראות על התגובות שלך
+      </h2>
+      <p className="text-[16px] text-ink-2">כשמגיבים לך, אוהבים תגובה שלך או בוחרים אותה ל&quot;בחירת העורכים&quot;. באתר זה תמיד מופיע בפעמון למעלה.</p>
+      <label className="flex items-start gap-3 text-[16px]">
+        <input type="checkbox" className="mt-1 size-5" checked={prefs.notifyEmail} onChange={(e) => void save({ ...prefs, notifyEmail: e.target.checked })} />
+        <span>
+          <span className="font-bold">במייל</span>
+          <span className="block text-sm text-ink-2">מייל אחד שמרכז הכל, לכל היותר פעם בשעה, ורק על מה שעוד לא ראית.</span>
+        </span>
+      </label>
+      <label className="flex items-start gap-3 text-[16px]">
+        <input type="checkbox" className="mt-1 size-5" checked={prefs.notifyPush} onChange={(e) => void save({ ...prefs, notifyPush: e.target.checked })} />
+        <span>
+          <span className="font-bold">התראה בטלפון</span>
+          <span className="block text-sm text-ink-2">באפליקציה, כשמחוברים בה לחשבון.</span>
+        </span>
+      </label>
+      {status ? (
+        <p role="status" className="text-sm text-ink-2">
+          {status}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function SignedIn({ reader, onChange, onGone }:{ reader: ReaderDto; onChange: (r: ReaderDto) => void; onGone: (kind: 'anonymous' | 'deleted') => void }) {
   const [name, setName] = useState(reader.displayName);
   const [nameStatus, setNameStatus] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -126,6 +172,8 @@ function SignedIn({ reader, onChange, onGone }: { reader: ReaderDto; onChange: (
           התנתקות
         </button>
       </section>
+
+      <NotificationPrefs />
 
       <section aria-labelledby="acc-delete" className="flex flex-col gap-3 rounded-xl border-2 border-brand/40 p-5">
         <h2 id="acc-delete" className="text-xl font-extrabold">

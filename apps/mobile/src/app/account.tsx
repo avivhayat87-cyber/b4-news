@@ -1,15 +1,17 @@
 // "החשבון שלי": display name, sign out, and deleting the account from inside the
 // app (required by the App Store and Google Play for apps where readers sign up).
-import { DisplayName } from '@b4/shared';
-import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { DisplayName, type ReaderNotificationDto, type ReaderPrefs } from '@b4/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SignIn, useReader } from '@/components/comments';
 import { openSitePage } from '@/components/terms-checkbox';
 import { TopBar } from '@/components/top-bar';
 import { Loading } from '@/components/ui';
 import { ApiFailure, api } from '@/lib/api';
+import { relinkDevice } from '@/lib/push';
 import { colors, fonts, space } from '@/lib/theme';
 import { setToken } from '@/lib/token';
 
@@ -26,6 +28,8 @@ export default function AccountScreen() {
     await setToken(null);
     qc.setQueryData(['reader'], null);
     void qc.invalidateQueries({ queryKey: ['comments'] });
+    // Replies and likes stop reaching this phone.
+    void relinkDevice();
   };
 
   const saveName = async () => {
@@ -99,6 +103,7 @@ export default function AccountScreen() {
                 <Text style={s.link}>התנתקות</Text>
               </Pressable>
             </View>
+            <Notifications />
             <View style={[s.card, s.danger]}>
               <Text style={s.cardTitle}>מחיקת החשבון</Text>
               <Text style={s.small}>
@@ -118,7 +123,68 @@ export default function AccountScreen() {
   );
 }
 
+const NOTICE: Record<ReaderNotificationDto['kind'], (actor: string | null) => string> = {
+  reply: (a) => `${a ?? 'מישהו'} הגיב/ה לך`,
+  like: (a) => `${a ?? 'מישהו'} אהב/ה את התגובה שלך`,
+  pick: () => 'התגובה שלך נבחרה ל"בחירת העורכים"',
+};
+
+/** Replies, likes and the editors' pick: the latest, and how to hear about them. */
+function Notifications() {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ['notifications'], queryFn: api.notifications });
+  const prefs = useQuery({ queryKey: ['prefs'], queryFn: api.prefs });
+  const unread = list.data?.unread ?? 0;
+  useEffect(() => {
+    // Seen here: they won't be mailed.
+    if (unread > 0) void api.markNotificationsRead().catch(() => undefined);
+  }, [unread]);
+  const save = async (next: ReaderPrefs) => {
+    qc.setQueryData(['prefs'], next);
+    try {
+      qc.setQueryData(['prefs'], await api.savePrefs(next));
+    } catch (e) {
+      Alert.alert('שגיאה', errorText(e));
+      void prefs.refetch();
+    }
+  };
+  return (
+    <View style={s.card}>
+      <Text style={s.cardTitle}>התראות{unread > 0 ? ` (${unread} חדשות)` : ''}</Text>
+      {list.data?.items.length ? (
+        list.data.items.slice(0, 10).map((n) => (
+          <Pressable key={n.id} onPress={() => router.push(`/article/${n.article.slug}` as never)} accessibilityRole="link" style={s.notice}>
+            <Text style={[s.small, { fontFamily: fonts.textBold, color: colors.ink }]}>{NOTICE[n.kind](n.actor)}</Text>
+            <Text style={s.small} numberOfLines={2}>
+              {n.excerpt}
+            </Text>
+            <Text style={[s.small, { color: colors.muted }]} numberOfLines={1}>
+              {n.article.title}
+            </Text>
+          </Pressable>
+        ))
+      ) : (
+        <Text style={s.small}>עוד אין התראות. כשיגיבו לתגובות שלך או יאהבו אותן, זה יופיע כאן.</Text>
+      )}
+      {prefs.data ? (
+        <>
+          <View style={s.switchRow}>
+            <Text style={[s.small, { flex: 1 }]}>התראה בטלפון</Text>
+            <Switch value={prefs.data.notifyPush} onValueChange={(v) => void save({ ...prefs.data!, notifyPush: v })} accessibilityLabel="התראה בטלפון" />
+          </View>
+          <View style={s.switchRow}>
+            <Text style={[s.small, { flex: 1 }]}>מייל מרוכז (לכל היותר פעם בשעה)</Text>
+            <Switch value={prefs.data.notifyEmail} onValueChange={(v) => void save({ ...prefs.data!, notifyEmail: v })} accessibilityLabel="מייל מרוכז" />
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
+  notice: { borderTopWidth: 1, borderTopColor: colors.lineSoft, paddingTop: space.sm, gap: 2 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xs },
   page: { padding: space.lg, gap: space.lg, paddingBottom: 48 },
   heading: { fontFamily: fonts.display, fontSize: 28, color: colors.ink },
   body: { fontFamily: fonts.text, fontSize: 16, lineHeight: 24, color: colors.ink2 },

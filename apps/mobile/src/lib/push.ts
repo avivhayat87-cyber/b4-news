@@ -56,9 +56,20 @@ export function enablePush(): Promise<boolean> {
   return register(true).catch(() => false);
 }
 
+/**
+ * After signing in or out: registers this phone again, so replies and likes reach it (the API
+ * links the device to whoever is signed in) or stop reaching it. Never asks for permission.
+ */
+export function relinkDevice(): Promise<boolean> {
+  return register(false).catch(() => false);
+}
+
 function openFromNotification(response: Notifications.NotificationResponse | null) {
   const url = response?.notification.request.content.data?.url;
-  if (typeof url === 'string' && url.startsWith('/')) router.push(url as never);
+  if (typeof url !== 'string') return;
+  // The server sends the site's full address ("https://…/a/123"); the app opens its path.
+  const path = url.startsWith('/') ? url : /^https?:\/\//.test(url) ? new URL(url).pathname : null;
+  if (path?.startsWith('/')) router.push(path as never);
 }
 
 /** Call once from the tabs layout. Registers silently only if permission was already given. */

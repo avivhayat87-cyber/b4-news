@@ -1,6 +1,6 @@
 // Browser-side calls for reader features (sign-in, comments). The API session
 // cookie is httpOnly, so it is sent with `credentials: 'include'` and never read here.
-import type { TakedownInput } from '@b4/shared';
+import type { ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
 import type { CommentDto, CommentList, ReaderDto, ReaderSession } from './types';
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -49,6 +49,10 @@ export const readerApi = {
   rename: (displayName: string) => call<ReaderDto>('/auth/reader/me', { method: 'PATCH', body: json({ displayName }) }),
   deleteAccount: () => call<void>('/auth/reader/me', { method: 'DELETE' }),
   logout: () => call<void>('/auth/reader/logout', { method: 'POST' }),
+  notifications: () => call<ReaderNotificationList>('/auth/reader/notifications'),
+  markRead: (ids?: string[]) => call<void>('/auth/reader/notifications/read', { method: 'POST', body: json(ids ? { ids } : {}) }),
+  prefs: () => call<ReaderPrefs>('/auth/reader/prefs'),
+  savePrefs: (prefs: ReaderPrefs) => call<ReaderPrefs>('/auth/reader/prefs', { method: 'PUT', body: json(prefs) }),
 };
 
 export const newsletterApi = {
@@ -67,8 +71,10 @@ export const takedownApi = {
 };
 
 export const commentsApi = {
-  list: (articleId: number, cursor?: string | null) =>
-    call<CommentList>(`/public/articles/${articleId}/comments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+  list: (articleId: number, cursor?: string | null, sort: 'top' | 'new' = 'top') =>
+    call<CommentList>(`/public/articles/${articleId}/comments?sort=${sort}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+  like: (id: string) => call<{ likeCount: number; likedByMe: boolean }>(`/comments/${id}/like`, { method: 'POST' }),
+  unlike: (id: string) => call<{ likeCount: number; likedByMe: boolean }>(`/comments/${id}/like`, { method: 'DELETE' }),
   create: (articleId: number, body: string, parentId?: string) =>
     call<CommentDto>(`/articles/${articleId}/comments`, { method: 'POST', body: json({ body, parentId }) }),
   remove: (id: string) => call<void>(`/comments/${id}`, { method: 'DELETE' }),

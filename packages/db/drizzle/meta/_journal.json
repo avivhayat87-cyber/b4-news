@@ -120,6 +120,13 @@
       "when": 1791999639469,
       "tag": "0016_staff_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792000673604,
+      "tag": "0017_community",
+      "breakpoints": true
     }
   ]
 }

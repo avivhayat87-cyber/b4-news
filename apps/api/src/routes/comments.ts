@@ -3,43 +3,21 @@
 //   POST   /api/v1/articles/:id/comments          signed-in reader
 //   DELETE /api/v1/comments/:id                   the comment's author
 //   POST   /api/v1/comments/:id/report            signed-in reader
-import { COMMENT_LIMITS, CommentDto, CommentList, CreateCommentInput, ReportCommentInput } from '@b4/shared';
-import { type Db, and, articles, asc, commentReports, comments, desc, eq, inArray, isNull, or, readers, sql } from '@b4/db';
+//   POST   /api/v1/comments/:id/like, DELETE …    signed-in reader (not their own)
+import { COMMENT_LIMITS, COMMENT_SORTS, CommentDto, CommentList, CreateCommentInput, LikeResult, ReportCommentInput } from '@b4/shared';
+import { type Db, and, articles, commentReports, comments, eq, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { AppError, errors } from '../errors';
 import { audit } from '../lib/audit';
 import { moderateComment } from '../lib/moderation';
 import { requireReader } from '../plugins/auth';
+import { commentDtos, likeComment, listComments, unlikeComment } from '../services/comments';
 import type { Services } from '../services/context';
+import { notify } from '../services/notifications';
 import { legalVersion } from '../services/site-settings';
 
-const PAGE_SIZE = 20;
 const DAILY_LIMIT = 50;
-
-const commentColumns = {
-  id: comments.id,
-  parentId: comments.parentId,
-  body: comments.body,
-  status: comments.status,
-  createdAt: comments.createdAt,
-  readerId: comments.readerId,
-  displayName: readers.displayName,
-};
-
-type Row = { id: string; parentId: string | null; body: string; status: string; createdAt: Date; readerId: string; displayName: string };
-
-function toDto(row: Row, viewerId: string | undefined): CommentDto {
-  return {
-    id: row.id,
-    parentId: row.parentId,
-    body: row.body,
-    createdAt: row.createdAt.toISOString(),
-    author: { id: row.readerId, displayName: row.displayName },
-    isMine: row.readerId === viewerId,
-    pending: row.status === 'hidden',
-  };
-}
 
 const ArticleParams = z.object({ id: z.coerce.number().int().positive() });
 const CommentParams = z.object({ id: z.string().uuid() });
@@ -54,61 +32,20 @@ async function commentableArticle(db: Db, id: number) {
   return article;
 }
 
-/** Comments the viewer may see: visible ones, plus their own held for review. */
-function viewable(viewerId: string | undefined) {
-  return viewerId
-    ? or(eq(comments.status, 'visible'), and(eq(comments.status, 'hidden'), eq(comments.readerId, viewerId)))
-    : eq(comments.status, 'visible');
-}
-
 export const publicCommentRoutes: FastifyPluginAsyncZod<{ db: Db }> = async (app, { db }) => {
   app.get(
     '/articles/:id/comments',
     {
       schema: {
         params: ArticleParams,
-        querystring: z.object({ cursor: z.string().max(200).optional() }),
+        querystring: z.object({ cursor: z.string().max(200).optional(), sort: z.enum(COMMENT_SORTS).default('top') }),
         response: { 200: CommentList },
       },
     },
     async (req, reply) => {
-      const viewerId = req.reader?.id;
       await commentableArticle(db, req.params.id);
-      const cursor = decode(req.query.cursor);
-
-      // Page through top-level comments (newest first), then attach their replies (oldest first).
-      const top = await db
-        .select(commentColumns)
-        .from(comments)
-        .innerJoin(readers, eq(comments.readerId, readers.id))
-        .where(
-          and(
-            eq(comments.articleId, req.params.id),
-            isNull(comments.parentId),
-            viewable(viewerId),
-            cursor ? sql`(${comments.createdAt}, ${comments.id}) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)` : undefined,
-          ),
-        )
-        .orderBy(desc(comments.createdAt), desc(comments.id))
-        .limit(PAGE_SIZE + 1);
-      const page = top.slice(0, PAGE_SIZE);
-      const replies = page.length
-        ? await db
-            .select(commentColumns)
-            .from(comments)
-            .innerJoin(readers, eq(comments.readerId, readers.id))
-            .where(and(inArray(comments.parentId, page.map((c) => c.id)), viewable(viewerId)))
-            .orderBy(asc(comments.createdAt))
-        : [];
-      const [total] = await db
-        .select({ n: sql<number>`count(*)::int` })
-        .from(comments)
-        .where(and(eq(comments.articleId, req.params.id), eq(comments.status, 'visible')));
-
-      const items = page.flatMap((c) => [c, ...replies.filter((r) => r.parentId === c.id)]).map((r) => toDto(r, viewerId));
-      const last = page[page.length - 1];
       reply.header('cache-control', 'private, no-store');
-      return { items, total: total?.n ?? 0, nextCursor: top.length > PAGE_SIZE && last ? encode(last) : null };
+      return listComments(db, req.params.id, req.reader?.id, req.query.sort, req.query.cursor);
     },
   );
 };
@@ -130,16 +67,19 @@ export const commentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app,
       const verdict = moderateComment(req.body.body);
       if (verdict.decision === 'reject') throw new AppError(400, verdict.code, verdict.message);
 
-      // Replies stay one level deep: a reply to a reply attaches to the thread's first comment.
+      // Replies stay one level deep: a reply to a reply attaches to the thread's first comment,
+      // and remembers whom it answers ("@name"), who is then notified.
       let parentId: string | null = null;
+      let answered: { id: string; readerId: string } | null = null;
       if (req.body.parentId) {
         const [parent] = await db
-          .select({ id: comments.id, parentId: comments.parentId })
+          .select({ id: comments.id, parentId: comments.parentId, readerId: comments.readerId })
           .from(comments)
           .where(and(eq(comments.id, req.body.parentId), eq(comments.articleId, article.id), eq(comments.status, 'visible')))
           .limit(1);
         if (!parent) throw errors.notFound('התגובה שמגיבים אליה');
         parentId = parent.parentId ?? parent.id;
+        answered = { id: parent.id, readerId: parent.readerId };
       }
 
       const [stats] = await db
@@ -158,16 +98,26 @@ export const commentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app,
           articleId: article.id,
           readerId: reader.id,
           parentId,
+          replyToId: answered?.id ?? null,
           body: verdict.body,
           status: verdict.decision === 'publish' ? 'visible' : 'hidden',
           moderationNote: verdict.decision === 'review' ? verdict.reason : null,
         })
         .returning();
       if (!created) throw new Error('comment insert failed');
+      // A reply held for review notifies nobody (it isn't shown yet).
+      if (answered && created.status === 'visible') {
+        await notify(s, { readerId: answered.readerId, kind: 'reply', commentId: created.id, actorReaderId: reader.id, articleId: article.id });
+      }
 
-      return reply.status(201).send(toDto({ ...created, displayName: reader.displayName }, reader.id));
+      const [dto] = await commentDtos(db, [{ ...created, displayName: reader.displayName }], reader.id);
+      return reply.status(201).send(dto!);
     },
   );
+
+  const likeRoute = { schema: { params: CommentParams, response: { 200: LikeResult } }, config: { rateLimit: { max: 60, timeWindow: '1 minute', keyGenerator: (req: { reader?: { id: string } | null; ip: string }) => req.reader?.id ?? req.ip } } };
+  app.post('/comments/:id/like', likeRoute, async (req) => likeComment(s, requireReader(req).id, req.params.id));
+  app.delete('/comments/:id/like', likeRoute, async (req) => unlikeComment(s, requireReader(req).id, req.params.id));
 
   app.delete('/comments/:id', { schema: { params: CommentParams } }, async (req, reply) => {
     const reader = requireReader(req);
@@ -220,13 +170,3 @@ export const commentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app,
   );
 };
 
-function encode(row: { createdAt: Date; id: string }): string {
-  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString('base64url');
-}
-
-function decode(cursor: string | undefined): { at: string; id: string } | null {
-  if (!cursor) return null;
-  const [at, id] = Buffer.from(cursor, 'base64url').toString().split('|');
-  if (!at || !id || Number.isNaN(Date.parse(at)) || !/^[0-9a-f-]{36}$/i.test(id)) return null;
-  return { at, id };
-}

@@ -3,8 +3,8 @@
 // them: ban and lift a ban, sign a reader out everywhere, take a subscriber off the list, and,
 // for admins answering a privacy request, delete a reader or a subscriber for good. Also checks
 // that this environment can send the sign-in codes and confirmation mail at all.
-import type { AudienceOverview, ReaderList, ReaderListQuery, SubscriberList, SubscriberListQuery, SubscriberStatus } from '@b4/shared';
-import { and, desc, devices, eq, ilike, isNotNull, isNull, loginCodes, newsletterSubscribers, or, readers, sessions, sql } from '@b4/db';
+import type { AdminReaderComment, AudienceOverview, ReaderList, ReaderListQuery, SubscriberList, SubscriberListQuery, SubscriberStatus } from '@b4/shared';
+import { and, articles, comments, desc, devices, eq, ilike, isNotNull, isNull, loginCodes, newsletterSubscribers, or, readers, sessions, sql } from '@b4/db';
 import type { z } from 'zod';
 import { errors } from '../errors';
 import { audit } from '../lib/audit';
@@ -104,6 +104,38 @@ export async function listReaders(s: Services, query: z.infer<typeof ReaderListQ
     })),
     nextCursor: rows.length > PAGE ? encode(page.at(-1)!.r) : null,
   };
+}
+
+/** Everything a reader wrote (the latest 200), with its status, likes and the editors' pick. */
+export async function readerComments(s: Services, id: string): Promise<AdminReaderComment[]> {
+  const rows = await s.db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      status: comments.status,
+      likeCount: comments.likeCount,
+      pickedAt: comments.pickedAt,
+      parentId: comments.parentId,
+      createdAt: comments.createdAt,
+      articleId: articles.id,
+      slug: articles.slug,
+      title: articles.title,
+    })
+    .from(comments)
+    .innerJoin(articles, eq(comments.articleId, articles.id))
+    .where(eq(comments.readerId, id))
+    .orderBy(desc(comments.createdAt))
+    .limit(200);
+  return rows.map((r) => ({
+    id: r.id,
+    body: r.body,
+    status: r.status,
+    likeCount: r.likeCount,
+    picked: Boolean(r.pickedAt),
+    isReply: Boolean(r.parentId),
+    createdAt: r.createdAt.toISOString(),
+    article: { id: r.articleId, slug: r.slug, title: r.title },
+  }));
 }
 
 /** Lifts a ban. Comments hidden by the ban stay hidden; the editor restores them one by one. */

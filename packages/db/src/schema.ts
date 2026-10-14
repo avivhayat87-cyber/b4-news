@@ -137,6 +137,9 @@ export const readers = pgTable('readers', {
   /** The terms version this reader last accepted (every acceptance is also in `consents`). */
   termsVersion: text(),
   termsAcceptedAt: tstz(),
+  /** Replies, likes and the editors' pick: by mail (gathered, at most once an hour) and in the app. */
+  notifyEmail: boolean().notNull().default(true),
+  notifyPush: boolean().notNull().default(true),
   createdAt: createdAt(),
   lastLoginAt: tstz(),
 });
@@ -668,10 +671,17 @@ export const comments = pgTable(
       .references(() => readers.id, { onDelete: 'cascade' }),
     /** One level of replies */
     parentId: uuid().references((): AnyPgColumn => comments.id, { onDelete: 'cascade' }),
+    /** In a thread, the comment this one answers ("@name"); its author is notified. */
+    replyToId: uuid().references((): AnyPgColumn => comments.id, { onDelete: 'set null' }),
     /** Plain text only; rendered escaped. */
     body: text().notNull(),
     status: commentStatus().notNull().default('visible'),
     reportCount: integer().notNull().default(0),
+    /** Readers' likes (kept in step with comment_likes). */
+    likeCount: integer().notNull().default(0),
+    /** "בחירת העורכים": shown first, with a badge. */
+    pickedAt: tstz(),
+    pickedBy: uuid().references(() => users.id),
     moderatedBy: uuid().references(() => users.id),
     moderatedAt: tstz(),
     moderationNote: text(),
@@ -698,6 +708,49 @@ export const commentReports = pgTable(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.commentId, t.readerId] })],
+);
+
+/** A reader's like of a comment (one each; never their own). */
+export const commentLikes = pgTable(
+  'comment_likes',
+  {
+    commentId: uuid()
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    readerId: uuid()
+      .notNull()
+      .references(() => readers.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.commentId, t.readerId] })],
+);
+
+/**
+ * What a reader is told about: a reply to their comment, a like, the editors' pick. Shown on the
+ * site and in the app at once (and as a push to the app); mailed together, at most once an hour.
+ */
+export const readerNotifications = pgTable(
+  'reader_notifications',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    readerId: uuid()
+      .notNull()
+      .references(() => readers.id, { onDelete: 'cascade' }),
+    /** reply | like | pick */
+    kind: text().notNull(),
+    commentId: uuid()
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    /** Who replied or liked (null for the editors' pick, or once they deleted their account). */
+    actorReaderId: uuid().references(() => readers.id, { onDelete: 'set null' }),
+    articleId: bigint({ mode: 'number' })
+      .notNull()
+      .references(() => articles.id, { onDelete: 'cascade' }),
+    readAt: tstz(),
+    emailedAt: tstz(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('reader_notifications_reader_idx').on(t.readerId, t.createdAt.desc())],
 );
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1206,8 @@ export const devices = pgTable('devices', {
   id: uuid().primaryKey().defaultRandom(),
   platform: devicePlatform().notNull(),
   pushToken: text().notNull().unique(),
+  /** The reader signed in on this device (their replies and likes reach it). */
+  readerId: uuid().references(() => readers.id, { onDelete: 'set null' }),
   topics: text().array().notNull().default(sql`'{breaking}'::text[]`),
   appVersion: text(),
   locale: text().notNull().default('he'),

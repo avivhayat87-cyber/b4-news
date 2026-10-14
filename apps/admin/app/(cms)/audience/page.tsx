@@ -2,11 +2,11 @@
 // "מנויים וגולשים": who signed up to comment (readers sign in with a one-time email code, no
 // password) and who signed up for the newsletter (confirmed by email), what the newsroom can do
 // about them, and what this environment still needs for their mail to arrive.
-import type { AdminReaderDto, AudienceOverview, ReaderList, SubscriberDto, SubscriberList } from '@b4/shared';
+import type { AdminReaderComment, AdminReaderDto, AudienceOverview, ReaderList, SubscriberDto, SubscriberList } from '@b4/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';
 import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, cx, inputClass, useToast } from '@/components/ui';
-import { admin, errorMessage } from '@/lib/api';
+import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { AUDIENCE_SETUP_LABEL, SUBSCRIBER_STATUS, formatDateTime, timeAgo } from '@/lib/labels';
 
@@ -125,6 +125,7 @@ function Readers() {
   const isAdmin = useCan('admin');
   const [filter, setFilter] = useState<(typeof READER_FILTER)[number]['id']>('all');
   const [search, setSearch] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
   const q = useDeferredValue(search.trim());
   const list = useInfiniteQuery({
     queryKey: ['readers', filter, q],
@@ -194,6 +195,11 @@ function Readers() {
                 {r.bannedReason && <p className="mt-1 text-sm text-brand-deep">סיבת החסימה: {r.bannedReason}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
+                {r.comments > 0 && (
+                  <Button size="sm" variant="ghost" aria-expanded={openId === r.id} onClick={() => setOpenId(openId === r.id ? null : r.id)}>
+                    {openId === r.id ? 'סגירת התגובות' : `התגובות (${r.comments})`}
+                  </Button>
+                )}
                 {r.status === 'banned' ? (
                   <Button size="sm" busy={unban.isPending && unban.variables?.id === r.id} onClick={() => unban.mutate(r)}>
                     ביטול חסימה
@@ -219,6 +225,7 @@ function Readers() {
                   </Button>
                 )}
               </div>
+              {openId === r.id && <ReaderComments readerId={r.id} />}
             </li>
           ))}
         </ul>
@@ -231,6 +238,62 @@ function Readers() {
         </div>
       )}
     </>
+  );
+}
+
+const COMMENT_STATUS = { visible: { label: 'מוצגת', tone: 'ok' }, hidden: { label: 'מוסתרת', tone: 'warn' }, removed: { label: 'נמחקה', tone: 'muted' } } as const;
+
+/** Everything one reader wrote: on which article, its status, likes and the editors' pick. */
+function ReaderComments({ readerId }: { readerId: string }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const list = useQuery({ queryKey: ['reader-comments', readerId], queryFn: () => admin.get<AdminReaderComment[]>(`/readers/${readerId}/comments`) });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['reader-comments', readerId] });
+    void qc.invalidateQueries({ queryKey: ['readers'] });
+  };
+  const onError = (e: unknown) => toast(errorMessage(e), 'danger');
+  const setStatus = useMutation({ mutationFn: ({ id, status }: { id: string; status: 'visible' | 'hidden' }) => admin.patch(`/comments/${id}`, { status }), onSuccess: refresh, onError });
+  const pick = useMutation({ mutationFn: ({ id, picked }: { id: string; picked: boolean }) => admin.post(`/comments/${id}/pick`, { picked }), onSuccess: refresh, onError });
+
+  if (list.isPending) return <Loading />;
+  if (list.isError) return <ErrorBox error={list.error} onRetry={() => list.refetch()} />;
+  const totalLikes = list.data.reduce((n, c) => n + c.likeCount, 0);
+  return (
+    <div className="w-full border-t border-line-soft pt-3">
+      <p className="mb-2 text-sm text-muted">
+        {list.data.length} תגובות · {totalLikes} לייקים בסך הכל · {list.data.filter((c) => c.picked).length} בבחירת העורכים
+      </p>
+      <ul className="space-y-2">
+        {list.data.map((c) => (
+          <li key={c.id} className="rounded-lg bg-stone/60 p-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <a href={`${SITE_URL}/article/${c.article.slug}#comments`} target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-brand hover:underline">
+                {c.article.title}
+              </a>
+              <span className="text-muted">· {formatDateTime(c.createdAt)}</span>
+              {c.isReply && <span className="text-muted">· תשובה בשיחה</span>}
+              <Badge tone={COMMENT_STATUS[c.status].tone}>{COMMENT_STATUS[c.status].label}</Badge>
+              {c.likeCount > 0 && <span className="text-muted">♥ {c.likeCount}</span>}
+              {c.picked && <Badge tone="info">בחירת העורכים</Badge>}
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-[15px]">{c.body}</p>
+            {c.status !== 'removed' && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setStatus.mutate({ id: c.id, status: c.status === 'visible' ? 'hidden' : 'visible' })}>
+                  {c.status === 'visible' ? 'הסתרה' : 'הצגה'}
+                </Button>
+                {c.status === 'visible' && (
+                  <Button size="sm" variant="ghost" onClick={() => pick.mutate({ id: c.id, picked: !c.picked })}>
+                    {c.picked ? 'הוצאה מבחירת העורכים' : 'בחירת העורכים'}
+                  </Button>
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -41,13 +41,15 @@ export function Comments({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // "top": the editors' picks, then the most liked; "new": the latest first.
+  const [sort, setSort] = useState<'top' | 'new'>('top');
 
   const load = useCallback(
     async (next?: string | null) => {
       setLoading(true);
       setLoadError(null);
       try {
-        const page = await commentsApi.list(articleId, next);
+        const page = await commentsApi.list(articleId, next, sort);
         setItems((prev) => (next ? [...prev, ...page.items] : page.items));
         setTotal(page.total);
         setCursor(page.nextCursor);
@@ -57,7 +59,7 @@ export function Comments({
         setLoading(false);
       }
     },
-    [articleId],
+    [articleId, sort],
   );
 
   useEffect(() => {
@@ -103,6 +105,27 @@ export function Comments({
           {total}
         </span>
       </SectionHeader>
+      {total > 1 ? (
+        <div className="mb-4 inline-flex rounded-full bg-stone p-1 text-sm font-bold" role="tablist" aria-label="סדר התגובות">
+          {(
+            [
+              ['top', 'מובילות'],
+              ['new', 'חדשות'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={sort === id}
+              onClick={() => setSort(id)}
+              className={`rounded-full px-4 py-1.5 ${sort === id ? 'bg-ink text-white' : 'text-ink-2 hover:text-ink'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {!enabled ? (
         <p className="rounded-xl bg-stone px-5 py-4 text-ink-2">התגובות לכתבה הזאת סגורות.</p>
@@ -139,7 +162,7 @@ export function Comments({
             comment={c}
             articleId={articleId}
             articleUrl={articleUrl}
-            canReply={enabled && auth.state === 'signed-in' && !c.parentId && !c.pending}
+            canReply={enabled && auth.state === 'signed-in' && !c.pending}
             signedIn={auth.state === 'signed-in'}
             onPosted={onPosted}
             onRemoved={onRemoved}
@@ -192,7 +215,27 @@ function CommentItem({
   const [replying, setReplying] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [likes, setLikes] = useState({ count: comment.likeCount, mine: comment.likedByMe });
+  const [liking, setLiking] = useState(false);
   const initial = comment.author.displayName.trim().charAt(0) || '?';
+  const canLike = signedIn && !comment.isMine && !comment.pending;
+
+  const toggleLike = async () => {
+    if (!canLike || liking) return;
+    const before = likes;
+    // Right away on screen; the server's count follows.
+    setLikes({ count: likes.count + (likes.mine ? -1 : 1), mine: !likes.mine });
+    setLiking(true);
+    try {
+      const r = before.mine ? await commentsApi.unlike(comment.id) : await commentsApi.like(comment.id);
+      setLikes({ count: r.likeCount, mine: r.likedByMe });
+    } catch (err) {
+      setLikes(before);
+      setNotice(message(err));
+    } finally {
+      setLiking(false);
+    }
+  };
   const takedownHref = `/report?url=${encodeURIComponent(`${articleUrl}#comments`)}&comment=${comment.id}`;
 
   const report = async (reason: 'spam' | 'abuse' | 'misinformation' | 'other') => {
@@ -227,10 +270,30 @@ function CommentItem({
             {relativeTime(comment.createdAt)}
           </time>
           {comment.pending ? <span className="rounded-full bg-[#FFF4D6] px-2 py-0.5 text-xs font-bold text-[#7A5600]">ממתינה לאישור</span> : null}
+          {comment.picked ? <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-white">בחירת העורכים</span> : null}
         </div>
+        {comment.replyTo && comment.replyTo.id !== comment.parentId ? (
+          <p className="text-sm font-semibold text-ink-2">
+            בתגובה ל-<span dir="auto">@{comment.replyTo.displayName}</span>
+          </p>
+        ) : null}
         {/* Plain text from the API; React escapes it. */}
         <p className="whitespace-pre-line break-words text-[16px] leading-relaxed">{comment.body}</p>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-muted">
+          <button
+            type="button"
+            onClick={toggleLike}
+            disabled={!canLike}
+            aria-pressed={likes.mine}
+            aria-label={likes.mine ? `ביטול לייק (${likes.count})` : `לייק (${likes.count})`}
+            title={canLike ? undefined : comment.isMine ? 'אי אפשר לאהוב תגובה שלך' : 'התחברו כדי לעשות לייק'}
+            className={`inline-flex items-center gap-1 ${likes.mine ? 'text-brand' : ''} ${canLike ? 'hover:text-brand' : 'cursor-default'}`}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill={likes.mine ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M12 21s-7-4.4-9.3-8.6C1 9 2.8 5 6.6 5c2.1 0 3.4 1.1 4.4 2.5C12 6.1 13.3 5 15.4 5 19.2 5 21 9 19.3 12.4 17 16.6 12 21 12 21z" />
+            </svg>
+            <span className="tabular-nums">{likes.count > 0 ? likes.count : ''}</span>
+          </button>
           {canReply ? (
             <button type="button" onClick={() => setReplying((v) => !v)} className="hover:text-brand" aria-expanded={replying}>
               הגבה
@@ -279,6 +342,7 @@ function CommentItem({
           <Composer
             articleId={articleId}
             parentId={comment.id}
+            replyToName={comment.author.displayName}
             compact
             onPosted={(c) => {
               onPosted(c);
@@ -294,12 +358,15 @@ function CommentItem({
 function Composer({
   articleId,
   parentId,
+  replyToName,
   compact = false,
   onPosted,
   onTermsRequired,
 }: {
   articleId: number;
   parentId?: string;
+  /** Whom the reply answers (they are notified). */
+  replyToName?: string;
   compact?: boolean;
   onPosted: (c: CommentDto) => void;
   /** The terms changed since this reader accepted them. */
@@ -344,7 +411,7 @@ function Composer({
         rows={compact ? 2 : 4}
         aria-describedby={`${id}-count`}
         className="w-full resize-y rounded-xl border-[1.5px] border-line bg-white px-4 py-3 text-base leading-relaxed focus:border-ink focus:outline-none"
-        placeholder={parentId ? 'כתבו תגובה…' : 'כתבו תגובה לכתבה…'}
+        placeholder={parentId ? `תשובה ל-${replyToName ?? 'תגובה'}…` : 'כתבו תגובה לכתבה…'}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span id={`${id}-count`} className={`text-xs tabular-nums ${remaining < 100 ? 'text-brand-deep' : 'text-muted'}`}>
