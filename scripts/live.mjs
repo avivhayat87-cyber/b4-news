@@ -12,6 +12,7 @@
 //   npm run live -- backup              copy the database and media now
 //   npm run live -- restore [backup]    put a backup back (the current data is kept aside, not deleted)
 //   npm run live -- import-sources <file.json>   add news sites tested in the workshop
+//   npm run live -- import-articles <dir>        add the workshop's articles (a bundle from live-db.ts export-articles)
 //   npm run live -- logs [api|web|cms]
 //
 // Everything lives in ../b4-news-live (or $B4_LIVE_HOME):
@@ -614,6 +615,27 @@ async function importSources(file) {
   console.log(out.trim());
 }
 
+/**
+ * Articles from the workshop (a bundle made with `live-db.ts export-articles`), added to the live
+ * site after a backup; an article whose slug is already live is left alone.
+ */
+async function importArticles(dir) {
+  if (!dir || !fs.existsSync(path.join(dir, 'articles.json'))) fail('Usage: npm run live -- import-articles <bundle-dir> (a folder with articles.json)');
+  const state = requireCurrent();
+  const R = releaseDir(state.current);
+  const keys = secrets();
+  const out = await withLiveApiStopped(keys, () => {
+    say(`Backup first: ${backupNow('before-import-articles')}`);
+    return tsx(R, ['src/cli/live-db.ts', 'import-articles', `pglite:${path.join(DIR.data, 'db')}`, path.join(DIR.data, 'media'), path.resolve(dir)], {
+      cwd: path.join(R, 'apps', 'api'),
+      env: baseEnv(),
+      label: 'importing articles',
+    });
+  });
+  console.log(out.trim());
+  await refreshSite(keys);
+}
+
 function logs(name = 'api') {
   const file = path.join(DIR.logs, `live-${name}.log`);
   if (!fs.existsSync(file)) fail(`No log yet for ${name}.`);
@@ -638,6 +660,7 @@ const commands = {
   backup: backupCommand,
   restore: () => restore(arg),
   'import-sources': () => importSources(arg),
+  'import-articles': () => importArticles(arg),
   logs: () => logs(arg),
 };
 

@@ -57,7 +57,15 @@ npm run live -- restore <name>    # put one back (the replaced data is kept asid
 npm run live -- start | stop | restart
 npm run live -- logs [api|web|cms]
 npm run live -- import-sources <file.json>   # news sites set up and tested in the workshop
+npm run live -- import-articles <dir>        # articles from the workshop (backed up first)
 ```
+
+Articles are written and published in the **live** CMS; the workshop's articles are test data.
+Only when real articles were made in the workshop are they moved, once: stop `npm run dev`
+(the workshop database is single-process), then from `apps/api` run
+`npx tsx src/cli/live-db.ts export-articles pglite:../../.data/b4 ../../.data/media <dir>`
+and `npm run live -- import-articles <dir>`. An article whose address is already live is
+skipped. Drafts, comments and AI history stay behind.
 
 The live environment keeps running when the terminal that started it closes. After the
 computer restarts, start it again with `npm run live -- start`, or double-click

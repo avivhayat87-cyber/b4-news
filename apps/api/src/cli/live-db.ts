@@ -7,6 +7,10 @@
 //                                                          a first admin whose password goes to <dir>/admin.txt
 //   tsx src/cli/live-db.ts import-sources <database-url> <file.json>
 //                                                          adds tested news sites (exported from another environment) as active
+//   tsx src/cli/live-db.ts export-articles <database-url> <media-dir> <bundle-dir>
+//                                                          writes every article, with its main image, to a bundle folder
+//   tsx src/cli/live-db.ts import-articles <database-url> <media-dir> <bundle-dir>
+//                                                          adds a bundle's articles (an existing slug is skipped)
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -14,6 +18,8 @@ import { SelectorConfig } from '@b4/shared';
 import { type Db, createDb, seedReferenceData, sources, sql, users } from '@b4/db';
 import { z } from 'zod';
 import { hashPassword } from '../lib/password';
+import { LocalStorage } from '../lib/storage';
+import { exportArticles, importArticles } from '../services/article-transfer';
 
 const ImportedSource = z.object({
   name: z.string().trim().min(1).max(80),
@@ -59,7 +65,7 @@ export async function countRows(db: Db): Promise<Record<string, number>> {
 }
 
 async function main() {
-  const [command, url, dir] = process.argv.slice(2);
+  const [command, url, dir, bundle] = process.argv.slice(2);
   if (!command || !url) throw new Error('usage: live-db.ts counts|migrate|init <database-url> [<dir>]');
   const handle = createDb(url);
   try {
@@ -110,6 +116,20 @@ async function main() {
           .returning({ id: sources.id });
         console.log(`${added.length ? 'added  ' : 'exists '} ${s.name} (${s.baseUrl})`);
       }
+      return;
+    }
+
+    if (command === 'export-articles' || command === 'import-articles') {
+      if (!dir || !bundle) throw new Error(`usage: live-db.ts ${command} <database-url> <media-dir> <bundle-dir>`);
+      // Only files are written here; nothing needs the media's public address.
+      const storage = new LocalStorage(dir, '');
+      if (command === 'export-articles') {
+        console.log(`Exported ${await exportArticles(handle.db, storage, bundle)} articles to ${bundle}.`);
+        return;
+      }
+      const { added, skipped } = await importArticles(handle.db, storage, bundle);
+      for (const title of added) console.log(`added    ${title}`);
+      for (const title of skipped) console.log(`exists   ${title}`);
       return;
     }
 
