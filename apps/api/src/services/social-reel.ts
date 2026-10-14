@@ -255,7 +255,7 @@ export async function runReelVideo(s: Services, job: JobRow) {
   const plan = share.reelPlan;
   const [picture] = await s.db.select().from(mediaAssets).where(eq(mediaAssets.id, share.reelImageMediaId)).limit(1);
   if (!picture) throw new PermanentJobError('the reel picture is gone');
-  const { settings, model } = await reelSettingsOf(s, share.reelSettings);
+  const { settings, model, estimateUsd } = await reelSettingsOf(s, share.reelSettings);
 
   const textAi = await s.ai.text();
   const { result: english } = await tracked(s.db, { type: 'translate', provider: textAi.provider, requestedBy: job.createdBy }, () => textAi.toEnglish([plan.videoPrompt]));
@@ -264,7 +264,16 @@ export async function runReelVideo(s: Services, job: JobRow) {
   const videoAi = await s.ai.video(model);
   const { result: made } = await tracked(
     s.db,
-    { type: 'social_video', provider: videoAi.provider, requestedBy: job.createdBy, promptKey: 'reel.video', promptVersion: template.version, model: videoAi.model },
+    {
+      type: 'social_video',
+      provider: videoAi.provider,
+      requestedBy: job.createdBy,
+      promptKey: 'reel.video',
+      promptVersion: template.version,
+      model: videoAi.model,
+      // Google bills a video by its seconds; the stand-in costs nothing.
+      ...(videoAi.live && estimateUsd !== null ? { costUsd: estimateUsd } : {}),
+    },
     () =>
       videoAi.generate({
         prompt: fill(template.body, {

@@ -2,6 +2,9 @@
 // learning reports, the visual agent (Google), the fact check, and the tool
 // endpoint the Claude app (MCP) calls with a personal access token.
 import {
+  AgentTeamDto,
+  SaveSkillInput,
+  SkillDto,
   AgentConversationDto,
   AgentConversationSummary,
   AgentStatusDto,
@@ -33,7 +36,9 @@ import { newToken, sha256 } from '../../lib/crypto';
 import { STAFF_TOKEN_PREFIX, requireStaff } from '../../plugins/auth';
 import { agentStatus, conversationDto, decideAction, listConversations, sendMessage } from '../../services/agent/chat';
 import { draftFacts, getEditorSettings, saveEditorSettings } from '../../services/agent/editor';
+import { getSkill, restoreSkill, saveSkill } from '../../services/agent/skills';
 import { saveSocialSettings, socialAgentOverview } from '../../services/agent/social';
+import { agentTeam } from '../../services/agent/team';
 import { runTool, toolsFor } from '../../services/agent/tools';
 import { activateVisualProfile, getVisualSettings, queueVisualLearning, saveVisualRules, saveVisualSettings, visualOverview } from '../../services/agent/visual';
 import type { Services } from '../../services/context';
@@ -80,6 +85,31 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
   });
 
   app.get('/agent/learning-reports', { schema: { response: { 200: z.array(LearningReportDto) } } }, async () => learningReportsList(s));
+
+  // --- The agent team and their skills ("הגדרות" > "צוות הסוכנים") ---------------------------------
+  app.get('/agents', { schema: { response: { 200: AgentTeamDto } } }, async () => agentTeam(s));
+
+  const skillParams = z.object({ key: z.string().regex(/^[a-z]+\.[a-z]+$/) });
+  app.get('/skills/:key', { schema: { params: skillParams, response: { 200: SkillDto } } }, async (req) => getSkill(s.db, req.params.key));
+
+  // A skill decides what every AI call of that agent does: only an admin changes one, and it is recorded.
+  app.put('/skills/:key', { schema: { params: skillParams, body: SaveSkillInput, response: { 200: SkillDto } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const skill = await saveSkill(s.db, staff, req.params.key, req.body.body);
+    await audit(s.db, { userId: staff.id, entity: 'skill', entityId: req.params.key, action: 'update', details: { version: skill.versions.find((v) => v.isActive)?.version } });
+    return skill;
+  });
+
+  app.post(
+    '/skills/:key/versions/:version/restore',
+    { schema: { params: skillParams.extend({ version: z.coerce.number().int().positive() }), response: { 200: SkillDto } } },
+    async (req) => {
+      const staff = requireStaff(req, 'admin');
+      const skill = await restoreSkill(s.db, staff, req.params.key, req.params.version);
+      await audit(s.db, { userId: staff.id, entity: 'skill', entityId: req.params.key, action: 'restore', details: { from: req.params.version } });
+      return skill;
+    },
+  );
 
   // --- The social editor (the distribution plan before publishing) ---------------------------------
   app.get('/agent/social', { schema: { response: { 200: SocialAgentOverview } } }, async () => socialAgentOverview(s.db));

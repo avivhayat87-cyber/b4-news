@@ -7,6 +7,84 @@ const id = z.string().uuid();
 const iso = z.string();
 
 // ---------------------------------------------------------------------------
+// The agent team: who the agents are, their skills (editable instructions, in Hebrew, versioned
+// in prompt_templates), the newsroom rules every agent follows, and what each one cost this month.
+// ---------------------------------------------------------------------------
+/** chief: the chat agent that runs the others. */
+export const AGENT_IDS = ['chief', 'rewrite', 'social', 'visual', 'translator', 'learning'] as const;
+export type AgentId = (typeof AGENT_IDS)[number];
+
+/** skill: an agent's instructions; template: a technical text sent to an image or video model (English on purpose); rules: the newsroom rules every writing agent follows. */
+export const SKILL_KINDS = ['skill', 'template', 'rules'] as const;
+export type SkillKind = (typeof SKILL_KINDS)[number];
+
+/** The rules no skill can turn off: added by the code to everything the AI writes for publication. */
+export const NEWSROOM_FIXED_RULES = [
+  'אין ייעוץ השקעות בקול של המערכת: לעולם לא ממליצים לקנות, למכור או להחזיק נייר ערך, מטבע, נכס קריפטוגרפי או מוצר פיננסי אחר, ולא קובעים מחירי יעד. המלצה או תחזית של אנליסט, בנק או חברה מדווחת כשלהם, עם ייחוס (למשל "לדברי", "לפי הערכת").',
+  'מדווחים את העובדות בניסוח חדש. לא מעתיקים משפטים מהדיווח המקורי; ציטוט קצר מותר רק במירכאות ועם ייחוס לדובר.',
+  'לא מציינים שם ולא מזהים קטינים או נפגעי עבירות, ולא מוסיפים פרטים אישיים על אנשים פרטיים מעבר למה שהסיפור צריך.',
+] as const;
+
+export const SkillSummary = z.object({
+  key: z.string(),
+  kind: z.enum(SKILL_KINDS),
+  version: z.number().int(),
+  versions: z.number().int(),
+  updatedAt: iso,
+  /** Who wrote the active version; null = the system's default. */
+  updatedBy: z.string().nullable(),
+});
+export type SkillSummary = z.infer<typeof SkillSummary>;
+
+export const AgentUsageDto = z.object({
+  calls: z.number().int(),
+  inputTokens: z.number().int(),
+  outputTokens: z.number().int(),
+  /** Estimated, in US dollars, for the calls whose price is known. */
+  costUsd: z.number(),
+  /** Some calls (Google's images) are billed elsewhere and not counted in costUsd. */
+  partial: z.boolean(),
+});
+export type AgentUsageDto = z.infer<typeof AgentUsageDto>;
+
+export const AgentCardDto = z.object({
+  id: z.enum(AGENT_IDS),
+  provider: z.string(),
+  model: z.string(),
+  /** false: the development stand-in (or no key) answers instead of the AI. */
+  live: z.boolean(),
+  skills: z.array(SkillSummary),
+  usage: AgentUsageDto,
+});
+export type AgentCardDto = z.infer<typeof AgentCardDto>;
+
+export const AgentTeamDto = z.object({
+  agents: z.array(AgentCardDto),
+  /** The newsroom rules every writing agent reads (editable), and the fixed ones (not editable). */
+  rules: SkillSummary,
+  fixedRules: z.array(z.string()),
+  /** The month the usage covers, as YYYY-MM (Israel time). */
+  month: z.string(),
+});
+export type AgentTeamDto = z.infer<typeof AgentTeamDto>;
+
+export const SkillVersionDto = z.object({ version: z.number().int(), body: z.string(), isActive: z.boolean(), createdAt: iso, createdBy: z.string().nullable() });
+export type SkillVersionDto = z.infer<typeof SkillVersionDto>;
+
+export const SkillDto = z.object({
+  key: z.string(),
+  kind: z.enum(SKILL_KINDS),
+  /** Markers the code fills in ({{style_rules}}…): a new version must keep them. */
+  placeholders: z.array(z.string()),
+  /** Newest first. */
+  versions: z.array(SkillVersionDto),
+});
+export type SkillDto = z.infer<typeof SkillDto>;
+
+export const SaveSkillInput = z.object({ body: z.string().trim().min(20, 'הסקיל קצר מדי').max(20_000) });
+export type SaveSkillInput = z.infer<typeof SaveSkillInput>;
+
+// ---------------------------------------------------------------------------
 // The editor agent (the AI that writes the new article from the source)
 // ---------------------------------------------------------------------------
 /** How far the new article moves from the source's wording, angle and structure. Facts never move. */

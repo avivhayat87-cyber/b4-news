@@ -86,6 +86,8 @@ export type RewriteRequest = {
 };
 
 export type RefineRequest = {
+  /** prompt_templates "refine.system", with the newsroom rules */
+  systemPrompt: string;
   styleRules: string;
   current: ArticleText;
   instruction: string;

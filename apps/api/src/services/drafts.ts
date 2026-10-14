@@ -50,7 +50,7 @@ import { decodeText } from '../lib/safe-fetch';
 import { compareWording } from '../lib/similarity';
 import { editorGuidelinesFor } from './agent/editor';
 import { writeImagePrompt } from './agent/visual';
-import { activePrompt, activeStyleRules, tracked } from './ai';
+import { activeStyleRules, tracked, writerPrompt } from './ai';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
@@ -276,7 +276,7 @@ export async function runRewrite(s: Services, job: JobRow) {
       s.log.warn({ draftId, err: e instanceof Error ? e.message : e }, 'translating the original failed'),
     );
   }
-  const prompt = await activePrompt(s.db, 'rewrite.system');
+  const prompt = await writerPrompt(s.db, 'rewrite.system');
   // Learned house style, then the editor agent's settings (divergence, length, voice; facts always kept).
   const systemPrompt = prompt.body.replace('{{style_rules}}', `${await activeStyleRules(s.db)}\n${await editorGuidelinesFor(s.db)}`);
   const sourceName = item.sourceName ?? new URL(item.url).hostname.replace(/^www\./, '');
@@ -376,8 +376,10 @@ export async function runRefine(s: Services, job: JobRow) {
     if (item) original = `${item.title}\n\n${item.body ?? ''}`.slice(0, 20_000);
   }
   const textAi = await s.ai.text();
-  const { result, aiJobId } = await tracked(s.db, { type: 'refine', provider: textAi.provider, draftId, requestedBy: job.createdBy }, () =>
+  const prompt = await writerPrompt(s.db, 'refine.system');
+  const { result, aiJobId } = await tracked(s.db, { type: 'refine', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey: 'refine.system', promptVersion: prompt.version }, () =>
     textAi.refine({
+      systemPrompt: prompt.body,
       styleRules: '',
       current: { title: draft.title, subtitle: draft.subtitle, body: draft.bodyText },
       instruction: msg.content,

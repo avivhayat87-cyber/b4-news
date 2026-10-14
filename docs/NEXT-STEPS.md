@@ -18,4 +18,3 @@
 - Index quotes (TA-35, S&P 500…) need a licensed market-data provider; the ticker shows official exchange rates today.
 - Podcast management (the homepage band appears once episodes exist).
 - Headless rendering (`html_js`) for sources that need JavaScript.
-- Editable prompt templates in the CMS (they are versioned in `prompt_templates` already).

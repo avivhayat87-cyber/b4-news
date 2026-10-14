@@ -98,9 +98,11 @@ src/
     handlers.ts       Job kind → handler: the only place that maps queued work to code
     ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent;
                         development stand-ins), types
-    agent/            The newsroom agent: tools over the services, chat, model engine, editor-agent settings,
-                        the visual agent (visual.ts: image and reel prompts, and its learning), the social
-                        editor (social.ts: its settings, and the corrections it learns from)
+    agent/            The newsroom agent and the agent team: tools over the services, chat, model engine,
+                        the team (team.ts: who the agents are, their models and usage), their skills
+                        (skills.ts: versions in prompt_templates), editor-agent settings, the visual agent
+                        (visual.ts: image and reel prompts, and its learning), the social editor (social.ts:
+                        its settings, and the corrections it learns from)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
@@ -183,7 +185,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
 | **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `manual/`, `components/editor/` | | `magazines`, `article_drafts`, `draft_revisions`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
-| **Newsroom agent** | `services/agent/*` (chat, editor agent, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `visual_feedback`, `visual_profiles` |
+| **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
@@ -237,9 +239,16 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   - the `message` of every `AppError`;
   - emails and push text.
 - CMS labels for enums live in `apps/admin/lib/labels.ts`.
-- **AI prompts** give English instructions and require Hebrew output. They are stored in
-  `prompt_templates` (seeded in `packages/db/src/seed.ts`) so they can be edited without a
-  release.
+- **The agents' skills (their prompts) are written in Hebrew** and require Hebrew output, so the
+  owner can read and edit them. They are stored in `prompt_templates` (seeded in
+  `packages/db/src/seed.ts`), shown and edited in the CMS ("הגדרות" > "צוות הסוכנים") with
+  every version kept, and a release never replaces a skill an admin wrote. Exceptions, in
+  English on purpose: the templates sent to the image and video models (`reel.image`,
+  `reel.video`), and the technical output rules inside the code (JSON fields, limits).
+  Changed at the owner's request on 2026-10-14 (until then the instructions were English).
+- **Every writing agent reads the newsroom rules** (`newsroom.rules`, through `writerPrompt`)
+  after its own skill, and the code adds the fixed rules no skill can turn off
+  (`NEWSROOM_FIXED_RULES` in `@b4/shared`). A new writing agent does the same.
 - **Image and video prompts the editor sees are Hebrew.** The editor reads, edits and approves
   them in Hebrew, and the system sends the model an English translation of the approved text
   (`TextAI.toEnglish`, the fast model). Changed at the owner's request on 2026-10-13.
@@ -247,7 +256,9 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   visual agent, Google Gemini (`s.ai.visual()`, `services/agent/visual.ts`), writes the
   descriptions for article images and the reel prompts. It learns from the editors' choices
   into versioned rules (`visual_profiles`), the way the house style is learned. Decided by the
-  owner on 2026-10-13: the owner manages it from the CMS ("סוכן AI" > "סוכן התמונות").
+  owner on 2026-10-13: the owner manages it from the CMS ("הגדרות" > "צוות הסוכנים" > "סוכן
+  התמונות והווידאו"; every agent's settings moved there on 2026-10-14, and "סוכן AI" keeps only
+  the chat with the chief editor and the Claude app connection).
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video

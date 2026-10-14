@@ -5,7 +5,7 @@ import { and, asc, desc, eq, inArray, jobs, mediaAssets, socialAccounts, socialP
 import { AppError, errors } from '../errors';
 import { toMediaDto } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
-import { activePrompt, tracked } from './ai';
+import { tracked, writerPrompt } from './ai';
 import type { Services } from './context';
 import { imageBatchesOf, loadDraft, requestImages } from './drafts';
 
@@ -91,7 +91,7 @@ export async function runSocialGenerate(s: Services, job: JobRow) {
   const draft = await loadDraft(s.db, draftId);
   const [pkg] = await s.db.select().from(socialPackages).where(eq(socialPackages.draftId, draftId)).limit(1);
   if (!pkg) throw new PermanentJobError('no social package');
-  const prompt = await activePrompt(s.db, 'social.caption');
+  const prompt = await writerPrompt(s.db, 'social.caption');
   const textAi = await s.ai.text();
   const { result } = await tracked(
     s.db,

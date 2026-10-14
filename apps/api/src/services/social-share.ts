@@ -41,7 +41,7 @@ import {
 import { AppError, errors } from '../errors';
 import { toMediaDto } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
-import { activePrompt, tracked } from './ai';
+import { tracked, writerPrompt } from './ai';
 import type { Services } from './context';
 import { type SocialPayload, autoFormats, postText, publishToNetwork } from './social-adapters';
 import { renderDesign } from './social-design';
@@ -423,7 +423,7 @@ export async function runKit(s: Services, job: JobRow) {
     // not a document
   }
   const body = fromDoc.trim() ? fromDoc : htmlToText(article.bodyHtml);
-  const prompt = await activePrompt(s.db, 'social.kit');
+  const prompt = await writerPrompt(s.db, 'social.kit');
   const textAi = await s.ai.text();
   const { result } = await tracked(
     s.db,

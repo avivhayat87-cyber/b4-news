@@ -1,23 +1,16 @@
 'use client';
-// The newsroom agent: the chat, the editor agent (settings + learning), the social editor
-// (distribution plans), the visual agent (Google: image and reel prompts + learning), and the
-// connection to the Claude app.
+// The chief editor: the chat with the agent that runs the others, and the connection to the Claude
+// app. The agents' skills and settings live in "הגדרות" > "צוות הסוכנים".
 import type { AgentStatusDto } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AgentChat } from '@/components/agent/chat';
 import { ConnectClaude } from '@/components/agent/connect';
-import { EditorAgent } from '@/components/agent/editor-agent';
-import { SocialAgent } from '@/components/agent/social-agent';
-import { VisualAgent } from '@/components/agent/visual-agent';
-import { Badge, PageHeader, cx } from '@/components/ui';
+import { Badge, LinkButton, PageHeader, cx } from '@/components/ui';
 import { admin } from '@/lib/api';
 
 const TABS = [
-  ['chat', "צ'אט עם הסוכן"],
-  ['editor', 'סוכן העריכה'],
-  ['social', 'עורך הרשתות'],
-  ['visual', 'סוכן התמונות (Google)'],
+  ['chat', "צ'אט עם העורך הראשי"],
   ['connect', 'חיבור לאפליקציית Claude'],
 ] as const;
 
@@ -29,8 +22,13 @@ export default function AgentPage() {
     <>
       <PageHeader
         title="סוכן AI"
-        subtitle="מבקשים מהסוכן בעברית, והוא קורא את המערכת ומבצע פעולות. כל שינוי מחכה לאישור שלכם."
-        actions={status.data ? <Badge tone={status.data.live ? 'ok' : 'warn'}>{status.data.live ? `מחובר: ${status.data.model}` : 'מצב הדגמה'}</Badge> : null}
+        subtitle="מבקשים מהעורך הראשי בעברית, והוא קורא את המערכת ומפעיל את שאר הסוכנים. כל שינוי מחכה לאישור שלכם."
+        actions={
+          <span className="flex items-center gap-2">
+            <LinkButton href="/settings?tab=agents">צוות הסוכנים והסקילים</LinkButton>
+            {status.data ? <Badge tone={status.data.live ? 'ok' : 'warn'}>{status.data.live ? `מחובר: ${status.data.model}` : 'מצב הדגמה'}</Badge> : null}
+          </span>
+        }
       />
       <div className="mb-5 inline-flex rounded-xl bg-white p-1 ring-1 ring-line" role="tablist">
         {TABS.map(([id, label]) => (
@@ -40,9 +38,6 @@ export default function AgentPage() {
         ))}
       </div>
       {tab === 'chat' && <AgentChat status={status.data} />}
-      {tab === 'editor' && <EditorAgent />}
-      {tab === 'social' && <SocialAgent />}
-      {tab === 'visual' && <VisualAgent />}
       {tab === 'connect' && <ConnectClaude />}
     </>
   );

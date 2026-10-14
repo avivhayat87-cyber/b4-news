@@ -1,5 +1,6 @@
 // Hebrew labels for everything the CMS shows.
 import {
+  type AgentId,
   type ARTICLE_LENGTHS,
   type AudienceSetupKey,
   CATEGORIES,
@@ -74,6 +75,69 @@ export const REEL_STAGE: Record<ReelStage, { label: string; tone: Tone }> = {
   video: { label: 'סרטון מחכה לאישור', tone: 'warn' },
   approved: { label: 'מאושר לפרסום', tone: 'ok' },
 };
+
+/** The agent team: who each agent is, in one line and in a few. */
+export const AGENT: Record<AgentId, { name: string; role: string; about: string }> = {
+  chief: {
+    name: 'העורך הראשי',
+    role: 'מקבל פקודות בצ\'אט ומפעיל את כל הסוכנים',
+    about: 'הצ\'אט בדף "סוכן AI" ובאפליקציית Claude. קורא את מצב המערכת ומפעיל את שאר הסוכנים דרך הכלים. כל שינוי מחכה לאישור שלכם.',
+  },
+  rewrite: {
+    name: 'עורך השכתוב',
+    role: 'כותב את הכתבה מהמקור ומתקן לפי ההערות',
+    about: 'כותב כתבה חדשה מכל מקור שנשמר לעריכה, ומבצע את ההערות שלכם בעורך ("תקצר", "כותרת חדה יותר"). לומד את סגנון הבית מהתיקונים שלכם אחרי כל פרסום.',
+  },
+  social: {
+    name: 'עורך הרשתות',
+    role: 'מחליט איך כל כתבה עולה לרשתות',
+    about: 'כשהטקסט סופי: מסגרת עיצוב, פוסט, סטורי, והמלצה על ריל, עם הטקסטים והנימוקים. לומד מהשינויים שלכם בדוח תוכנית ההפצה.',
+  },
+  visual: {
+    name: 'סוכן התמונות והווידאו',
+    role: 'מתאר תמונות וריילים, בשביל כל הסוכנים',
+    about: 'רץ על Google Gemini. כותב בעברית את התיאור לתמונה הראשית ואת שתי ההנחיות לריל, ומודל התמונות והווידאו מצייר מהן. אחד, משותף לכל הסוכנים, ולומד מהבחירות שלכם.',
+  },
+  translator: {
+    name: 'המתרגם',
+    role: 'מתרגם כתבות מחו״ל לעברית',
+    about: 'מתרגם את הכותרות של כתבות מחו״ל אחרי האיתור, ואת הכתבה כולה כשהיא נשמרת לעריכה. מתרגם גם לאנגלית את ההנחיות שאישרתם למודל התמונות.',
+  },
+  learning: {
+    name: 'הלמידה',
+    role: 'לומד מהתיקונים שלכם אחרי כל פרסום',
+    about: 'אחרי כל פרסום קורא בבת אחת מה שיניתם בטיוטות, ומעדכן את כללי סגנון הבית של עורך השכתוב. כותב לכם דוח קצר על מה שלמד.',
+  },
+};
+
+/** Every skill: its name, and what it is used for. */
+export const SKILL: Record<string, { name: string; use: string }> = {
+  'agent.system': { name: 'הנחיות העורך הראשי', use: 'איך הוא עונה בצ\'אט ומפעיל את הכלים' },
+  'rewrite.system': { name: 'כתיבת כתבה מהמקור', use: 'כל כתבה חדשה. במקום הסימון {{style_rules}} המערכת מכניסה את סגנון הבית שנלמד ואת ההגדרות שלכם.' },
+  'refine.system': { name: 'תיקון לפי הערה', use: 'ההערות בעורך: "תקצר", "כותרת חדה יותר"' },
+  'social.plan': { name: 'תוכנית הפצה', use: 'כשהטקסט סופי: מסגרת, פוסט, סטורי, ריל והטקסטים' },
+  'social.kit': { name: 'פוסט וסטורי לכתבה שבאתר', use: 'דף הרשתות: "הכנה עם AI" לכתבות שכבר פורסמו' },
+  'social.caption': { name: 'חבילת הרשתות הישנה', use: 'רק לכתבות שהוכנו לפני תוכנית ההפצה' },
+  'visual.image': { name: 'תיאור התמונה הראשית', use: 'מה מודל התמונות מצייר לכל כתבה' },
+  'reel.prompts': { name: 'ההנחיות לריל', use: 'שתי ההנחיות בעברית: התמונה והסרטון' },
+  'visual.learn': { name: 'למידה מהבחירות שלכם', use: 'כל כמה מקרים: מה העדפתם בתמונות ובריילים' },
+  'reel.image': { name: 'תבנית לתמונת הריל', use: 'נשלחת למודל התמונות. באנגלית בכוונה: המודל מקבל אנגלית.' },
+  'reel.video': { name: 'תבנית לסרטון הריל', use: 'נשלחת למודל הווידאו. באנגלית בכוונה: המודל מקבל אנגלית.' },
+  'translate.system': { name: 'תרגום לעברית', use: 'כותרות אחרי האיתור, וכתבה מלאה לעורך' },
+  'learning.batch': { name: 'למידה אחרי פרסום', use: 'מעדכן את כללי סגנון הבית ומסכם מה נלמד' },
+  'newsroom.rules': { name: 'נהלי המערכת', use: 'כל סוכן שכותב קורא אותם אחרי הסקיל שלו' },
+};
+
+/** A model id as people say it ("Claude Sonnet 5.5"); other ids stay as they are. */
+export function modelName(id: string): string {
+  return id
+    .split(' / ')
+    .map((m) => {
+      const c = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/.exec(m);
+      return c ? `Claude ${c[1]![0]!.toUpperCase()}${c[1]!.slice(1)} ${c[2]}${c[3] ? `.${c[3]}` : ''}` : m;
+    })
+    .join(' / ');
+}
 
 /** Where an article's distribution plan stands. */
 export const PLAN_STATE: Record<PlanState, { label: string; tone: Tone }> = {

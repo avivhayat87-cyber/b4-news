@@ -29,7 +29,7 @@ import { AppError, errors } from '../errors';
 import { toMediaDto } from '../lib/images';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import { getSocialSettings, socialGuidance } from './agent/social';
-import { activePrompt, tracked } from './ai';
+import { tracked, writerPrompt } from './ai';
 import type { Services } from './context';
 import { renderDesign } from './social-design';
 import { REEL_MOTION_TEXT, reelSettingsOf, startExpressReel } from './social-reel';
@@ -236,7 +236,7 @@ export async function runPlan(s: Services, job: JobRow) {
   // Reopened or published while it waited: nothing to write (a new final text asks again).
   if (!PLANNABLE.includes(draft.status) || !plan || plan.appliedAt) return { skipped: true };
   const [full] = await s.db.select({ subtitle: articleDrafts.subtitle, body: articleDrafts.bodyText }).from(articleDrafts).where(eq(articleDrafts.id, draftId)).limit(1);
-  const prompt = await activePrompt(s.db, 'social.plan');
+  const prompt = await writerPrompt(s.db, 'social.plan');
   const options = await optionsCatalog(s);
   const guidance = await socialGuidance(s.db);
   const textAi = await s.ai.text();

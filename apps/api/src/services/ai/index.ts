@@ -132,6 +132,12 @@ export async function activePrompt(db: Db, key: string): Promise<{ body: string;
   return row;
 }
 
+/** A writing agent's skill, followed by the newsroom rules every agent reads (the "newsroom.rules" skill). */
+export async function writerPrompt(db: Db, key: string): Promise<{ body: string; version: number }> {
+  const [skill, rules] = await Promise.all([activePrompt(db, key), activePrompt(db, 'newsroom.rules').catch(() => null)]);
+  return { body: rules ? `${skill.body}\n\nנהלי המערכת (חלים על כל הסוכנים):\n${rules.body}` : skill.body, version: skill.version };
+}
+
 /** House style learned from editors' corrections (the active style profile). */
 export async function activeStyleRules(db: Db): Promise<string> {
   const [row] = await db.select({ rules: styleProfiles.rules }).from(styleProfiles).where(eq(styleProfiles.isActive, true)).orderBy(desc(styleProfiles.id)).limit(1);
@@ -143,7 +149,8 @@ type AiJobType = (typeof aiJobs.$inferInsert)['type'];
 /** Runs one AI call and records it in ai_jobs (tokens, latency, errors) for cost tracking. */
 export async function tracked<T extends object>(
   db: Db,
-  meta: { type: AiJobType; provider: string; draftId?: string | null; requestedBy?: string | null; promptKey?: string; promptVersion?: number; imageCount?: number; model?: string },
+  /** costUsd: the price when the caller knows it (a video: per second); text calls are priced from their tokens. */
+  meta: { type: AiJobType; provider: string; draftId?: string | null; requestedBy?: string | null; promptKey?: string; promptVersion?: number; imageCount?: number; model?: string; costUsd?: number },
   call: () => Promise<T>,
 ): Promise<{ result: T; aiJobId: string }> {
   const started = Date.now();
@@ -172,6 +179,7 @@ export async function tracked<T extends object>(
         model: usage?.model ?? meta.model ?? 'unknown',
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
+        ...(meta.costUsd !== undefined ? { costUsd: meta.costUsd.toFixed(4) } : {}),
         latencyMs: Date.now() - started,
         finishedAt: new Date(),
       })

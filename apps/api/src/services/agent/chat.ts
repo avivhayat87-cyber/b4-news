@@ -8,7 +8,7 @@ import type { AgentActionData, AgentConversationDto, AgentConversationSummary, A
 import { agentConversations, agentMessages, and, asc, desc, eq, inArray, sql, users } from '@b4/db';
 import { AppError, errors } from '../../errors';
 import { PermanentJobError, enqueue, type JobRow } from '../../lib/jobs';
-import { activePrompt, tracked } from '../ai';
+import { tracked, writerPrompt } from '../ai';
 import type { Services } from '../context';
 import { AGENT_MODEL, agentEngine } from './engine';
 import { type AgentStaff, allowed, runTool, toolByName, toolsFor } from './tools';
@@ -119,7 +119,7 @@ export async function runAgentTurn(s: Services, job: JobRow) {
   const staff = await staffOf(s, conv.userId);
   const engine = await agentEngine(s);
   const tools = toolsFor(staff);
-  const prompt = await activePrompt(s.db, 'agent.system');
+  const prompt = await writerPrompt(s.db, 'agent.system');
   const system = systemPrompt(prompt.body, staff);
   const history = [...(conv.history as History)];
 

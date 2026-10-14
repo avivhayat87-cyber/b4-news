@@ -1,8 +1,9 @@
 'use client';
-// Settings: connections (AI, email, social), site details, team, my password.
+// Settings: connections (AI, email, social), the agent team and their skills, site details, team, my password.
 import { STAFF_ROLES, type StaffRole, type StaffUserDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { AgentTeam } from '@/components/agent/team';
 import { Connections } from '@/components/settings/connections';
 import { SiteDetails } from '@/components/settings/site-details';
 import { Button, Card, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
@@ -169,22 +170,29 @@ function StaffCard() {
   );
 }
 
-type Tab = 'connections' | 'site' | 'team' | 'password';
+type Tab = 'connections' | 'agents' | 'site' | 'team' | 'password';
 
 export default function SettingsPage() {
   const isAdmin = useCan();
   const tabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'connections', label: 'חיבורים', show: isAdmin },
+    { id: 'agents', label: 'צוות הסוכנים', show: true },
     { id: 'site', label: 'פרטי האתר', show: true },
     { id: 'team', label: 'צוות', show: isAdmin },
     { id: 'password', label: 'הסיסמה שלי', show: true },
   ];
   const visible = tabs.filter((t) => t.show);
   const [tab, setTab] = useState<Tab>(visible[0]!.id);
+  // "/settings?tab=agents" (from the agent page) opens that tab.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    if (visible.some((t) => t.id === wanted)) setTab(wanted as Tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
+  }, []);
 
   return (
     <>
-      <PageHeader title="הגדרות" subtitle={isAdmin ? 'חיבור ה-AI, הדואר והרשתות החברתיות, פרטי האתר והצוות.' : undefined} />
+      <PageHeader title="הגדרות" subtitle={isAdmin ? 'חיבור ה-AI, הדואר והרשתות החברתיות, צוות הסוכנים והסקילים שלהם, פרטי האתר והצוות.' : undefined} />
       <div className="mb-6 inline-flex flex-wrap rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
         {visible.map((t) => (
           <button
@@ -200,6 +208,7 @@ export default function SettingsPage() {
         ))}
       </div>
       {tab === 'connections' && isAdmin && <Connections />}
+      {tab === 'agents' && <AgentTeam />}
       {tab === 'site' && <SiteDetails canEdit={isAdmin} />}
       {tab === 'team' && isAdmin && <StaffCard />}
       {tab === 'password' && <PasswordCard />}
