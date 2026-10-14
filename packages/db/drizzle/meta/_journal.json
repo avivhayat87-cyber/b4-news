@@ -106,6 +106,13 @@
       "when": 1791988144591,
       "tag": "0014_social_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791999027247,
+      "tag": "0015_reader_sign_in_link",
+      "breakpoints": true
     }
   ]
 }

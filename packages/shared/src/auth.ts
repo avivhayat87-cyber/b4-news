@@ -8,7 +8,19 @@ export const Email = z
   .max(254)
   .email('כתובת המייל לא תקינה');
 
-export const RequestCodeInput = z.object({ email: Email });
+/** A path on the site to come back to (never another site). */
+export const ReturnPath = z
+  .string()
+  .max(300)
+  .regex(/^\/(?![/\\])[^\s]*$/, 'כתובת חזרה לא תקינה');
+
+export const RequestCodeInput = z.object({
+  email: Email,
+  /** The terms box was ticked; the one-click link then signs in without asking again. */
+  acceptTerms: z.boolean().optional(),
+  /** Where the one-click link returns to (the article the reader was on). */
+  returnTo: ReturnPath.optional(),
+});
 export type RequestCodeInput = z.infer<typeof RequestCodeInput>;
 
 export const DisplayName = z
@@ -44,6 +56,16 @@ export const ReaderSession = z.object({
   token: z.string().optional(),
 });
 export type ReaderSession = z.infer<typeof ReaderSession>;
+
+/** "Sign in with one click": the token from the mailed link (it travels in the URL's #, never to a server log). */
+export const VerifyLinkInput = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{40,60}$/, 'הקישור לא תקין'),
+  /** Required on the first sign-in, as with the code. */
+  displayName: DisplayName.optional(),
+  acceptTerms: z.boolean().optional(),
+});
+export const ReaderLinkSession = z.object({ reader: ReaderDto, returnTo: z.string().nullable() });
+export type ReaderLinkSession = z.infer<typeof ReaderLinkSession>;
 
 export const UpdateReaderInput = z.object({ displayName: DisplayName });
 

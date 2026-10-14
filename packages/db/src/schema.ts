@@ -132,6 +132,12 @@ export const loginCodes = pgTable(
     expiresAt: tstz().notNull(),
     consumedAt: tstz(),
     ipHash: text(),
+    /** The "sign in with one click" link mailed with the code (a keyed hash; the token is only in the mail). */
+    linkTokenHash: text().unique(),
+    /** The reader ticked the terms box when asking for the code (the link signs in without asking again). */
+    termsAccepted: boolean().notNull().default(false),
+    /** The page to return to after signing in from the link (a path on the site). */
+    returnTo: text(),
     createdAt: createdAt(),
   },
   (t) => [index('login_codes_email_idx').on(t.email, t.createdAt)],

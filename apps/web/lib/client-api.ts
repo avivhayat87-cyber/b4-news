@@ -38,9 +38,13 @@ export const readerApi = {
   async me(): Promise<ReaderDto | null> {
     return (await call<{ reader: ReaderDto | null }>('/auth/reader/session')).reader;
   },
-  requestCode: (email: string) => call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email }) }),
+  /** The mail carries a one-click link back to `returnTo`, and the code. */
+  requestCode: (email: string, opts: { acceptTerms: boolean; returnTo?: string }) =>
+    call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email, ...opts }) }),
   verify: (email: string, code: string, opts: { displayName?: string; acceptTerms: boolean }) =>
     call<ReaderSession>('/auth/reader/verify', { method: 'POST', body: json({ email, code, ...opts, client: 'web' }) }),
+  verifyLink: (token: string, opts: { displayName?: string } = {}) =>
+    call<{ reader: ReaderDto; returnTo: string | null }>('/auth/reader/verify-link', { method: 'POST', body: json({ token, ...opts }) }),
   acceptTerms: (version: string) => call<ReaderDto>('/auth/reader/terms', { method: 'POST', body: json({ version, accept: true }) }),
   rename: (displayName: string) => call<ReaderDto>('/auth/reader/me', { method: 'PATCH', body: json({ displayName }) }),
   deleteAccount: () => call<void>('/auth/reader/me', { method: 'DELETE' }),

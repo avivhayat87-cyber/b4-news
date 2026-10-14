@@ -305,16 +305,17 @@ export function SignIn({ onSignedIn, title = 'רוצים להגיב?' }: { onSig
 
   const requestCode = () =>
     run(async () => {
-      await api.requestCode(email.trim());
+      await api.requestCode(email.trim(), { acceptTerms: accepted });
       setStep('code');
     });
 
-  const verify = () =>
+  const verifyWith = (value: string) =>
     run(async () => {
-      const session = await api.verify(email.trim(), code, { displayName: step === 'name' ? name.trim() : undefined, acceptTerms: accepted });
+      const session = await api.verify(email.trim(), value, { displayName: step === 'name' ? name.trim() : undefined, acceptTerms: accepted });
       if (session.token) await setToken(session.token);
       onSignedIn(session.reader);
     });
+  const verify = () => verifyWith(code);
 
   return (
     <View style={s.signIn}>
@@ -323,7 +324,7 @@ export function SignIn({ onSignedIn, title = 'רוצים להגיב?' }: { onSig
         {step === 'email'
           ? 'נשלח אליכם קוד חד-פעמי למייל. בלי סיסמאות.'
           : step === 'code'
-            ? `שלחנו קוד בן 6 ספרות אל ${email}.`
+            ? `שלחנו קוד בן 6 ספרות אל ${email}. אפשר גם ללחוץ על הקישור במייל, והוא יפתח את האתר.`
             : 'זו הפעם הראשונה שלכם כאן. בחרו שם שיופיע ליד התגובות.'}
       </Text>
       {step === 'email' ? (
@@ -344,7 +345,12 @@ export function SignIn({ onSignedIn, title = 'רוצים להגיב?' }: { onSig
         <>
           <TextInput
             value={code}
-            onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+            onChangeText={(t) => {
+              const next = t.replace(/\D/g, '').slice(0, 6);
+              setCode(next);
+              // Six digits (typed, pasted or filled in from the mail): sign in without another tap.
+              if (next.length === 6 && next !== code && step === 'code' && !busy) void verifyWith(next);
+            }}
             keyboardType="number-pad"
             autoComplete="one-time-code"
             textContentType="oneTimeCode"

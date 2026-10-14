@@ -448,16 +448,21 @@ export function SignIn({
   const requestCode = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      await readerApi.requestCode(email);
+      // The mailed button brings the reader back to this page, signed in.
+      await readerApi.requestCode(email, { acceptTerms: accepted, returnTo: `${window.location.pathname}${window.location.search}` });
       setStep('code');
     });
   };
 
   const verify = (e: FormEvent) => {
     e.preventDefault();
+    verifyWith(code);
+  };
+
+  const verifyWith = (value: string) => {
     void run(async () => {
       try {
-        const session = await readerApi.verify(email, code, { displayName: step === 'name' ? name : undefined, acceptTerms: accepted });
+        const session = await readerApi.verify(email, value, { displayName: step === 'name' ? name : undefined, acceptTerms: accepted });
         onSignedIn(session.reader);
       } catch (err) {
         if (err instanceof ApiFailure && err.code === 'name_required') {
@@ -480,7 +485,7 @@ export function SignIn({
         {step === 'email'
           ? 'נשלח אליכם קוד חד-פעמי למייל. בלי סיסמאות.'
           : step === 'code'
-            ? `שלחנו קוד בן 6 ספרות אל ${email}.`
+            ? `שלחנו מייל אל ${email}: לחצו בו על "התחברות בלחיצה", או הקלידו כאן את הקוד בן 6 הספרות.`
             : 'זו הפעם הראשונה שלכם כאן. בחרו שם שיופיע ליד התגובות.'}
       </p>
 
@@ -522,7 +527,12 @@ export function SignIn({
               required
               dir="ltr"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => {
+                const next = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setCode(next);
+                // Six digits (typed, pasted or filled in from the mail): sign in without another click.
+                if (next.length === 6 && next !== code && step === 'code' && !busy) verifyWith(next);
+              }}
               placeholder="000000"
               className="h-11 w-36 rounded-full border-[1.5px] border-line bg-white px-4 text-center font-mono text-lg tracking-[.3em] focus:border-ink focus:outline-none"
             />

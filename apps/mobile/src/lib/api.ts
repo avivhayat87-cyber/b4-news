@@ -81,7 +81,7 @@ export const api = {
   resolveId: (id: string) => call<{ slug: string }>(`/public/a/${enc(id)}`),
 
   me: async (): Promise<ReaderDto | null> => (await getToken() ? (await call<{ reader: ReaderDto | null }>('/auth/reader/session')).reader : null),
-  requestCode: (email: string) => call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email }) }),
+  requestCode: (email: string, opts: { acceptTerms: boolean }) => call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email, ...opts }) }),
   verify: (email: string, code: string, opts: { displayName?: string; acceptTerms: boolean }) =>
     call<ReaderSession>('/auth/reader/verify', { method: 'POST', body: json({ email, code, ...opts, client: 'app' }) }),
   acceptTerms: (version: string) => call<ReaderDto>('/auth/reader/terms', { method: 'POST', body: json({ version, accept: true }) }),

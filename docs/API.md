@@ -36,8 +36,9 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | POST | `/articles/:id/comments` | `CreateCommentInput`; reader session; automatic filter; 5/min, 50/day; 409 `terms_required` after a new terms version |
 | DELETE | `/comments/:id` | own comment |
 | POST | `/comments/:id/report` | `ReportCommentInput`; 3 reports hide the comment |
-| POST | `/auth/reader/request-code` | always 204 (no account enumeration) |
+| POST | `/auth/reader/request-code` | `RequestCodeInput` (`email`, `acceptTerms?`, `returnTo?` a path on the site) → always 204 (no account enumeration). The mail has the code and a one-click link, `<site>/signin#t=<token>` |
 | POST | `/auth/reader/verify` | `VerifyCodeInput` → `ReaderSession` (cookie for web, token for the app); 409 `name_required` on first sign-in, 409 `terms_required` without `acceptTerms` (new readers, or a new terms version) |
+| POST | `/auth/reader/verify-link` | `VerifyLinkInput` (the token from the link's `#`, `displayName?`, `acceptTerms?`) → `ReaderLinkSession` with `returnTo`, and the session cookie; the same 409s as `verify`; 400 `link_invalid`. Single use, and it uses up the code too |
 | GET | `/auth/reader/session` | `{ reader \| null }`; `reader.termsAccepted` is false after a new terms version |
 | GET/PATCH | `/auth/reader/me` | profile |
 | POST | `/auth/reader/terms` | `AcceptTermsInput` → `ReaderDto`; 409 `terms_changed` for an old version |

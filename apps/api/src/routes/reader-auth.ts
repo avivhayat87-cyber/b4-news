@@ -1,17 +1,18 @@
-// Reader sign-in by one-time email code: /api/v1/auth/reader/*
-// No passwords to leak; codes are hashed, short-lived, single-use and attempt-limited.
-// Signing up (and signing in after a new terms version) requires accepting the terms,
-// and readers can delete their account themselves.
-import { AcceptTermsInput, ReaderDto, ReaderSession, RequestCodeInput, UpdateReaderInput, VerifyCodeInput } from '@b4/shared';
+// Reader sign-in by one-time email code, or by the one-click link in the same mail:
+// /api/v1/auth/reader/*. No passwords to leak; codes and link tokens are hashed,
+// short-lived, single-use and attempt-limited. Signing up (and signing in after a new
+// terms version) requires accepting the terms, and readers can delete their account themselves.
+import { AcceptTermsInput, ReaderDto, ReaderLinkSession, ReaderSession, RequestCodeInput, UpdateReaderInput, VerifyCodeInput, VerifyLinkInput } from '@b4/shared';
 import { and, desc, eq, gt, isNull, loginCodes, readers, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { AppError, errors } from '../errors';
 import { audit } from '../lib/audit';
-import { keyedHash, newSixDigitCode, safeEqualHex } from '../lib/crypto';
+import { keyedHash, newSixDigitCode, newToken, safeEqualHex } from '../lib/crypto';
 import { clearSessionCookie, createSession, destroySession, requireReader, setSessionCookie } from '../plugins/auth';
 import { recordConsent } from '../services/consent';
 import type { Services } from '../services/context';
+import { completeSignIn, readerDto as dto, signInMail } from '../services/reader-signin';
 import { legalVersion } from '../services/site-settings';
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -19,17 +20,12 @@ const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_EMAIL_15_MIN = 3;
 
 const invalidCode = () => new AppError(400, 'code_invalid', 'הקוד שגוי או שפג תוקפו. אפשר לבקש קוד חדש.');
-
-const dto = (r: { id: string; email: string; displayName: string; termsVersion: string | null }, version: string): ReaderDto => ({
-  id: r.id,
-  email: r.email,
-  displayName: r.displayName,
-  termsAccepted: r.termsVersion === version,
-});
+const invalidLink = () => new AppError(400, 'link_invalid', 'הקישור כבר שומש או שפג תוקפו. אפשר לבקש קוד חדש.');
 
 export const readerAuthRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
   const { db, config, mailer } = s;
   const codeHash = (email: string, code: string) => keyedHash(config.hashPepper, 'login-code', email, code);
+  const linkHash = (token: string) => keyedHash(config.hashPepper, 'login-link', token);
 
   app.post(
     '/request-code',
@@ -46,19 +42,50 @@ export const readerAuthRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (a
       if ((recent?.n ?? 0) >= MAX_CODES_PER_EMAIL_15_MIN) throw errors.rateLimited();
 
       const code = newSixDigitCode();
+      const token = newToken();
       await db.insert(loginCodes).values({
         email,
         codeHash: codeHash(email, code),
+        linkTokenHash: linkHash(token),
+        termsAccepted: req.body.acceptTerms === true,
+        returnTo: req.body.returnTo ?? null,
         expiresAt: new Date(Date.now() + CODE_TTL_MS),
         ipHash: keyedHash(config.hashPepper, 'ip', req.ip),
       });
-      await mailer.send({
-        to: email,
-        subject: `הקוד שלך ל-B4 NEW'S: ${code}`,
-        text: `הקוד להתחברות הוא ${code}\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת להתחבר, אפשר להתעלם מההודעה.`,
-      });
+      // The token travels after "#", so it never reaches a server log or a mail scanner's request.
+      await mailer.send(signInMail(email, code, `${config.publicSiteUrl}/signin#t=${token}`));
       // Same answer whether or not the address is registered.
       return reply.status(204).send();
+    },
+  );
+
+  /** "התחברות בלחיצה": the site's /signin page sends the token from the link (web only: it sets the cookie). */
+  app.post(
+    '/verify-link',
+    {
+      schema: { body: VerifyLinkInput, response: { 200: ReaderLinkSession } },
+      config: { rateLimit: { max: 20, timeWindow: '15 minutes' } },
+    },
+    async (req, reply) => {
+      const [pending] = await db
+        .select()
+        .from(loginCodes)
+        .where(and(eq(loginCodes.linkTokenHash, linkHash(req.body.token)), isNull(loginCodes.consumedAt), gt(loginCodes.expiresAt, sql`now()`)))
+        .limit(1);
+      if (!pending || pending.attempts >= MAX_ATTEMPTS) throw invalidLink();
+      const { readerId, reader } = await completeSignIn(s, {
+        email: pending.email,
+        displayName: req.body.displayName,
+        acceptTerms: req.body.acceptTerms === true || pending.termsAccepted,
+        channel: 'web',
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        consume: () => db.update(loginCodes).set({ consumedAt: new Date() }).where(eq(loginCodes.id, pending.id)),
+      });
+      const session = await createSession(db, { kind: 'reader', readerId }, req.headers['user-agent']);
+      reply.header('cache-control', 'no-store');
+      setSessionCookie(reply, config, 'reader', session.token, session.expiresAt);
+      return { reader, returnTo: pending.returnTo };
     },
   );
 
@@ -87,40 +114,17 @@ export const readerAuthRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (a
         throw invalidCode();
       }
 
-      let [reader] = await db.select().from(readers).where(eq(readers.email, email)).limit(1);
-      if (!reader && !displayName) {
-        // Code is right but this is a first sign-in: ask for a display name, keep the code valid.
-        throw new AppError(409, 'name_required', 'נשאר רק לבחור שם שיופיע ליד התגובות שלך');
-      }
-      // New readers, and readers who accepted an older version, accept the current terms.
-      const version = await legalVersion(s);
-      const accepting = !reader || reader.termsVersion !== version;
-      if (accepting && !acceptTerms) throw errors.termsRequired();
-      await db.update(loginCodes).set({ consumedAt: new Date() }).where(eq(loginCodes.id, pending.id));
+      const { readerId, reader: out } = await completeSignIn(s, {
+        email,
+        displayName,
+        acceptTerms: acceptTerms === true,
+        channel: client,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        consume: () => db.update(loginCodes).set({ consumedAt: new Date() }).where(eq(loginCodes.id, pending.id)),
+      });
 
-      if (!reader) {
-        [reader] = await db.insert(readers).values({ email, displayName: displayName! }).returning();
-      }
-      if (!reader) throw new Error('reader insert failed');
-      if (reader.status === 'banned') throw errors.banned();
-      const now = new Date();
-      await db
-        .update(readers)
-        .set({ lastLoginAt: now, ...(accepting ? { termsVersion: version, termsAcceptedAt: now } : {}) })
-        .where(eq(readers.id, reader.id));
-      if (accepting) {
-        await recordConsent(db, config.hashPepper, {
-          subject: 'reader',
-          readerId: reader.id,
-          termsVersion: version,
-          channel: client,
-          ip: req.ip,
-          userAgent: req.headers['user-agent'],
-        });
-      }
-
-      const session = await createSession(db, { kind: 'reader', readerId: reader.id }, req.headers['user-agent']);
-      const out = dto({ ...reader, termsVersion: accepting ? version : reader.termsVersion }, version);
+      const session = await createSession(db, { kind: 'reader', readerId }, req.headers['user-agent']);
       reply.header('cache-control', 'no-store');
       if (client === 'app') return { reader: out, token: session.token };
       setSessionCookie(reply, config, 'reader', session.token, session.expiresAt);
