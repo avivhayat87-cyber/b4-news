@@ -148,14 +148,33 @@ change it after signing in. Then, in the live CMS:
 
 `node` and `git` must be on the PATH.
 
-## Moving to real hosting
+## The cloud server
 
-The same flow carries over:
+The live environment moves from this computer to one Google Cloud server in Tel Aviv
+(`deploy/cloud/README.md` has the steps and the picture). The flow above stays exactly the same:
+the server runs the same `scripts/live.mjs`, and its `live.env` says where things are:
 
-- The checks run in CI.
-- The rehearsal becomes a staging server with a copy of production.
-- The switch-over becomes a deploy with a health check.
-- Production data goes to managed PostgreSQL with point-in-time backups, and media to object
-  storage with versioning.
+|                | On a computer                    | On the cloud server                                              |
+| -------------- | -------------------------------- | ---------------------------------------------------------------- |
+| Database       | embedded, `data/db`              | PostgreSQL 17 on the server (`DATABASE_URL`)                     |
+| The rehearsal  | a copy of `data/db`              | a copy in the database `<name>_staging` (pg_dump / pg_restore)   |
+| Media          | `data/media`                     | the R2 bucket `b4-media` (`MEDIA_STORAGE=r2`); the rehearsal never writes there |
+| Addresses      | localhost ports                  | `PUBLIC_SITE_URL`, `CMS_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL` |
+| Backups        | copies of `data/`                | `db.dump` per backup, also in the R2 bucket `b4-backups`; a nightly timer, and a disk snapshot every night |
+| Starts after a restart | `start-live.cmd`         | systemd (`b4-live`), with a watchdog every 3 minutes             |
+| Images, reels  | the Gemini key in the CMS        | Vertex AI (`VERTEX_PROJECT`), billed to the Google Cloud account |
 
-The rules above stay exactly the same.
+From the workshop computer, `npm run cloud -- release` sends the committed version to the server
+(a git bundle: the server needs no access to GitHub) and runs the release there; `status`, `logs`,
+`backup` and `rollback` work the same way. The server has no open ports: commands go through
+Google's IAP tunnel with the owner's Google sign-in, and readers come through the Cloudflare tunnel.
+
+**Moving the data, once:** `npm run cloud -- move-data` exports this computer's live database as
+SQL (`live.mjs export-for-cloud`), loads it into the server's empty PostgreSQL, uploads the media
+to the bucket, and adds the secrets (`HASH_PEPPER`, `SECRETS_KEY`, `REVALIDATE_SECRET`) the stored
+keys depend on. The computer's live site keeps running until the domain points at the server.
+
+**Secrets on the server** are typed by the owner (`npm run cloud -- set <NAME>`, `tunnel`) and
+are never shown to anyone else. `live.mjs` refuses to start an existing environment whose
+`live.env` lacks one of the three secrets above, rather than making new ones that would lock the
+stored keys away.

@@ -15,16 +15,58 @@
 //                                                          makes a copy of the live data safe for the workshop
 //                                                          (no personal details, keys or queued work), with the
 //                                                          workshop's own keys and staff sign-ins put back
+//
+// Moving to the cloud (the bucket settings come from the environment, as for the API):
+//   tsx src/cli/live-db.ts export-sql <pglite-url> <out.sql>    the embedded database as SQL for PostgreSQL
+//   tsx src/cli/live-db.ts upload-media <media-dir>             the media files into the R2 bucket (MEDIA_STORAGE=r2)
+//   tsx src/cli/live-db.ts upload-backup <file> <key>           one backup file into R2_BACKUP_BUCKET
+// A <media-dir> of "r2" (export/import-articles) means the bucket instead of a folder.
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { SelectorConfig } from '@b4/shared';
 import { type Db, createDb, seedReferenceData, sources, sql, users } from '@b4/db';
 import { z } from 'zod';
+import { loadConfig } from '../config';
 import { hashPassword } from '../lib/password';
-import { LocalStorage } from '../lib/storage';
+import { BucketStorage, LocalStorage, type MediaStorage, putObject } from '../lib/storage';
 import { exportArticles, importArticles } from '../services/article-transfer';
+import { dumpPglite, uploadMediaDir } from '../services/data-move';
 import { leftovers, prepareWorkshopCopy } from '../services/workshop-copy';
+
+/** The media bucket configured in the environment, or a local folder. */
+function mediaStorage(dir: string): MediaStorage {
+  if (dir !== 'r2') return new LocalStorage(dir, '');
+  const config = loadConfig(process.env);
+  if (!config.mediaBucket) throw new Error('"r2" needs MEDIA_STORAGE=r2 and the R2_* settings in the environment');
+  return new BucketStorage(config.mediaBucket, config.mediaBaseUrl);
+}
+
+/** The commands that don't open a database. */
+async function fileCommand(command: string, a?: string, b?: string): Promise<boolean> {
+  if (command === 'export-sql') {
+    if (!a?.startsWith('pglite:') || !b) throw new Error('usage: live-db.ts export-sql <pglite-url> <out.sql>');
+    const size = await dumpPglite(a.slice('pglite:'.length), b);
+    console.log(`Wrote ${b} (${Math.round(size / 1024)} KB).`);
+    return true;
+  }
+  if (command === 'upload-media') {
+    if (!a) throw new Error('usage: live-db.ts upload-media <media-dir>');
+    const { uploaded, skipped } = await uploadMediaDir(mediaStorage('r2'), a);
+    console.log(JSON.stringify({ uploaded, skipped: skipped.length }));
+    for (const s of skipped.slice(0, 20)) console.log(`not a media file, left out: ${s}`);
+    return true;
+  }
+  if (command === 'upload-backup') {
+    if (!a || !b) throw new Error('usage: live-db.ts upload-backup <file> <key>');
+    const { backupBucket } = loadConfig(process.env);
+    if (!backupBucket) throw new Error('upload-backup needs R2_BACKUP_BUCKET and the R2_* settings in the environment');
+    await putObject(backupBucket, b, readFileSync(a), 'application/octet-stream');
+    console.log(`Uploaded ${path.basename(a)} to ${backupBucket.bucket}/${b}.`);
+    return true;
+  }
+  return false;
+}
 
 const ImportedSource = z.object({
   name: z.string().trim().min(1).max(80),
@@ -71,6 +113,7 @@ export async function countRows(db: Db): Promise<Record<string, number>> {
 
 async function main() {
   const [command, url, dir, bundle] = process.argv.slice(2);
+  if (command && (await fileCommand(command, url, dir))) return;
   if (!command || !url) throw new Error('usage: live-db.ts counts|migrate|init <database-url> [<dir>]');
   const handle = createDb(url);
   try {
@@ -142,7 +185,7 @@ async function main() {
     if (command === 'export-articles' || command === 'import-articles') {
       if (!dir || !bundle) throw new Error(`usage: live-db.ts ${command} <database-url> <media-dir> <bundle-dir>`);
       // Only files are written here; nothing needs the media's public address.
-      const storage = new LocalStorage(dir, '');
+      const storage = mediaStorage(dir);
       if (command === 'export-articles') {
         console.log(`Exported ${await exportArticles(handle.db, storage, bundle)} articles to ${bundle}.`);
         return;

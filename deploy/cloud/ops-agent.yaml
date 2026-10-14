@@ -1,0 +1,13 @@
+# Google Ops Agent: the live environment's logs go to Cloud Logging (next to the system logs
+# and the server metrics the agent sends by default), where alerts and Error Reporting read them.
+logging:
+  receivers:
+    b4_live:
+      type: files
+      include_paths:
+        - /srv/b4/live/logs/live-*.log
+        - /srv/b4/live/logs/release-*.log
+  service:
+    pipelines:
+      b4_live:
+        receivers: [b4_live]

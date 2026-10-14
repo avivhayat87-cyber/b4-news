@@ -25,7 +25,8 @@
     "db:check": "npm run check -w @b4/db",
     "check": "npm run typecheck -w @b4/shared -w @b4/db -w @b4/api -w @b4/web -w @b4/admin && npm test -w @b4/shared -w @b4/api --if-present && npm run db:check",
     "live": "node scripts/live.mjs",
-    "release": "node scripts/live.mjs release"
+    "release": "node scripts/live.mjs release",
+    "cloud": "node scripts/cloud.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

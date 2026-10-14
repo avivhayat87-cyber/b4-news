@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "^0.133.0",
     "@b4/db": "*",
     "@b4/shared": "*",
+    "@electric-sql/pglite-tools": "^0.2.21",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.1",
     "@fastify/helmet": "^13.0.1",

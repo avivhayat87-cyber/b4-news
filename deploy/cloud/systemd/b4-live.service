@@ -1,0 +1,21 @@
+# The live environment (site, CMS, API) starts with the server. scripts/live.mjs starts the
+# three processes and returns; KillMode=process leaves them running after it does.
+[Unit]
+Description=B4 NEWS live environment
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=b4
+Environment=B4_LIVE_HOME=/srv/b4/live
+WorkingDirectory=/srv/b4/repo
+ExecStart=/usr/bin/node /srv/b4/repo/scripts/live.mjs start
+ExecStop=/usr/bin/node /srv/b4/repo/scripts/live.mjs stop
+KillMode=process
+TimeoutStartSec=600
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

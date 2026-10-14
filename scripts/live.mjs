@@ -9,17 +9,23 @@
 //   npm run live -- status              what runs, which version, last backups
 //   npm run live -- start | stop | restart
 //   npm run live -- rollback            back to the previous version (the data stays as it is)
-//   npm run live -- backup              copy the database and media now
+//   npm run live -- backup [label]      copy the database and media now (and outside the server, when set up)
 //   npm run live -- restore [backup]    put a backup back (the current data is kept aside, not deleted)
 //   npm run live -- import-sources <file.json>   add news sites tested in the workshop
 //   npm run live -- import-articles <dir>        add the workshop's articles (a bundle from live-db.ts export-articles)
 //   npm run live -- copy-to-workshop             give the workshop a safe copy of the live data (stop npm run dev first)
+//   npm run live -- export-for-cloud <dir>       this computer's live data, ready for the cloud server (scripts/cloud.mjs)
 //   npm run live -- logs [api|web|cms]
 //
 // Everything lives in ../b4-news-live (or $B4_LIVE_HOME):
 //   live.env      secrets, created once      data/db, data/media   the real data
 //   releases/<id> installed versions         backups/<stamp>-...     copies of data/
 //   staging/      throwaway copy for rehearsals   logs/   run/
+//
+// On the cloud server (docs/WORKFLOW.md, deploy/cloud) live.env also sets where things are:
+// DATABASE_URL=postgres://… (instead of data/db; the rehearsal uses "<name>_staging" on the same
+// server), MEDIA_STORAGE=r2 with the R2_* settings (instead of data/media), and the public
+// addresses PUBLIC_SITE_URL, PUBLIC_API_URL, CMS_URL and MEDIA_BASE_URL (instead of localhost).
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -103,26 +109,69 @@ function readEnvFile() {
 
 /** The live secrets are made once and must never change: SECRETS_KEY decrypts the API keys stored in the CMS. */
 function secrets() {
-  if (!fs.existsSync(FILE.env)) {
-    fs.mkdirSync(HOME, { recursive: true });
-    fs.writeFileSync(
-      FILE.env,
-      [
-        '# Secrets of the live environment. Made once by scripts/live.mjs; keep this file private.',
-        '# Never change SECRETS_KEY (it decrypts the API keys saved in the CMS) or HASH_PEPPER.',
-        `HASH_PEPPER=${randomBytes(24).toString('base64url')}`,
-        `SECRETS_KEY=${randomBytes(32).toString('base64')}`,
-        `REVALIDATE_SECRET=${randomBytes(24).toString('base64url')}`,
-        '# Optional fallbacks; what is saved in the CMS (Settings > Connections) wins:',
-        '# SMTP_URL=  ANTHROPIC_API_KEY=  GEMINI_API_KEY=',
-        '',
-      ].join('\n'),
-      { mode: 0o600 },
-    );
-    say(`Created ${FILE.env} with new secrets.`);
+  if (fs.existsSync(FILE.env)) {
+    const keys = readEnvFile();
+    // Never made up here for an existing environment: new ones would lock away the keys saved in the CMS.
+    const missing = ['HASH_PEPPER', 'SECRETS_KEY', 'REVALIDATE_SECRET'].filter((k) => !keys[k]);
+    if (missing.length) fail(`${FILE.env} is missing ${missing.join(', ')}. Copy them from the environment this data came from (npm run cloud -- move-data does it).`);
+    return keys;
   }
+  fs.mkdirSync(HOME, { recursive: true });
+  fs.writeFileSync(
+    FILE.env,
+    [
+      '# Secrets of the live environment. Made once by scripts/live.mjs; keep this file private.',
+      '# Never change SECRETS_KEY (it decrypts the API keys saved in the CMS) or HASH_PEPPER.',
+      `HASH_PEPPER=${randomBytes(24).toString('base64url')}`,
+      `SECRETS_KEY=${randomBytes(32).toString('base64')}`,
+      `REVALIDATE_SECRET=${randomBytes(24).toString('base64url')}`,
+      '# Optional fallbacks; what is saved in the CMS (Settings > Connections) wins:',
+      '# SMTP_URL=  ANTHROPIC_API_KEY=  GEMINI_API_KEY=',
+      '',
+    ].join('\n'),
+    { mode: 0o600 },
+  );
+  say(`Created ${FILE.env} with new secrets.`);
   return readEnvFile();
 }
+
+// --- Where the data and the site live ---------------------------------------------------------
+/**
+ * The live database: the embedded one in data/db (a computer), or PostgreSQL when live.env sets
+ * DATABASE_URL=postgres://… (the cloud server), where the rehearsal gets "<name>_staging".
+ */
+function database(keys) {
+  const url = keys.DATABASE_URL;
+  if (!url || !/^postgres(ql)?:\/\//.test(url)) return { kind: 'pglite', live: `pglite:${path.join(DIR.data, 'db')}`, staging: `pglite:${path.join(DIR.staging, 'db')}` };
+  const name = new URL(url).pathname.slice(1);
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) fail(`The database name in DATABASE_URL ("${name}") must be lowercase letters, digits and _.`);
+  const at = (db) => Object.assign(new URL(url), { pathname: `/${db}` }).toString();
+  return { kind: 'postgres', name, stagingName: `${name}_staging`, live: url, staging: at(`${name}_staging`), admin: at('postgres') };
+}
+
+/** Media files in the R2 bucket (the cloud) rather than data/media. The rehearsal never writes there. */
+const mediaInBucket = (keys) => keys.MEDIA_STORAGE === 'r2';
+
+/** The addresses readers and editors use: from live.env on the cloud server, the live ports on a computer. */
+function publicUrls(keys) {
+  const trim = (u) => u.replace(/\/+$/, '');
+  return {
+    site: trim(keys.PUBLIC_SITE_URL ?? `http://localhost:${PORTS.live.web}`),
+    api: trim(keys.PUBLIC_API_URL ?? `http://localhost:${PORTS.live.api}`),
+    cms: trim(keys.CMS_URL ?? `http://localhost:${PORTS.live.cms}`),
+    media: trim(keys.MEDIA_BASE_URL ?? `http://localhost:${PORTS.live.api}/media`),
+  };
+}
+
+// PostgreSQL chores, with the client tools on the server.
+const psql = (url, query, label) => run('psql', ['--dbname', url, '-v', 'ON_ERROR_STOP=1', '-tAc', query], { env: baseEnv(), label });
+function recreateDatabase(db, name) {
+  psql(db.admin, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`, `emptying ${name}`);
+  psql(db.admin, `CREATE DATABASE "${name}"`, `creating ${name}`);
+}
+const dumpDatabase = (url, file) => run('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', '--file', file, '--dbname', url], { env: baseEnv(), label: 'database backup' });
+const restoreDatabase = (url, file) => run('pg_restore', ['--no-owner', '--no-privileges', '--exit-on-error', '--dbname', url, file], { env: baseEnv(), label: 'restoring the database' });
+const liveHasData = (db) => (db.kind === 'pglite' ? fs.existsSync(path.join(DIR.data, 'db')) : psql(db.live, "select to_regclass('public.articles') is not null", 'checking the live database').trim() === 't');
 
 function readState() {
   try {
@@ -179,22 +228,28 @@ async function get(url, timeoutMs = 20_000) {
 const healthy = (port) => get(`http://127.0.0.1:${port}/health`, 3000).then((r) => r.status === 200, () => false);
 const answering = (port) => get(`http://127.0.0.1:${port}/`, 5000).then(() => true, () => false);
 
-/** The rehearsal never runs background work (scans, AI, publishing, posts) and shows the live media addresses. */
+/**
+ * The rehearsal never runs background work (scans, AI, publishing, posts), keeps its files to itself
+ * (never the bucket) and shows the live media addresses.
+ */
 function apiEnv(which, keys, token) {
   const p = PORTS[which];
-  const base = which === 'live' ? DIR.data : DIR.staging;
+  const live = which === 'live';
+  const urls = publicUrls(keys);
+  const db = database(keys);
   return {
     ...baseEnv(),
     ...keys,
     NODE_ENV: 'production',
     HOST: '127.0.0.1',
     PORT: String(p.api),
-    DATABASE_URL: `pglite:${path.join(base, 'db')}`,
-    MEDIA_DIR: path.join(base, 'media'),
-    PUBLIC_API_URL: `http://localhost:${p.api}`,
-    MEDIA_BASE_URL: `http://localhost:${PORTS.live.api}/media`,
-    PUBLIC_SITE_URL: `http://localhost:${p.web}`,
-    CORS_ORIGINS: `http://localhost:${p.web},http://localhost:${p.cms}`,
+    DATABASE_URL: live ? db.live : db.staging,
+    MEDIA_STORAGE: live && mediaInBucket(keys) ? 'r2' : 'local',
+    MEDIA_DIR: path.join(live ? DIR.data : DIR.staging, 'media'),
+    PUBLIC_API_URL: live ? urls.api : `http://localhost:${p.api}`,
+    MEDIA_BASE_URL: urls.media,
+    PUBLIC_SITE_URL: live ? urls.site : `http://localhost:${p.web}`,
+    CORS_ORIGINS: live ? `${urls.site},${urls.cms}` : `http://localhost:${p.web},http://localhost:${p.cms}`,
     SITE_REVALIDATE_URL: `http://127.0.0.1:${p.web}/api/revalidate`,
     SEED_SAMPLE_CONTENT: 'false',
     DEV_FIXTURES: 'false',
@@ -204,13 +259,15 @@ function apiEnv(which, keys, token) {
   };
 }
 
-/** Browser-facing addresses are baked in at build time and always point at the live ports. */
+/** Browser-facing addresses are baked in at build time and always point at the live site. */
 function buildEnv(app, keys) {
+  const urls = publicUrls(keys);
   const env = {
     ...baseEnv(),
     NEXT_TELEMETRY_DISABLED: '1',
-    NEXT_PUBLIC_API_URL: `http://localhost:${PORTS.live.api}/api/v1`,
-    NEXT_PUBLIC_SITE_URL: `http://localhost:${PORTS.live.web}`,
+    NEXT_PUBLIC_API_URL: `${urls.api}/api/v1`,
+    NEXT_PUBLIC_SITE_URL: urls.site,
+    NEXT_PUBLIC_MEDIA_URL: urls.media,
   };
   // The site's pages are first rendered from the rehearsal, which holds a copy of the live data.
   if (app === 'web') Object.assign(env, { API_URL: `http://127.0.0.1:${PORTS.staging.api}/api/v1`, REVALIDATE_SECRET: keys.REVALIDATE_SECRET });
@@ -352,8 +409,9 @@ async function reviveLive(keys) {
   await startAll(R, 'live', keys).catch((e) => say(`Could not start it: ${e.message}. Run "npm run live -- start".`));
 }
 
-/** A double-click starter in the live folder, e.g. after the computer restarts. */
+/** A double-click starter in the live folder, e.g. after the computer restarts (on a server, systemd starts it). */
 function writeLauncher() {
+  if (process.platform !== 'win32') return;
   const file = path.join(HOME, 'start-live.cmd');
   fs.writeFileSync(
     file,
@@ -401,8 +459,12 @@ function prune(dir, keep, protect = []) {
   for (const name of entries.slice(keep)) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
 }
 
-/** A consistent copy of the live data: the API is stopped for the few seconds it takes, then started again. */
+/**
+ * A consistent copy of the live data: the embedded database can be open in one place only, so the API
+ * is stopped for the few seconds it takes. PostgreSQL copies (and takes imports) while it runs.
+ */
 async function withLiveApiStopped(keys, fn) {
+  if (database(keys).kind === 'postgres') return fn();
   const state = readState();
   const R = releaseDir(state.current);
   const wasRunning = R && fs.existsSync(R) && (await healthy(PORTS.live.api));
@@ -417,17 +479,44 @@ async function withLiveApiStopped(keys, fn) {
   }
 }
 
-function backupNow(label) {
+/** The database (a folder, or a PostgreSQL dump) and the media folder. Media in the bucket stays there. */
+function copyLiveData(keys, dir) {
+  const db = database(keys);
+  fs.mkdirSync(dir, { recursive: true });
+  if (db.kind === 'postgres') dumpDatabase(db.live, path.join(dir, 'db.dump'));
+  else copyDir(path.join(DIR.data, 'db'), path.join(dir, 'db'));
+  if (!mediaInBucket(keys)) copyDir(path.join(DIR.data, 'media'), path.join(dir, 'media'));
+}
+
+const isBackup = (dir) => fs.existsSync(path.join(dir, 'db')) || fs.existsSync(path.join(dir, 'db.dump'));
+
+function backupNow(label, keys) {
   const dir = path.join(DIR.backups, `${stamp()}-${label}`);
-  copyDir(path.join(DIR.data, 'db'), path.join(dir, 'db'));
-  copyDir(path.join(DIR.data, 'media'), path.join(dir, 'media'));
+  copyLiveData(keys, dir);
   prune(DIR.backups, KEEP_BACKUPS);
   return dir;
 }
 
-function putBack(backupDir) {
-  copyDir(path.join(backupDir, 'db'), path.join(DIR.data, 'db'));
-  copyDir(path.join(backupDir, 'media'), path.join(DIR.data, 'media'));
+/** Puts a backup back over the live data (the live API is stopped). */
+function putBack(backupDir, keys) {
+  const db = database(keys);
+  if (db.kind === 'postgres') {
+    recreateDatabase(db, db.name);
+    restoreDatabase(db.live, path.join(backupDir, 'db.dump'));
+  } else copyDir(path.join(backupDir, 'db'), path.join(DIR.data, 'db'));
+  if (!mediaInBucket(keys)) copyDir(path.join(backupDir, 'media'), path.join(DIR.data, 'media'));
+}
+
+/** A copy outside the server (R2_BACKUP_BUCKET), when one is set; a failure here is reported, not fatal. */
+function offsite(R, backupDir, keys) {
+  const dump = path.join(backupDir, 'db.dump');
+  if (!keys.R2_BACKUP_BUCKET || !fs.existsSync(dump)) return;
+  try {
+    tsx(R, ['src/cli/live-db.ts', 'upload-backup', dump, `db/${path.basename(backupDir)}.dump`], { cwd: path.join(R, 'apps', 'api'), env: { ...baseEnv(), ...keys }, label: 'copy outside the server' });
+    say(`   also outside the server: ${keys.R2_BACKUP_BUCKET}/db/${path.basename(backupDir)}.dump`);
+  } catch (e) {
+    say(`Warning: the backup was not copied outside the server: ${e.message}`);
+  }
 }
 
 // --- Release ----------------------------------------------------------------------------
@@ -441,12 +530,13 @@ async function release(ref = 'HEAD') {
   const R = path.join(DIR.releases, id);
   const state = readState();
   const previous = state.current;
-  const firstTime = !fs.existsSync(path.join(DIR.data, 'db'));
   releaseLog = path.join(DIR.logs, `release-${id}.log`);
   let switched = false;
 
   try {
     say(`Release ${id}: ${subject}`);
+    const db = database(keys);
+    const firstTime = !liveHasData(db);
     const pending = git(['status', '--porcelain']).trim();
     if (pending) say(`   ${pending.split('\n').length} uncommitted changes in the workshop are not part of it: only committed work goes live.`);
 
@@ -472,12 +562,18 @@ async function release(ref = 'HEAD') {
     say(firstTime ? '3/7 Rehearsal on a new database...' : '3/7 Rehearsal on a copy of the live data...');
     fs.rmSync(DIR.staging, { recursive: true, force: true });
     fs.mkdirSync(path.join(DIR.staging, 'media'), { recursive: true });
-    const stagingDb = `pglite:${path.join(DIR.staging, 'db')}`;
+    const stagingDb = db.staging;
     const apiDir = path.join(R, 'apps', 'api');
     if (firstTime) {
+      if (db.kind === 'postgres') recreateDatabase(db, db.stagingName);
       tsx(R, ['src/cli/live-db.ts', 'init', stagingDb], { cwd: apiDir, env: baseEnv(), label: 'new database' });
     } else {
-      await withLiveApiStopped(keys, () => copyDir(path.join(DIR.data, 'db'), path.join(DIR.staging, 'db')));
+      if (db.kind === 'postgres') {
+        const dump = path.join(DIR.staging, 'live.dump');
+        dumpDatabase(db.live, dump);
+        recreateDatabase(db, db.stagingName);
+        restoreDatabase(db.staging, dump);
+      } else await withLiveApiStopped(keys, () => copyDir(path.join(DIR.data, 'db'), path.join(DIR.staging, 'db')));
       const out = tsx(R, ['src/cli/live-db.ts', 'migrate', stagingDb], { cwd: apiDir, env: baseEnv(), label: 'database changes on the copy' });
       const counts = JSON.parse(out.trim().split(/\r?\n/).find((l) => l.startsWith('{')) ?? '{}');
       say(`   data kept: ${Object.entries(counts.after ?? {}).map(([t, n]) => `${t} ${n}`).join(', ')}`);
@@ -500,10 +596,13 @@ async function release(ref = 'HEAD') {
     say('6/7 Switching over: stop, back up, start the new version...');
     if (previous) await stopAll('live');
     switched = true;
-    const backup = firstTime ? null : backupNow(`before-${id}`);
-    if (backup) say(`   backup: ${backup}`);
+    const backup = firstTime ? null : backupNow(`before-${id}`, keys);
+    if (backup) {
+      say(`   backup: ${backup}`);
+      offsite(R, backup, keys);
+    }
     if (firstTime) {
-      const out = tsx(R, ['src/cli/live-db.ts', 'init', `pglite:${path.join(DIR.data, 'db')}`, HOME], { cwd: apiDir, env: baseEnv(), label: 'new live database' });
+      const out = tsx(R, ['src/cli/live-db.ts', 'init', db.live, HOME], { cwd: apiDir, env: baseEnv(), label: 'new live database' });
       fs.mkdirSync(path.join(DIR.data, 'media'), { recursive: true });
       say(`   ${tail(out, 2).split('\n')[0]}`);
     }
@@ -515,7 +614,7 @@ async function release(ref = 'HEAD') {
     } catch (e) {
       say(`${e.message}\nRolling back...`);
       await stopAll('live').catch(() => {});
-      if (backup) putBack(backup);
+      if (backup) putBack(backup, keys);
       if (previous && fs.existsSync(releaseDir(previous))) {
         await startAll(releaseDir(previous), 'live', keys);
         fail(`Release ${id} was rolled back: the live site runs ${previous.id} on the data from before, as it was.`);
@@ -531,7 +630,7 @@ async function release(ref = 'HEAD') {
     prune(DIR.releases, KEEP_RELEASES, [id, previous?.id].filter(Boolean));
     writeLauncher();
     say(`Done: the live site runs ${id}.`);
-    say(`   site http://localhost:${PORTS.live.web}  |  CMS http://localhost:${PORTS.live.cms}`);
+    say(`   site ${publicUrls(keys).site}  |  CMS ${publicUrls(keys).cms}`);
     if (firstTime) say(`   first admin sign-in: ${path.join(HOME, 'admin.txt')}`);
   } catch (e) {
     // A version that never went live is removed; its log stays.
@@ -552,14 +651,19 @@ function requireCurrent() {
   return state;
 }
 
+const allUp = async () => (await healthy(PORTS.live.api)) && (await answering(PORTS.live.web)) && (await answering(PORTS.live.cms));
+
+/** Also the server's watchdog (every few minutes): it does nothing while everything answers or a release runs. */
 async function start() {
   const state = requireCurrent();
-  if (await healthy(PORTS.live.api)) return say('The live environment is already running.');
+  if (fs.existsSync(FILE.lock) && alive(Number(fs.readFileSync(FILE.lock, 'utf8')))) return say('A release is running; leaving the live environment to it.');
+  if (await allUp()) return say('The live environment is already running.');
   // Whatever is left of a half-running environment (e.g. the API stopped but not the site) goes first.
+  const keys = secrets();
   await stopAll('live');
-  await startAll(releaseDir(state.current), 'live', secrets());
+  await startAll(releaseDir(state.current), 'live', keys);
   writeLauncher();
-  say(`Running ${state.current.id}: site http://localhost:${PORTS.live.web} | CMS http://localhost:${PORTS.live.cms}`);
+  say(`Running ${state.current.id}: site ${publicUrls(keys).site} | CMS ${publicUrls(keys).cms}`);
 }
 
 async function status() {
@@ -573,7 +677,13 @@ async function status() {
     const up = name === 'api' ? await healthy(port) : await answering(port);
     console.log(`  ${name.padEnd(4)} http://localhost:${port}  ${up ? 'running' : 'stopped'}`);
   }
-  if (!(await healthy(PORTS.live.api))) console.log(`Start it with: npm run live -- start  (or double-click ${path.join(HOME, 'start-live.cmd')})`);
+  if (fs.existsSync(FILE.env)) {
+    const urls = publicUrls(readEnvFile());
+    console.log(`Readers: ${urls.site}  |  CMS: ${urls.cms}`);
+  }
+  if (!(await healthy(PORTS.live.api))) {
+    console.log(`Start it with: npm run live -- start${process.platform === 'win32' ? `  (or double-click ${path.join(HOME, 'start-live.cmd')})` : ''}`);
+  }
   const backups = fs.existsSync(DIR.backups) ? fs.readdirSync(DIR.backups).sort().reverse().slice(0, 3) : [];
   console.log(`Latest backups: ${backups.join(', ') || 'none'}`);
 }
@@ -596,10 +706,14 @@ async function rollback() {
   say(`The live site runs ${state.current.id}.`);
 }
 
-async function backupCommand() {
-  requireCurrent();
-  const dir = await withLiveApiStopped(secrets(), () => backupNow('manual'));
+/** A backup now; on the server the nightly timer runs it with the label "nightly". */
+async function backupCommand(label = 'manual') {
+  if (!/^[a-z-]{1,30}$/.test(label)) fail('A backup label is lowercase letters and dashes.');
+  const state = requireCurrent();
+  const keys = secrets();
+  const dir = await withLiveApiStopped(keys, () => backupNow(label, keys));
   say(`Backup: ${dir}`);
+  offsite(releaseDir(state.current), dir, keys);
 }
 
 async function restore(name) {
@@ -610,14 +724,13 @@ async function restore(name) {
     return;
   }
   const from = path.join(DIR.backups, name);
-  if (!fs.existsSync(path.join(from, 'db'))) fail(`No backup "${name}".`);
+  if (!isBackup(from)) fail(`No backup "${name}".`);
   const keys = secrets();
   await stopAll('live');
   // The data being replaced is kept, never deleted.
   const aside = path.join(DIR.backups, `${stamp()}-replaced-by-restore`);
-  copyDir(path.join(DIR.data, 'db'), path.join(aside, 'db'));
-  copyDir(path.join(DIR.data, 'media'), path.join(aside, 'media'));
-  putBack(from);
+  copyLiveData(keys, aside);
+  putBack(from, keys);
   await startAll(releaseDir(state.current), 'live', keys);
   await refreshSite(keys);
   say(`Restored ${name}. The data it replaced is in ${aside}.`);
@@ -628,8 +741,9 @@ async function importSources(file) {
   if (!file || !fs.existsSync(file)) fail('Usage: npm run live -- import-sources <file.json>');
   const state = requireCurrent();
   const R = releaseDir(state.current);
-  const out = await withLiveApiStopped(secrets(), () =>
-    tsx(R, ['src/cli/live-db.ts', 'import-sources', `pglite:${path.join(DIR.data, 'db')}`, path.resolve(file)], {
+  const keys = secrets();
+  const out = await withLiveApiStopped(keys, () =>
+    tsx(R, ['src/cli/live-db.ts', 'import-sources', database(keys).live, path.resolve(file)], {
       cwd: path.join(R, 'apps', 'api'),
       env: baseEnv(),
       label: 'importing sites',
@@ -648,10 +762,12 @@ async function importArticles(dir) {
   const R = releaseDir(state.current);
   const keys = secrets();
   const out = await withLiveApiStopped(keys, () => {
-    say(`Backup first: ${backupNow('before-import-articles')}`);
-    return tsx(R, ['src/cli/live-db.ts', 'import-articles', `pglite:${path.join(DIR.data, 'db')}`, path.join(DIR.data, 'media'), path.resolve(dir)], {
+    say(`Backup first: ${backupNow('before-import-articles', keys)}`);
+    // Images go where the live site keeps them: the bucket (its settings come from live.env) or data/media.
+    const media = mediaInBucket(keys) ? 'r2' : path.join(DIR.data, 'media');
+    return tsx(R, ['src/cli/live-db.ts', 'import-articles', database(keys).live, media, path.resolve(dir)], {
       cwd: path.join(R, 'apps', 'api'),
-      env: baseEnv(),
+      env: mediaInBucket(keys) ? { ...baseEnv(), ...keys } : baseEnv(),
       label: 'importing articles',
     });
   });
@@ -666,9 +782,11 @@ async function importArticles(dir) {
  */
 async function copyToWorkshop() {
   const state = requireCurrent();
+  const keys = secrets();
+  // On the cloud server the workshop is on another computer; that copy isn't built yet.
+  if (database(keys).kind === 'postgres') fail('copy-to-workshop works where the workshop and the live environment share a computer.');
   if (await answering(4000)) fail('Stop the workshop first (the terminal running "npm run dev"): its database can be open in one place only.');
   const R = releaseDir(state.current);
-  const keys = secrets();
   const workshop = path.join(REPO, '.data');
   const copy = path.join(DIR.staging, 'workshop-copy');
   takeLock();
@@ -701,6 +819,36 @@ async function copyToWorkshop() {
   }
 }
 
+/**
+ * Everything the cloud server needs to take over this live environment (run on the computer):
+ * the database as SQL, the media files, and the secrets that read the keys saved in the CMS.
+ * The live site keeps running here; the folder holds secrets, so it is deleted once used.
+ */
+async function exportForCloud(out) {
+  if (!out) fail('Usage: npm run live -- export-for-cloud <dir>');
+  requireCurrent();
+  const keys = secrets();
+  if (database(keys).kind !== 'pglite') fail('export-for-cloud moves the embedded database of a computer; this one is already PostgreSQL.');
+  const dir = path.resolve(out);
+  const copy = path.join(DIR.staging, 'cloud-export');
+  fs.mkdirSync(dir, { recursive: true });
+  takeLock();
+  try {
+    await withLiveApiStopped(keys, () => copyDir(path.join(DIR.data, 'db'), copy));
+    // The workshop's code exports: the installed live version may predate export-sql.
+    tsx(REPO, ['src/cli/live-db.ts', 'export-sql', `pglite:${copy}`, path.join(dir, 'live.sql')], { cwd: path.join(REPO, 'apps', 'api'), env: baseEnv(), label: 'the database as SQL' });
+    copyDir(path.join(DIR.data, 'media'), path.join(dir, 'media'));
+    const kept = ['HASH_PEPPER', 'SECRETS_KEY', 'REVALIDATE_SECRET'].map((k) => `${k}=${keys[k]}`);
+    fs.writeFileSync(path.join(dir, 'secrets.env'), `${kept.join('\n')}\n`, { mode: 0o600 });
+    const counts = tsx(REPO, ['src/cli/live-db.ts', 'counts', `pglite:${copy}`], { cwd: path.join(REPO, 'apps', 'api'), env: baseEnv(), label: 'counting' });
+    fs.writeFileSync(path.join(dir, 'counts.json'), counts.trim().split(/\r?\n/).find((l) => l.startsWith('{')) ?? '{}');
+    say(`Exported to ${dir}: live.sql, media/, counts.json and secrets.env (keep it private).`);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+    releaseLock();
+  }
+}
+
 function logs(name = 'api') {
   const file = path.join(DIR.logs, `live-${name}.log`);
   if (!fs.existsSync(file)) fail(`No log yet for ${name}.`);
@@ -722,11 +870,12 @@ const commands = {
     await start();
   },
   rollback,
-  backup: backupCommand,
+  backup: () => backupCommand(arg),
   restore: () => restore(arg),
   'import-sources': () => importSources(arg),
   'import-articles': () => importArticles(arg),
   'copy-to-workshop': copyToWorkshop,
+  'export-for-cloud': () => exportForCloud(arg),
   logs: () => logs(arg),
 };
 

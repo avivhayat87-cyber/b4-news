@@ -1,0 +1,14 @@
+# Starts the live environment again if any part stopped answering (it does nothing while all
+# three answer, or while a release runs).
+[Unit]
+Description=B4 NEWS live environment watchdog
+After=b4-live.service
+
+[Service]
+Type=oneshot
+User=b4
+Environment=B4_LIVE_HOME=/srv/b4/live
+WorkingDirectory=/srv/b4/repo
+ExecStart=/usr/bin/node /srv/b4/repo/scripts/live.mjs start
+KillMode=process
+TimeoutStartSec=600

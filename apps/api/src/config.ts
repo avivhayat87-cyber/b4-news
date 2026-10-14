@@ -42,6 +42,8 @@ const Env = z
     R2_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
     R2_ACCESS_KEY_ID: z.string().optional(),
     R2_SECRET_ACCESS_KEY: z.string().optional(),
+    /** A second, private bucket (same account and keys) that keeps the nightly database backups outside the server. */
+    R2_BACKUP_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
     SMTP_URL: z.string().optional(),
     MAIL_FROM: z.string().default("B4 NEW'S <no-reply@localhost>"),
     /** Defaults to on in development, off elsewhere. */
@@ -135,6 +137,11 @@ const Env = z
       mediaBucket:
         env.MEDIA_STORAGE === 'r2'
           ? { endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, bucket: env.R2_BUCKET!, accessKeyId: env.R2_ACCESS_KEY_ID!, secretAccessKey: env.R2_SECRET_ACCESS_KEY! }
+          : null,
+      /** Where the live database backups go off the server; null = they stay on the server only. */
+      backupBucket:
+        env.R2_BACKUP_BUCKET && env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY
+          ? { endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, bucket: env.R2_BACKUP_BUCKET, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY }
           : null,
       smtpUrl: env.SMTP_URL || undefined,
       mailFrom: env.MAIL_FROM,

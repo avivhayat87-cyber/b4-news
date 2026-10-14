@@ -52,7 +52,14 @@ b4-news/
 │   │               constants (categories, roles, statuses). Used by all four apps.
 │   └── db/         DATA: the Drizzle schema, SQL migrations, seeds, the migration check.
 ├── scripts/
-│   └── live.mjs    The live environment and releases (see docs/WORKFLOW.md).
+│   ├── live.mjs    The live environment and releases, on a computer or the cloud server
+│   │               (see docs/WORKFLOW.md).
+│   └── cloud.mjs   The cloud server, operated from the workshop computer through gcloud:
+│                   create, setup, values, the tunnel, moving the data, releases.
+├── deploy/
+│   └── cloud/      How the cloud server is built and run: setup.sh (first install),
+│                   systemd units (start at boot, watchdog, nightly backup), the Ops Agent
+│                   config, set-env.mjs; README.md has the steps.
 ├── docs/           ARCHITECTURE · API · WORKFLOW · NEXT-STEPS.
 ├── brand/          Logo and brand sources (SVG, Facebook covers, generator scripts);
 │                   apps/*/public/brand hold copies.
@@ -66,8 +73,13 @@ b4-news/
 
 Two folders sit outside the repository and are never edited by hand:
 
-- `../b4-news-live`: the live environment (its own data, releases and backups).
+- `../b4-news-live`: the live environment (its own data, releases and backups). On the cloud
+  server it is `/srv/b4/live`, with its database in PostgreSQL and its media in the R2 bucket.
 - `.data/`: the workshop's local database and media (git-ignored).
+
+`deploy/` and `scripts/cloud.mjs` were added on 2026-10-14 with the owner's approval: the live
+site moves to a Google Cloud server, and how that server is built and operated must be
+repeatable from files rather than done by hand.
 
 ### 2.1 `apps/api/`: the backend
 
@@ -95,9 +107,11 @@ src/
     social*.ts        Distribution: the social package, network adapters, the social page, branded designs
     newsletter.ts · consent.ts · translate.ts · learning.ts · classify.ts
     article-transfer.ts · workshop-copy.ts   Moving articles, and a safe copy of the live data, between environments
+    data-move.ts      The computer's live data to the cloud, once (the database as SQL, the media into the bucket)
     settings.ts · site-settings.ts · legal-pages.ts · connection-tests.ts
   lib/              Generic building blocks without newsroom knowledge:
-                      jobs (the queue), safe-fetch (SSRF guard), storage, images (renditions), mailer,
+                      jobs (the queue), safe-fetch (SSRF guard), storage (local disk or the R2 bucket),
+                      images (renditions), google-auth (the server's own Google Cloud token), mailer,
                       crypto, secret-box, password, audit, similarity, facts, moderation, markets, cards, text-diff
   cli/              Command-line entry points (create-admin, live-db)
   dev/              Development only: sample news sites, illustrations, dev seeds
@@ -173,7 +187,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
 | **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `services/consent.ts` | `comments/`, `takedowns/` | comments, account, report; app comments and account | `readers`, `comments`, `comment_reports`, `consents`, `takedown_requests` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
-| **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop) | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
+| **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop), `services/data-move.ts`, `scripts/*`, `deploy/cloud/*` | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
 
 ---
 

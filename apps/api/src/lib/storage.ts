@@ -107,6 +107,18 @@ export class BucketStorage implements MediaStorage {
   }
 }
 
+/** One file into a bucket under any key (backups; media goes through BucketStorage). */
+export async function putObject(config: BucketConfig, key: string, data: Buffer, contentType: string, fetchFn: typeof fetch = fetch): Promise<void> {
+  const client = new AwsClient({ accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey, service: 's3', region: 'auto' });
+  const url = `${config.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(config.bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+  const request = await client.sign(url, { method: 'PUT', body: new Uint8Array(data), headers: { 'content-type': contentType } });
+  const res = await fetchFn(request, { signal: AbortSignal.timeout(600_000) });
+  if (!res.ok) throw new Error(`upload to ${config.bucket} failed (${res.status}) for ${key}`);
+}
+
+/** Whether a path inside a media folder is a file the server made (the same rule every storage applies). */
+export const isMediaKey = (key: string): boolean => KEY.test(key);
+
 /** In-memory storage for tests. */
 export class MemoryStorage implements MediaStorage {
   readonly files = new Map<string, Buffer>();
