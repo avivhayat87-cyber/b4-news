@@ -5,11 +5,12 @@
 // behind; on the live site "כתבות באתר" > "עריכה" opens a new draft for an imported article.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { docToHtml, docToText, sanitizeDoc, textToDoc } from '@b4/shared';
 import { type Db, articleTags, articles, asc, authors, categories, eq, homepageSlots, inArray, mediaAssets, sources, tags } from '@b4/db';
 import { z } from 'zod';
 import { ingestImage } from '../lib/images';
 import type { MediaStorage } from '../lib/storage';
-import { setArticleTags } from './article-content';
+import { articleBodyText, setArticleTags } from './article-content';
 
 const MEDIA_KINDS = ['upload', 'scraped_original', 'ai_article', 'ai_social', 'ai_preview'] as const;
 
@@ -51,6 +52,17 @@ const TransferredArticle = z.object({
 type TransferredArticle = z.infer<typeof TransferredArticle>;
 
 const LIST = 'articles.json';
+
+/** The body as the whitelisted document; an article that only has HTML is rebuilt from its text. */
+function safeDoc(bodyDoc: unknown, bodyHtml: string) {
+  try {
+    const doc = sanitizeDoc(bodyDoc);
+    if (docToText(doc).trim()) return doc;
+  } catch {
+    // not a document: the text of its HTML instead
+  }
+  return textToDoc(articleBodyText({ bodyDoc: null, bodyHtml, excerpt: '' }));
+}
 
 /** Writes every article of this environment, with its main image, to a bundle folder. */
 export async function exportArticles(db: Db, storage: MediaStorage, outDir: string): Promise<number> {
@@ -149,6 +161,8 @@ export async function importArticles(db: Db, storage: MediaStorage, dir: string)
             focalY: a.hero.focalY,
           })
         : null;
+      // The site's HTML comes only from the safe renderer, never from the bundle as it is.
+      const doc = safeDoc(a.bodyDoc, a.bodyHtml);
       const [article] = await tx
         .insert(articles)
         .values({
@@ -156,8 +170,8 @@ export async function importArticles(db: Db, storage: MediaStorage, dir: string)
           status: a.status,
           title: a.title,
           subtitle: a.subtitle,
-          bodyDoc: a.bodyDoc ?? {},
-          bodyHtml: a.bodyHtml,
+          bodyDoc: doc,
+          bodyHtml: docToHtml(doc),
           excerpt: a.excerpt,
           categoryId: category.id,
           authorId,

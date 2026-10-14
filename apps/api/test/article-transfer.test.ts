@@ -50,7 +50,10 @@ describe('moving articles between environments', () => {
         .from(articles)
         .innerJoin(categories, eq(articles.categoryId, categories.id))
         .where(eq(articles.slug, first!.slug));
-      expect(moved!.a).toMatchObject({ title: first!.title, bodyHtml: first!.bodyHtml, status: first!.status, publishedAt: first!.publishedAt });
+      expect(moved!.a).toMatchObject({ title: first!.title, status: first!.status, publishedAt: first!.publishedAt });
+      // Rendered again by the safe renderer, from the same words.
+      const words = (html: string) => html.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+      expect(words(moved!.a.bodyHtml)).toBe(words(first!.bodyHtml));
       expect(moved!.a.id).toBeGreaterThan(0);
       const [image] = await target.db.select().from(mediaAssets).where(eq(mediaAssets.id, moved!.a.heroMediaId!));
       expect(image).toMatchObject({ altText: 'בניין בנק ישראל', credit: 'צילום: המערכת', focalY: 0.3, width: 1200, height: 800 });
