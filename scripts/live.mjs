@@ -281,7 +281,17 @@ function service(R, which, name, keys) {
     const token = randomBytes(24).toString('hex');
     return { cwd: path.join(R, 'apps', 'api'), args: [path.join(R, 'node_modules', 'tsx', 'dist', 'cli.mjs'), 'src/server.ts'], env: apiEnv(which, keys, token), token };
   }
-  const env = { ...baseEnv(), NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1' };
+  // The same public addresses as the build: Next 16 reads next.config again when it starts, and
+  // without them its image settings fall back to localhost:4000 (every optimised image a 400).
+  const urls = publicUrls(keys);
+  const env = {
+    ...baseEnv(),
+    NODE_ENV: 'production',
+    NEXT_TELEMETRY_DISABLED: '1',
+    NEXT_PUBLIC_API_URL: `${urls.api}/api/v1`,
+    NEXT_PUBLIC_SITE_URL: urls.site,
+    NEXT_PUBLIC_MEDIA_URL: urls.media,
+  };
   if (name === 'web') Object.assign(env, { API_URL: `http://127.0.0.1:${PORTS[which].api}/api/v1`, REVALIDATE_SECRET: keys.REVALIDATE_SECRET });
   return {
     cwd: path.join(R, 'apps', name === 'web' ? 'web' : 'admin'),
@@ -339,10 +349,22 @@ async function stopAll(which) {
   for (const name of ['web', 'cms', 'api']) await stopService(which, name);
 }
 
-async function startAll(R, which, keys) {
+/**
+ * Starts the API and waits for it (migrations run as it starts). Now and then a start right after
+ * a stop sits silent for minutes while the next one is up in a second, so a start that hasn't
+ * answered in 90 seconds is stopped and tried once more.
+ */
+async function startApi(R, which, keys) {
   await startService(R, which, 'api', keys);
-  // Migrations run as the API starts.
-  if (!(await until(() => healthy(PORTS[which].api), 180_000))) fail(`The ${which} API did not come up (see logs/${which}-api.log).`);
+  if (await until(() => healthy(PORTS[which].api), 90_000)) return true;
+  say(`   the ${which} API is slow to start; trying once more`);
+  await stopService(which, 'api');
+  await startService(R, which, 'api', keys);
+  return until(() => healthy(PORTS[which].api), 180_000);
+}
+
+async function startAll(R, which, keys) {
+  if (!(await startApi(R, which, keys))) fail(`The ${which} API did not come up (see logs/${which}-api.log).`);
   await startService(R, which, 'web', keys);
   await startService(R, which, 'cms', keys);
   for (const name of ['web', 'cms']) {
@@ -386,7 +408,11 @@ async function smoke(which, keys) {
   await check('API', `${api}/health`);
   await check('home page data', `${api}/api/v1/public/home`);
   const cats = json(await check('categories', `${api}/api/v1/public/categories`)) ?? [];
-  await check('site home page', `${web}/`, page);
+  const homePage = await check('site home page', `${web}/`, page);
+  // One picture through the site's image optimiser: it reads its settings when it starts, so a
+  // wrong address there turns every picture on the site into an error.
+  const picture = (homePage?.text ?? '').match(/\/_next\/image\?url=[^"\s,]+/)?.[0]?.replaceAll('&amp;', '&');
+  if (picture) await check('a picture on the home page', `${web}${picture}`, (r) => r.status === 200);
   const feed = json(await check('article list', `${api}/api/v1/public/feed?limit=${SMOKE_ARTICLES}`));
   for (const a of feed?.items ?? []) {
     const name = `article "${String(a.title).slice(0, 40)}" (${a.slug})`;
@@ -497,10 +523,7 @@ async function withLiveApiStopped(keys, fn) {
   try {
     return fn();
   } finally {
-    if (wasRunning) {
-      await startService(R, 'live', 'api', keys);
-      if (!(await until(() => healthy(PORTS.live.api), 180_000))) say('Warning: the live API did not come back up; run "npm run live -- start".');
-    }
+    if (wasRunning && !(await startApi(R, 'live', keys))) say('Warning: the live API did not come back up; run "npm run live -- start".');
   }
 }
 
@@ -603,8 +626,7 @@ async function release(ref = 'HEAD') {
       const counts = JSON.parse(out.trim().split(/\r?\n/).find((l) => l.startsWith('{')) ?? '{}');
       say(`   data kept: ${Object.entries(counts.after ?? {}).map(([t, n]) => `${t} ${n}`).join(', ')}`);
     }
-    await startService(R, 'staging', 'api', keys);
-    if (!(await until(() => healthy(PORTS.staging.api), 180_000))) fail('The new version\'s API did not start on the copy (see logs/staging-api.log).');
+    if (!(await startApi(R, 'staging', keys))) fail('The new version\'s API did not start on the copy (see logs/staging-api.log).');
 
     say('4/7 Building the site and the CMS...');
     npm(['run', 'build', '--workspace=@b4/admin'], { cwd: R, env: buildEnv('cms', keys), label: 'CMS build' });
