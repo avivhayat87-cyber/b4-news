@@ -3,6 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
+import type { ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
@@ -104,6 +105,50 @@ export class FakeText implements TextAI {
         reel_motion: 'zoom_in',
         reel_seconds: 8,
       },
+      usage: usage(),
+    };
+  }
+
+  /**
+   * No search: the file is made from what was handed in. A link's sentences are "reported" by its
+   * site ("verified" on a government site); a screenshot's note stays unverified.
+   */
+  async research(req: ResearchRequest): Promise<AiResult<ResearchOutput> & { searches: number; toolErrors: string[] }> {
+    const url = req.input.url ?? '';
+    const host = url ? new URL(url).hostname.replace(/^www\./, '') : '';
+    const official = /(^|\.)gov\.il$/.test(host);
+    const text = req.input.pageText ?? '';
+    const lines = sentences(text.replace(/\s+/g, ' ')).slice(0, 4);
+    const claims: ResearchOutput['claims'] = lines.map((line) => ({ text: line, label: official ? 'verified' : 'reported', source_urls: [url], note: '' }));
+    if (req.input.note) claims.push({ text: req.input.note, label: 'unverified', source_urls: [], note: 'מההערה של העורך, לא נבדק (ספק לדוגמה).' });
+    return {
+      data: {
+        original: { who: host || 'צילום מסך', when: '', what: lines[0] ?? req.input.note, url },
+        summary: `(ספק לדוגמה) ${lines[0] ?? req.input.note ?? 'אין פרטים.'}`,
+        claims,
+        background: [],
+        open_questions: ['(ספק לדוגמה) לא בוצע חיפוש: אין מפתח AI.'],
+        response_needed: [],
+        sources: url ? [{ url, title: lines[0] ?? host, publisher: host, kind: official ? 'official' : 'news', used_for: official ? 'fact' : 'lead' }] : [],
+      },
+      usage: usage(),
+      searches: 0,
+      toolErrors: [],
+    };
+  }
+
+  /** The file's details become the paragraphs, as they are. */
+  async researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>> {
+    const lines = req.dossier.split('\n');
+    const summary = lines.find((l) => l.startsWith('סיכום:'))?.slice('סיכום:'.length).trim() ?? '';
+    // "- [label] text (מקורות: …) | הערה: …": what may be written, without its label and sources.
+    const details = lines
+      .map((l) => /^- \[(\w+)\] (.*?)(?: \(מקורות: [^)]*\))?(?: \| הערה: .*)?$/.exec(l))
+      .filter((m): m is RegExpExecArray => m !== null && m[1] !== 'unverified')
+      .map((m) => m[2]!);
+    const title = (summary.replace(/^\(ספק לדוגמה\)\s*/, '') || details[0] || 'תחקיר לדוגמה').slice(0, 90);
+    return {
+      data: { title, subtitle: '', paragraphs: details.length ? details : [summary || '(אין פרטים)'], suggested_category: classifyHeadline(title), suggested_tags: [] },
       usage: usage(),
     };
   }

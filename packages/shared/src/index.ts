@@ -8,3 +8,4 @@ export * from './settings';
 export * from './legal';
 export * from './social';
 export * from './agent';
+export * from './research';

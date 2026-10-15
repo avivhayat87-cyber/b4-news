@@ -13,6 +13,7 @@ import { failRun, runDiscovery } from './scraper/run';
 import { runSourceSetup } from './scraper/setup';
 import { runSocialGenerate } from './social';
 import { PLAN_JOB, markPlanFailed, runPlan } from './social-plan';
+import { ARCHIVE_JOB, RESEARCH_JOB, markResearchFailed, runArchive, runResearch } from './research';
 import { REEL_JOBS, runReelImage, runReelPrompts, runReelVideo } from './social-reel';
 import { KIT_JOB, SHARE_PUBLISH_JOB, markSharePublishFailed, runKit, runSharePublish } from './social-share';
 import { TRANSLATE_JOB, runHeadlineTranslation } from './translate';
@@ -30,6 +31,9 @@ export const handlers: Handlers<Services> = {
   [REVIEW_JOB]: { run: runReview, onFailed: markReviewFailed, maxAttempts: 1 },
   [FIX_JOB]: { run: runFix, onFailed: markFixFailed, maxAttempts: 1 },
   [FINAL_IMAGE_JOB]: { run: runFinalImage, maxAttempts: 2 },
+  // A research is paid for by its searches: one attempt; the editor retries from the CMS.
+  [RESEARCH_JOB]: { run: runResearch, onFailed: markResearchFailed, maxAttempts: 1 },
+  [ARCHIVE_JOB]: { run: runArchive, maxAttempts: 1 },
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   [KIT_JOB]: { run: runKit, maxAttempts: 2 },
   [PLAN_JOB]: { run: runPlan, onFailed: markPlanFailed, maxAttempts: 2 },

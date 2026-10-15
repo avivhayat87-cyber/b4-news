@@ -168,6 +168,22 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
 | GET | `/admin/jobs/:id` | any | `JobRef` (poll an AI job) |
 
+### The research reporter (manual entry: from a link or screenshots)
+
+A research is a `research.run` job (one attempt) and then a `research.archive` job (the proof of its sources). A month's research stops at the reporter's budget.
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/research` | any | `ResearchOverviewDto`: the 20 latest research (without their files), this month's estimated spend and the budget, the default depth |
+| POST | `/admin/research/similar` | editor | `{ url }` → `SimilarStoryDto[]`: articles and drafts from the same link (free, no AI) |
+| POST | `/admin/research` | editor | `StartResearchInput` (`kind` link · screenshot, `url` or `mediaIds` (≤4 uploaded images), `note`, `depth` quick (default) · regular · deep, magazine or color) → 202 `ResearchTaskDto` (10/min, audited); 409 `research_budget` when the month's budget is spent |
+| GET | `/admin/research/:id` | any | `ResearchTaskDto` with its file: every detail with its label and sources, the sources with their proof (`archive`: saved, when, `hasText`, the screenshot's address), the sources line, similar stories |
+| POST | `/admin/research/:id/retry` | editor | → 202 `ResearchTaskDto`: a failed research again (a file already made is kept; only the writing is redone); 409 otherwise |
+| POST | `/admin/research/:id/archive` | editor | → 202 `ResearchTaskDto`: keep the sources again (the ones not saved yet) |
+| GET | `/admin/research/:id/sources/:sourceId/text` | any | `SourceCopyDto`: the copy of a source's text kept as proof |
+| GET | `/admin/drafts/:id/research` | any | `ResearchTaskDto` the draft was written from, or `null` |
+| GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`); a change is audited |
+
 ### The legal review (after the text is final, before publishing)
 
 Marking the text final queues `review.check` (unless the reviewer is turned off). While a risk waits for a decision, or the check is running or didn't finish, the preview lists it as a problem and publishing answers 422 `not_ready`.

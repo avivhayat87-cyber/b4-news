@@ -17,7 +17,7 @@ export function DraftRow({ d, index }: { d: DraftSummary; index?: number }) {
           <p className="truncate text-xs text-muted">
             {categoryName(d.category)}
             {d.placement !== 'none' ? ` · ${PLACEMENT[d.placement]}` : ''}
-            {d.sourceName ? ` · מקור: ${d.sourceName}` : d.origin === 'manual_write' ? ' · נכתב ידנית' : ''}
+            {d.origin === 'research' ? ' · מתחקיר' : d.sourceName ? ` · מקור: ${d.sourceName}` : d.origin === 'manual_write' ? ' · נכתב ידנית' : ''}
           </p>
         </div>
         <Badge tone={status.tone}>{status.label}</Badge>

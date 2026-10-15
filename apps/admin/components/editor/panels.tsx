@@ -37,7 +37,7 @@ export function OriginalPane({ draft, onQueued }: { draft: DraftDetail; onQueued
     enabled: !!o && written,
   });
   if (!o) {
-    return <p className="p-6 text-muted">הכתבה נכתבה ידנית, אין מקור להשוואה.</p>;
+    return <p className="p-6 text-muted">{draft.origin === 'research' ? 'הכתבה נכתבה מתחקיר. הדיווח, הפרטים והמקורות בלשונית "תיק התחקיר".' : 'הכתבה נכתבה ידנית, אין מקור להשוואה.'}</p>;
   }
   const t = o.language && !showOriginal ? o.translation : null;
   const shown = { title: t?.title ?? o.title, intro: t ? t.intro : o.intro, bodyText: t ? t.bodyText : o.bodyText };

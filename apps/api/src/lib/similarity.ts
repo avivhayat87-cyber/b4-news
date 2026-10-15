@@ -59,6 +59,34 @@ export function compareWording(draft: string, original: string, opts: { fullPass
   return { ratio: Math.round(ratio * 1000) / 1000, level, passages };
 }
 
+/** Short words that say nothing about the subject. */
+const STOP_WORDS = new Set(['של', 'על', 'את', 'עם', 'גם', 'כי', 'אם', 'לא', 'הוא', 'היא', 'הם', 'זה', 'זו', 'אך', 'או', 'כך', 'יותר', 'אחרי', 'לפני', 'בין', 'כל', 'עד', 'מה', 'יש', 'אין', 'היום', 'אחד', 'אחת', 'the', 'and', 'for', 'with']);
+
+/** A word's forms to match on: as written, and without one Hebrew prefix letter (ו, ה, ב, ל, מ, ש, כ). */
+function subjectWords(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of tokens(text)) {
+    if (t.norm.length < 3 || STOP_WORDS.has(t.norm)) continue;
+    out.add(t.norm);
+    if (t.norm.length > 3 && /^[והבלמשכ]/.test(t.norm)) out.add(t.norm.slice(1));
+  }
+  return out;
+}
+
+/**
+ * How much two short texts (headlines, summaries) are about the same thing: the share of the
+ * shorter one's subject words found in the other, and how many were shared. Free and rough: a
+ * hint for "we may already have this story", never a decision.
+ */
+export function topicOverlap(a: string, b: string): { score: number; shared: number } {
+  const x = subjectWords(a);
+  const y = subjectWords(b);
+  if (x.size === 0 || y.size === 0) return { score: 0, shared: 0 };
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return { score: shared / Math.min(x.size, y.size), shared };
+}
+
 export function similarityWarning(result: SimilarityDto): string | null {
   if (result.level === 'ok') return null;
   const percent = Math.round(result.ratio * 100);

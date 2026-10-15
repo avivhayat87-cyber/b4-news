@@ -94,7 +94,7 @@ src/
   routes/           HTTP only. One plugin per domain:
                       the public ones directly here, the CMS ones in routes/admin/ (registered in admin/index.ts)
   services/         Domain logic (no HTTP). One file or folder per domain:
-    context.ts        Services = { db, config, settings, ai, storage, fetch, mailer, log }, wired once
+    context.ts        Services = { db, config, settings, ai, storage, fetch, mailer, capture, log }, wired once
     handlers.ts       Job kind → handler: the only place that maps queued work to code
     ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent;
                         development stand-ins), types
@@ -102,11 +102,13 @@ src/
                         the team (team.ts: who the agents are, their models and usage), their skills
                         (skills.ts: versions in prompt_templates), editor-agent settings, the visual agent
                         (visual.ts: image and reel prompts, and its learning), the social editor (social.ts:
-                        its settings, and the corrections it learns from)
+                        its settings, and the corrections it learns from), the research reporter (researcher.ts:
+                        its settings, and which source may back a fact)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
+    research.ts       The research reporter: a link or screenshots → a research file → an article from it; proof of the sources
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
                         package, network adapters, the social page, branded designs, reels
@@ -118,7 +120,8 @@ src/
   lib/              Generic building blocks without newsroom knowledge:
                       jobs (the queue), safe-fetch (SSRF guard), storage (local disk or the R2 bucket),
                       images (renditions), google-auth (the server's own Google Cloud token), mailer,
-                      crypto, secret-box, password, audit, similarity, facts, moderation, markets, cards, text-diff
+                      crypto, secret-box, password, audit, similarity, facts, moderation, markets, cards, text-diff,
+                      page-capture (a screenshot of a public page with the machine's own browser)
   cli/              Command-line entry points (create-admin, live-db)
   dev/              Development only: sample news sites, illustrations, dev seeds
 test/               vitest integration tests (one file per area) + helpers.ts
@@ -148,7 +151,7 @@ app/(cms)/        One folder per CMS screen, behind the sign-in shell ((cms)/lay
                     saved/ · magazines/[id] (+ preview) · drafts/[id] (+ preview) · review/ · manual/
                     social/ · comments/ · takedowns/ · learning/ · agent/ · settings/
 app/login/        Sign-in
-components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/
+components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/, review/, research/
                     primitives in ui.tsx (Button, Card, Field, Badge, Loading, ErrorBox, Empty,
                     PageHeader, Thumb, inputClass, cx, useToast)
 lib/              api.ts (the only way to call the server) · auth.tsx (session, useCan) ·
@@ -185,7 +188,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
-| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `lib/similarity.ts`, `lib/facts.ts`, `routes/admin/drafts.ts`, `review.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/`, `components/editor/`, `components/review/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `image_batches`, `media_assets` |
+| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
@@ -224,6 +227,10 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
    request.
 7. **External access goes through the service objects:**
    - URLs: `s.fetch` (SSRF guard, robots);
+   - screenshots of web pages: `s.capture` (`lib/page-capture.ts`: the machine's own browser,
+     every request it makes held to the same public-address rule as `safeFetch`). Added on
+     2026-10-15 with the owner's approval: the research reporter keeps a picture of every source
+     as proof, which a plain fetch can't make;
    - AI: `s.ai` (wrapped in `tracked()`);
    - files: `s.storage`;
    - email: `s.mailer`;
@@ -266,6 +273,13 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   and publishing waits until each one is decided (and recorded with who decided). Changing a
   final text on the review's behalf goes through `amendFinalText` in `drafts.ts`. Only an admin
   turns the review off. Decided by the owner on 2026-10-14.
+- **A researched article rests on official sources only.** The research reporter
+  (`services/research.ts`) may base a fact only on an official source, the subject's own
+  channel, or a source on the newsroom's approved list; news sites only lead to the source, and
+  the code marks down a detail whose source doesn't qualify, whatever the model said. The article
+  is written from the research file alone and ends with the sources by name, without links; the
+  CMS keeps a copy and a screenshot of every source. Searches cost money: one attempt per
+  research, quick by default, and a monthly budget. Decided by the owner on 2026-10-14.
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video

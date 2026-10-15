@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, REEL_MOTIONS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES } from '@b4/shared';
+import { CATEGORY_SLUGS, CLAIM_LABELS, REEL_MOTIONS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -110,6 +110,52 @@ export type ShareKitRequest = {
   instruction?: string;
 };
 
+// A research is paid for before its file arrives: a file that runs long is trimmed, never refused.
+const clip = (n: number) => z.string().transform((s) => s.slice(0, n));
+const upTo = <T extends z.ZodTypeAny>(item: T, n: number) => z.array(item).transform((a) => a.slice(0, n));
+
+/** The research reporter's file, as the model submits it (the service gives ids and checks the sources). */
+export const ResearchOutput = z.object({
+  original: z.object({ who: clip(300), when: clip(100), what: clip(3000), url: clip(2000) }),
+  summary: clip(3000),
+  claims: upTo(z.object({ text: clip(1000), label: z.enum(CLAIM_LABELS), source_urls: upTo(clip(2000), 10), note: clip(600) }), 40),
+  background: upTo(clip(2500), 10),
+  open_questions: upTo(clip(600), 10),
+  response_needed: upTo(clip(200), 10),
+  sources: upTo(z.object({ url: clip(2000), title: clip(500), publisher: clip(200), kind: z.enum(SOURCE_KINDS), used_for: z.enum(['fact', 'lead', 'background']) }), 40),
+});
+export type ResearchOutput = z.infer<typeof ResearchOutput>;
+
+export type ResearchRequest = {
+  /** prompt_templates "research.system", with the newsroom rules */
+  systemPrompt: string;
+  /** The newsroom's approved sources besides official ones (domains or account addresses). */
+  approvedSources: string[];
+  depth: ResearchDepth;
+  input: { kind: 'link' | 'screenshot'; url: string | null; pageText: string | null; images: ImageReference[]; note: string };
+  /** Israel time, so "today" and "yesterday" in a report are understood. */
+  today: string;
+};
+
+/** The article written from the file (no image prompt: the visual agent writes those). */
+export const ResearchWriteOutput = z.object({
+  title: z.string().min(1).max(200),
+  subtitle: z.string().max(400),
+  paragraphs: z.array(z.string()).min(1).max(80),
+  suggested_category: z.enum(CATEGORY_SLUGS).nullable(),
+  suggested_tags: z.array(z.string().max(40)).max(8),
+});
+export type ResearchWriteOutput = z.infer<typeof ResearchWriteOutput>;
+
+export type ResearchWriteRequest = {
+  /** prompt_templates "research.write", with the newsroom rules */
+  systemPrompt: string;
+  styleRules: string;
+  /** The file, with each detail's label and its sources' publishers. */
+  dossier: string;
+  note: string;
+};
+
 /** The legal review: only the risks a person must decide on (Hebrew reasons and advice). */
 export const ReviewOutput = z.object({
   issues: z
@@ -188,6 +234,9 @@ export interface TextAI {
   social(req: SocialRequest): Promise<AiResult<SocialOutput>>;
   shareKit(req: ShareKitRequest): Promise<AiResult<ShareKitOutput>>;
   socialPlan(req: SocialPlanRequest): Promise<AiResult<SocialPlanOutput>>;
+  /** searches: how many web searches it made (each is billed apart from the tokens); toolErrors: searches or fetches that failed. */
+  research(req: ResearchRequest): Promise<AiResult<ResearchOutput> & { searches: number; toolErrors: string[] }>;
+  researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>>;
   review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;
   reviewFix(req: ReviewFixRequest): Promise<AiResult<ReviewFixOutput>>;
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;

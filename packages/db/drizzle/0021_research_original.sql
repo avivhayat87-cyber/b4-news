@@ -1,0 +1,3 @@
+-- data-safe: the check is replaced at once by a looser one (research drafts may have no original); every existing row passes both
+ALTER TABLE "article_drafts" DROP CONSTRAINT "original_required";--> statement-breakpoint
+ALTER TABLE "article_drafts" ADD CONSTRAINT "original_required" CHECK ("article_drafts"."origin"::text in ('manual_write', 'research') or "article_drafts"."scraped_item_id" is not null);

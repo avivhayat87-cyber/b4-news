@@ -1,83 +1,14 @@
 'use client';
-// Manual entry: by link (same process as discovered articles: original + AI
-// draft), or by writing (the editor's own text and image).
-import { CATEGORIES, DRAFT_COLORS, type DraftColor, type MediaDto, type SavedEdits } from '@b4/shared';
-import { useMutation, useQuery } from '@tanstack/react-query';
+// Manual entry, in tabs: from a link or screenshots (the research reporter, or a plain rewrite of
+// a link, as discovered articles get), or by writing (the editor's own text and image).
+import { CATEGORIES, type DraftColor, type MediaDto } from '@b4/shared';
+import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { FocalPicker, UploadButton } from '@/components/image-upload';
-import { Button, Card, ColorDot, Field, PageHeader, cx, inputClass, useToast } from '@/components/ui';
+import { ColorPicker, Destination, ResearchTab } from '@/components/research/research-tab';
+import { Button, Card, Field, PageHeader, cx, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
-import { COLOR } from '@/lib/labels';
-
-function ColorPicker({ value, onChange }: { value: DraftColor; onChange(c: DraftColor): void }) {
-  return (
-    <div className="flex gap-1.5" role="radiogroup" aria-label="צבע">
-      {DRAFT_COLORS.map((c) => (
-        <button key={c} type="button" role="radio" aria-checked={value === c} aria-label={COLOR[c]} title={COLOR[c]} onClick={() => onChange(c)} className={cx('rounded-full p-1.5', value === c && 'ring-2 ring-ink')}>
-          <ColorDot color={c} className="size-4" />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Destination({ magazineId, setMagazineId }: { magazineId: string; setMagazineId(v: string): void }) {
-  const saved = useQuery({ queryKey: ['saved'], queryFn: () => admin.get<SavedEdits>('/saved') });
-  const open = saved.data?.magazines.filter((m) => !['published', 'publishing', 'archived'].includes(m.status)) ?? [];
-  return (
-    <Field label="לאן לשמור" htmlFor="dest">
-      <select id="dest" value={magazineId} onChange={(e) => setMagazineId(e.target.value)} className={inputClass}>
-        <option value="">כתבה בודדת (בעריכות השמורות)</option>
-        {open.map((m) => (
-          <option key={m.id} value={m.id}>
-            להוסיף למגזין: {m.title}
-          </option>
-        ))}
-      </select>
-    </Field>
-  );
-}
-
-function ByLink() {
-  const router = useRouter();
-  const toast = useToast();
-  const [url, setUrl] = useState('');
-  const [color, setColor] = useState<DraftColor>('blue');
-  const [magazineId, setMagazineId] = useState('');
-  const create = useMutation({
-    mutationFn: () => admin.post<{ draftId: string }>('/manual/url', { url: url.trim(), colorLabel: color, magazineId: magazineId || undefined }),
-    onSuccess: (r) => {
-      toast('הכתבה נקלטה. ה-AI כותב טיוטה.');
-      router.push(`/drafts/${r.draftId}`);
-    },
-    onError: (e) => toast(errorMessage(e), 'danger'),
-  });
-  return (
-    <Card title="העלאה באמצעות קישור">
-      <form
-        className="space-y-4"
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          create.mutate();
-        }}
-      >
-        <Field label="קישור לכתבה" htmlFor="url" hint="המערכת קוראת את הכתבה, שומרת אותה כמקור להשוואה, וה-AI כותב טיוטה. בדיוק כמו בכתבות מהאיתור.">
-          <input id="url" type="url" dir="ltr" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" className={inputClass} />
-        </Field>
-        <Destination magazineId={magazineId} setMagazineId={setMagazineId} />
-        {!magazineId && (
-          <Field label="צבע">
-            <ColorPicker value={color} onChange={setColor} />
-          </Field>
-        )}
-        <Button type="submit" variant="primary" busy={create.isPending} disabled={!url.trim()}>
-          קליטה ומעבר לעריכה
-        </Button>
-      </form>
-    </Card>
-  );
-}
 
 function ByWriting() {
   const router = useRouter();
@@ -170,14 +101,14 @@ function ByWriting() {
 }
 
 export default function ManualPage() {
-  const [mode, setMode] = useState<'link' | 'write'>('link');
+  const [mode, setMode] = useState<'research' | 'write'>('research');
   return (
     <>
-      <PageHeader title="העלאה ידנית" subtitle="כתבה מקישור, או כתבה שאתם כותבים. שתיהן נכנסות לאותו תהליך עריכה והעלאה." />
+      <PageHeader title="העלאה ידנית" subtitle="דיווח מקישור או מצילום מסך שהכתב-החוקר בודק וכותב, או כתבה שאתם כותבים. הכול נכנס לאותו תהליך עריכה והעלאה." />
       <div className="mb-5 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
         {(
           [
-            ['link', 'באמצעות קישור'],
+            ['research', 'מקישור או צילום מסך'],
             ['write', 'כתיבה ידנית'],
           ] as const
         ).map(([id, label]) => (
@@ -186,7 +117,7 @@ export default function ManualPage() {
           </button>
         ))}
       </div>
-      {mode === 'link' ? <ByLink /> : <ByWriting />}
+      {mode === 'research' ? <ResearchTab /> : <ByWriting />}
     </>
   );
 }

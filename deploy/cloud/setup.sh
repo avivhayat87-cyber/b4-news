@@ -5,7 +5,7 @@
 #   sudo bash setup.sh <site-domain>        e.g. b4news.co.il
 #
 # What it leaves behind:
-#   - Node.js 22, git, PostgreSQL 17 (local only, a "b4" role and database), cloudflared
+#   - Node.js 22, git, Google Chrome (screenshots of research sources), PostgreSQL 17 (local only, a "b4" role and database), cloudflared
 #     (the tunnel to Cloudflare; started later with the token), the Google Ops Agent (logs
 #     and metrics to Cloud Logging / Monitoring), automatic security updates, 2 GB of swap.
 #   - A "b4" user that owns /srv/b4: repo/ (the code, updated by releases) and live/ (the
@@ -39,6 +39,15 @@ say "Node.js 22"
 if ! node --version 2>/dev/null | grep -q '^v22\.'; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -yq nodejs
+fi
+
+say "Google Chrome (the research reporter keeps a screenshot of every source as proof)"
+if ! command -v google-chrome >/dev/null 2>&1; then
+  curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor --yes -o /usr/share/keyrings/google-chrome.gpg
+  echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list
+  apt-get update -q
+  # Hebrew fonts, so a page's screenshot shows its text.
+  apt-get install -yq google-chrome-stable fonts-noto-core
 fi
 
 say "PostgreSQL 17 (the same major version as the embedded database it replaces)"

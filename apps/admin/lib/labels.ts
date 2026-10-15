@@ -4,6 +4,7 @@ import {
   type ARTICLE_LENGTHS,
   type AudienceSetupKey,
   CATEGORIES,
+  type ClaimLabel,
   type Divergence,
   type DraftColor,
   type DraftStatus,
@@ -13,6 +14,8 @@ import {
   type PublishedArticleDto,
   type ReelMotion,
   type ReelStage,
+  type ResearchDepth,
+  type ResearchStatus,
   type ReviewAction,
   type ReviewState,
   type ReviewWhere,
@@ -20,6 +23,7 @@ import {
   type ShareFormat,
   type ShareTemplate,
   type SocialPlatform,
+  type SourceKind,
   type SourceStatus,
   type SubscriberStatus,
   type VisualAgentOverview,
@@ -86,6 +90,11 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
     role: 'מקבל פקודות בצ\'אט ומפעיל את כל הסוכנים',
     about: 'הצ\'אט בדף "סוכן AI" ובאפליקציית Claude. קורא את מצב המערכת ומפעיל את שאר הסוכנים דרך הכלים. כל שינוי מחכה לאישור שלכם.',
   },
+  reporter: {
+    name: 'הכתב-החוקר',
+    role: 'חוקר דיווח מקישור או מצילום מסך, וכותב ממנו כתבה',
+    about: 'מקבל קישור או צילומי מסך (טלגרם, X, וואטסאפ), מחפש את המקור הרשמי לכל פרט ומסמן אותו: עובדה, דיווח, טענה, הערכה, חשד ("לכאורה"), לא מאומת או הופרך. עובדה רק ממקור רשמי, אף פעם לא מאתר חדשות. בונה תיק תחקיר, שומר עותק וצילום של כל מקור כהוכחה, וכותב רק מהתיק. בסוף הכתבה: שמות המקורות, בלי קישורים.',
+  },
   rewrite: {
     name: 'עורך השכתוב',
     role: 'כותב את הכתבה מהמקור ומתקן לפי ההערות',
@@ -121,6 +130,8 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
 /** Every skill: its name, and what it is used for. */
 export const SKILL: Record<string, { name: string; use: string }> = {
   'agent.system': { name: 'הנחיות העורך הראשי', use: 'איך הוא עונה בצ\'אט ומפעיל את הכלים' },
+  'research.system': { name: 'התחקיר', use: 'איך חוקרים דיווח: סדר העבודה, אילו מקורות מותרים, ואיך מסמנים כל פרט' },
+  'research.write': { name: 'כתיבה מתיק התחקיר', use: 'איך כל פרט נכתב בכתבה לפי הסימון שלו' },
   'rewrite.system': { name: 'כתיבת כתבה מהמקור', use: 'כל כתבה חדשה. במקום הסימון {{style_rules}} המערכת מכניסה את סגנון הבית שנלמד ואת ההגדרות שלכם.' },
   'refine.system': { name: 'תיקון לפי הערה', use: 'ההערות בעורך: "תקצר", "כותרת חדה יותר"' },
   'review.system': { name: 'הבדיקה המשפטית', use: 'אילו סיכונים מחפשים בכל כתבה, ומה מסמנים' },
@@ -170,6 +181,42 @@ export const REVIEW_ACTION: Record<ReviewAction, string> = {
 };
 
 export const REVIEW_WHERE_LABEL: Record<ReviewWhere, string> = { title: 'בכותרת', subtitle: 'בכותרת המשנה', body: 'בגוף הכתבה' };
+
+// --- The research reporter ------------------------------------------------------------
+export const RESEARCH_DEPTH: Record<ResearchDepth, { name: string; about: string; cost: string }> = {
+  quick: { name: 'מהיר', about: 'עד 3 חיפושים. מספיק לרוב הדיווחים.', cost: 'בערך 10–30 סנט' },
+  regular: { name: 'רגיל', about: 'עד 8 חיפושים, ובדיקה של כל פרט.', cost: 'בערך 30–80 סנט' },
+  deep: { name: 'מעמיק', about: 'עד 15 חיפושים, במודל החזק ביותר. לסיפור גדול.', cost: 'בערך 1–3 דולר' },
+};
+
+export const RESEARCH_STATUS: Record<ResearchStatus, { label: string; tone: Tone }> = {
+  queued: { label: 'ממתין', tone: 'info' },
+  researching: { label: 'חוקר', tone: 'info' },
+  writing: { label: 'כותב', tone: 'info' },
+  done: { label: 'מוכן לעריכה', tone: 'ok' },
+  failed: { label: 'נכשל', tone: 'danger' },
+};
+
+/** How each detail of a research file is marked, and how it is written in the article. */
+export const CLAIM_LABEL: Record<ClaimLabel, { name: string; tone: Tone; how: string }> = {
+  verified: { name: 'עובדה מאומתת', tone: 'ok', how: 'מקור רשמי אומר זאת. נכתב כעובדה, עם ייחוס.' },
+  reported: { name: 'דיווח', tone: 'info', how: 'רק דיווח, לא אומת במקור רשמי. "לפי דיווח ב..."' },
+  claimed: { name: 'טענה', tone: 'info', how: 'מישהו אמר זאת. "לדבריו", "לטענתו"' },
+  estimate: { name: 'הערכה', tone: 'muted', how: 'תחזית או ניתוח. "ההערכה היא", לעולם לא כעובדה' },
+  suspicion: { name: 'חשד (לכאורה)', tone: 'warn', how: 'חשד עם מקור רשמי. "לכאורה", "על פי החשד"' },
+  unverified: { name: 'לא מאומת', tone: 'danger', how: 'לא נמצא מקור. לא נכנס לכתבה.' },
+  debunked: { name: 'הופרך', tone: 'danger', how: 'נבדק ונמצא לא נכון. נכנס רק כהפרכה.' },
+};
+
+export const SOURCE_KIND: Record<SourceKind, string> = {
+  official: 'רשמי',
+  company: 'החברה עצמה',
+  person: 'האדם עצמו',
+  social: 'רשת חברתית',
+  news: 'אתר חדשות (רק רמז)',
+  wiki: 'ויקיפדיה (רקע)',
+  other: 'אחר',
+};
 
 /** Where an article's distribution plan stands. */
 export const PLAN_STATE: Record<PlanState, { label: string; tone: Tone }> = {

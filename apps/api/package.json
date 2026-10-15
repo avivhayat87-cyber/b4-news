@@ -32,6 +32,7 @@
     "fastify-type-provider-zod": "^4.0.2",
     "ipaddr.js": "^2.5.0",
     "nodemailer": "^10.1.1",
+    "playwright-core": "^1.56.1",
     "qrcode": "^1.5.4",
     "sharp": "^0.35.5",
     "zod": "^3.25.0"

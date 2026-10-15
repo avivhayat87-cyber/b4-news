@@ -23,7 +23,7 @@ owner ─▶ gcloud (Google sign-in) ─▶ IAP tunnel ─▶ SSH        server 
 
 | File | What |
 | --- | --- |
-| `setup.sh` | First-time install (Node 22, PostgreSQL 17, cloudflared, Ops Agent, security updates, swap, the `b4` user, `live.env`, systemd). Safe to run again. |
+| `setup.sh` | First-time install (Node 22, Google Chrome for the screenshots of research sources, PostgreSQL 17, cloudflared, Ops Agent, security updates, swap, the `b4` user, `live.env`, systemd). Safe to run again: a server set up before Chrome was added gets it by running `npm run cloud -- setup` once more. |
 | `systemd/b4-live.service` | Starts the live environment at boot. |
 | `systemd/b4-watchdog.*` | Every 3 minutes: starts it again if any part stopped answering. |
 | `systemd/b4-backup.*` | Every night at 03:15: `live.mjs backup nightly` (also outside the server). |

@@ -73,7 +73,7 @@ export const draftErrors = {
     Object.assign(new AppError(409, 'version_conflict', 'מישהו אחר שמר גרסה חדשה של הכתבה. רעננו כדי לראות אותה.'), { version }),
 };
 
-async function categoryIdOf(db: Db, slug: string | null | undefined): Promise<number | null> {
+export async function categoryIdOf(db: Db, slug: string | null | undefined): Promise<number | null> {
   if (!slug) return null;
   const [row] = await db.select({ id: categories.id }).from(categories).where(eq(categories.slug, slug)).limit(1);
   if (!row) throw new AppError(400, 'bad_category', 'קטגוריה לא מוכרת');
@@ -147,7 +147,7 @@ export async function createDraftsFromItems(s: Services, staff: Staff, input: z.
   return { magazineId, draftIds };
 }
 
-async function nextPosition(db: Db, magazineId: string | undefined): Promise<number> {
+export async function nextPosition(db: Db, magazineId: string | undefined): Promise<number> {
   if (!magazineId) return 0;
   const [row] = await db
     .select({ n: sql<number>`coalesce(max(${articleDrafts.position}), -1)::int + 1` })
@@ -156,7 +156,7 @@ async function nextPosition(db: Db, magazineId: string | undefined): Promise<num
   return row?.n ?? 0;
 }
 
-async function assertMagazine(db: Db, magazineId: string | undefined) {
+export async function assertMagazine(db: Db, magazineId: string | undefined) {
   if (!magazineId) return;
   const [mag] = await db.select({ status: magazines.status }).from(magazines).where(eq(magazines.id, magazineId)).limit(1);
   if (!mag) throw errors.notFound('המגזין');

@@ -9,6 +9,7 @@ import { use, useState } from 'react';
 import { Canvas } from '@/components/editor/canvas';
 import { AiPanel, ImagesPanel, MetaPanel, OriginalPane } from '@/components/editor/panels';
 import { SocialPanel } from '@/components/editor/social-panel';
+import { DossierPanel } from '@/components/research/dossier-panel';
 import { ReviewPanel } from '@/components/review/review-panel';
 import { type SaveState, useAutosave } from '@/components/editor/use-autosave';
 import { Badge, Button, ColorDot, ErrorBox, Loading, Spinner, cx, useToast } from '@/components/ui';
@@ -16,7 +17,7 @@ import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { DRAFT_STATUS, formatTime } from '@/lib/labels';
 
-type Tab = 'original' | 'ai' | 'images' | 'meta' | 'review' | 'social';
+type Tab = 'research' | 'original' | 'ai' | 'images' | 'meta' | 'review' | 'social';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   saved: 'נשמר',
@@ -37,7 +38,7 @@ function Editor({ id }: { id: string }) {
   const qc = useQueryClient();
   const toast = useToast();
   const canEdit = useCan('editor');
-  const [tab, setTab] = useState<Tab>('original');
+  const [chosenTab, setTab] = useState<Tab | null>(null);
   const [selection, setSelection] = useState('');
 
   const draftQ = useQuery({
@@ -46,6 +47,8 @@ function Editor({ id }: { id: string }) {
     refetchInterval: (q) => (q.state.data && (q.state.data.activeJob || ['queued_ai', 'ai_processing'].includes(q.state.data.status)) ? 2000 : false),
   });
   const draft = draftQ.data;
+  // An article from a research opens on its file; any other on its original.
+  const tab: Tab = chosenTab ?? (draft?.origin === 'research' ? 'research' : 'original');
   // The legal review of the final text: a red bar while a risk waits for a decision.
   const final = draft?.status === 'text_final' || draft?.status === 'ready';
   const reviewQ = useQuery({
@@ -120,6 +123,7 @@ function Editor({ id }: { id: string }) {
   const back = draft.magazine ? `/magazines/${draft.magazine.id}` : '/saved';
 
   const tabs: { id: Tab; label: string; dot?: boolean }[] = [
+    ...(draft.origin === 'research' ? [{ id: 'research' as const, label: 'תיק התחקיר' }] : []),
     { id: 'original', label: 'המקור' },
     { id: 'ai', label: 'עוזר AI', dot: aiBusy },
     { id: 'images', label: 'תמונות', dot: !draft.hero },
@@ -254,6 +258,7 @@ function Editor({ id }: { id: string }) {
             ))}
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
+            {tab === 'research' && <DossierPanel draftId={id} />}
             {tab === 'original' && <OriginalPane draft={draft} onQueued={refetch} />}
             {tab === 'ai' && <AiPanel draft={draft} selection={selection} busyJob={draft.activeJob} onQueued={refetch} />}
             {tab === 'images' && <ImagesPanel draft={draft} onHero={(m) => setHero.mutate(m)} />}

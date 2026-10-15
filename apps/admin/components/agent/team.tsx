@@ -9,6 +9,7 @@ import { admin } from '@/lib/api';
 import { AGENT, SKILL, modelName } from '@/lib/labels';
 import { Badge, Card, ErrorBox, LinkButton, Loading, cx } from '../ui';
 import { EditorAgent } from './editor-agent';
+import { ResearcherAgent } from './researcher-agent';
 import { ReviewerAgent } from './reviewer-agent';
 import { SkillEditor } from './skill-editor';
 import { SocialAgent } from './social-agent';
@@ -43,6 +44,7 @@ function AgentCard({ agent, picked, onPick, lead }: { agent: AgentCardDto; picke
 }
 
 function Settings({ id }: { id: AgentId }) {
+  if (id === 'reporter') return <ResearcherAgent />;
   if (id === 'rewrite') return <EditorAgent />;
   if (id === 'reviewer') return <ReviewerAgent />;
   if (id === 'social') return <SocialAgent />;
@@ -172,10 +174,6 @@ export function AgentTeam() {
           {others.map((a) => (
             <AgentCard key={a.id} agent={a} picked={picked === a.id} onPick={() => setPicked(a.id)} />
           ))}
-          <div className="flex flex-col rounded-xl border border-dashed border-line p-4 text-right">
-            <span className="font-display text-[17px] font-extrabold text-muted">הכתב-החוקר</span>
-            <span className="mt-1 text-sm text-muted">בקרוב: תחקיר מקישור, מצילום מסך או מרעיון</span>
-          </div>
         </div>
         <p className="mt-4 text-xs text-muted">לוחצים על סוכן כדי לראות מה הוא עושה, את הסקיל שלו ואת ההגדרות שלו. העלויות הן הערכה לפי מחירי המחירון.</p>
       </Card>

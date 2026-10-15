@@ -3,6 +3,7 @@
 // agents are is fixed here; what they know is edited in the CMS.
 import { AGENT_IDS, type AgentCardDto, type AgentId, type AgentTeamDto, type AgentUsageDto, NEWSROOM_FIXED_RULES } from '@b4/shared';
 import { aiJobs, and, eq, gte, sql } from '@b4/db';
+import { textCostUsd } from '../ai/prices';
 import type { Services } from '../context';
 import { AGENT_MODEL, agentEngine } from './engine';
 import { AGENT_SKILLS, RULES_KEY, skillSummaries } from './skills';
@@ -24,14 +25,8 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   social_image: 'visual',
   social_video: 'visual',
   legal_review: 'reviewer',
+  research: 'reporter',
 };
-
-/** Anthropic's list prices, US dollars per million tokens (input, output). */
-const TEXT_PRICES: { model: string; input: number; output: number }[] = [
-  { model: 'claude-opus-5-5', input: 4, output: 20 },
-  { model: 'claude-sonnet-5-5', input: 2, output: 10 },
-  { model: 'claude-haiku-5-5', input: 0.1, output: 0.5 },
-];
 
 /** The first moment of this month in Israel, and the month as YYYY-MM. */
 export function israelMonthStart(now = new Date()): { start: Date; month: string } {
@@ -62,9 +57,9 @@ async function usageSince(s: Services, since: Date): Promise<Map<AgentId, AgentU
     u.calls += r.calls;
     u.inputTokens += r.input;
     u.outputTokens += r.output;
-    const price = TEXT_PRICES.find((p) => r.model.startsWith(p.model));
+    const price = textCostUsd(r.model, r.input, r.output);
     if (r.priced !== null) u.costUsd += Number(r.priced);
-    else if (price) u.costUsd += (r.input * price.input + r.output * price.output) / 1_000_000;
+    else if (price !== null) u.costUsd += price;
     // The development stand-in costs nothing; anything else without a known price is billed elsewhere (Google).
     else if (!['fake', 'demo', 'placeholder'].some((m) => r.model.startsWith(m))) u.partial = true;
   }
@@ -84,6 +79,8 @@ export async function agentTeam(s: Services): Promise<AgentTeamDto> {
   const [text, visual, chief] = await Promise.all([s.ai.text().catch(() => null), s.ai.visual().catch(() => null), agentEngine(s).catch(() => null)]);
   const model: Record<AgentId, { provider: string; model: string; live: boolean }> = {
     chief: { provider: 'anthropic', model: AGENT_MODEL, live: Boolean(chief?.live) },
+    // A deep research runs on the strongest model.
+    reporter: { provider: 'anthropic', model: [claude.model, 'claude-opus-5-5'].filter(Boolean).join(' / '), live: Boolean(text?.live) },
     rewrite: { provider: 'anthropic', model: claude.model ?? '', live: Boolean(text?.live) },
     // The check on the fast model; a safer wording of a passage on the main one.
     reviewer: { provider: 'anthropic', model: [claude.modelFast, claude.model].filter(Boolean).join(' / '), live: Boolean(text?.live) },

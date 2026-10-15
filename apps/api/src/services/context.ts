@@ -3,6 +3,7 @@
 import type { Db } from '@b4/db';
 import type { Config } from '../config';
 import { ConfiguredMailer, type Mailer } from '../lib/mailer';
+import { type PageCapture, pageCapture } from '../lib/page-capture';
 import { safeFetch } from '../lib/safe-fetch';
 import { BucketStorage, LocalStorage, type MediaStorage } from '../lib/storage';
 import { type AiHub, createAiHub } from './ai';
@@ -19,6 +20,8 @@ export type Services = {
   storage: MediaStorage;
   fetch: Fetcher;
   mailer: Mailer;
+  /** Screenshots of web pages (the research reporter's proof of its sources). */
+  capture: PageCapture;
   log: Log;
 };
 
@@ -26,7 +29,7 @@ export function createFetcher(config: Config): Fetcher {
   return (url, opts) => safeFetch(url, { allowPrivate: config.scraper.allowPrivate, userAgent: config.scraper.userAgent, ...opts });
 }
 
-export type ServiceOverrides = Partial<Pick<Services, 'ai' | 'storage' | 'fetch' | 'mailer'>>;
+export type ServiceOverrides = Partial<Pick<Services, 'ai' | 'storage' | 'fetch' | 'mailer' | 'capture'>>;
 
 /** The one place that wires the services (used by the API process and the standalone worker). */
 export function createServices(config: Config, db: Db, log: Log, overrides: ServiceOverrides = {}): Services {
@@ -44,6 +47,7 @@ export function createServices(config: Config, db: Db, log: Log, overrides: Serv
         const v = await settings.integration('smtp');
         return { url: v.url, from: v.from };
       }, !config.production),
+    capture: overrides.capture ?? pageCapture(config.capture),
     log,
   };
 }

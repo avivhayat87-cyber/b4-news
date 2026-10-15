@@ -149,8 +149,22 @@ type AiJobType = (typeof aiJobs.$inferInsert)['type'];
 /** Runs one AI call and records it in ai_jobs (tokens, latency, errors) for cost tracking. */
 export async function tracked<T extends object>(
   db: Db,
-  /** costUsd: the price when the caller knows it (a video: per second); text calls are priced from their tokens. */
-  meta: { type: AiJobType; provider: string; draftId?: string | null; requestedBy?: string | null; promptKey?: string; promptVersion?: number; imageCount?: number; model?: string; costUsd?: number },
+  /**
+   * costUsd: the price when the caller knows it (a video: per second), or costOf when it is known
+   * only from the result (a research: its searches); text calls are otherwise priced from their tokens.
+   */
+  meta: {
+    type: AiJobType;
+    provider: string;
+    draftId?: string | null;
+    requestedBy?: string | null;
+    promptKey?: string;
+    promptVersion?: number;
+    imageCount?: number;
+    model?: string;
+    costUsd?: number;
+    costOf?: (result: T) => number | null;
+  },
   call: () => Promise<T>,
 ): Promise<{ result: T; aiJobId: string }> {
   const started = Date.now();
@@ -172,6 +186,7 @@ export async function tracked<T extends object>(
   try {
     const result = await call();
     const usage = (result as { usage?: Usage }).usage;
+    const costUsd = meta.costOf ? (meta.costOf(result) ?? undefined) : meta.costUsd;
     await db
       .update(aiJobs)
       .set({
@@ -179,7 +194,7 @@ export async function tracked<T extends object>(
         model: usage?.model ?? meta.model ?? 'unknown',
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
-        ...(meta.costUsd !== undefined ? { costUsd: meta.costUsd.toFixed(4) } : {}),
+        ...(costUsd !== undefined ? { costUsd: costUsd.toFixed(4) } : {}),
         latencyMs: Date.now() - started,
         finishedAt: new Date(),
       })

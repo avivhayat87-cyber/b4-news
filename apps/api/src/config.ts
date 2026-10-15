@@ -29,6 +29,10 @@ const Env = z
     PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
     /** The CMS, for links in the staff's emails (an article stopped by the legal review). */
     CMS_URL: z.string().url().default('http://localhost:3001'),
+    /** Screenshots of research sources as proof: "auto" uses an installed browser when there is one; "off" never (tests). */
+    PAGE_CAPTURE: z.enum(['auto', 'off']).optional(),
+    /** The browser for those screenshots (Chrome, Edge or Chromium); empty = the usual install places. */
+    BROWSER_PATH: z.string().optional(),
     /** This API's own public origin (links to media and the development sample sites). */
     PUBLIC_API_URL: z.string().url().optional(),
     COOKIE_DOMAIN: z.string().optional(),
@@ -131,6 +135,7 @@ const Env = z
       corsOrigins: env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
       publicSiteUrl: env.PUBLIC_SITE_URL.replace(/\/+$/, ''),
       cmsUrl: env.CMS_URL.replace(/\/+$/, ''),
+      capture: { enabled: (env.PAGE_CAPTURE ?? (env.NODE_ENV === 'test' ? 'off' : 'auto')) === 'auto', browserPath: env.BROWSER_PATH || undefined },
       publicApiUrl,
       cookieDomain: env.COOKIE_DOMAIN || undefined,
       hashPepper: pepper,

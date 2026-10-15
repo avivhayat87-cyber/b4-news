@@ -52,7 +52,7 @@ export const runTrigger = pgEnum('run_trigger', ['manual', 'schedule']);
 export const runItemOrigin = pgEnum('run_item_origin', ['found', 'pulled']);
 export const scrapedItemStatus = pgEnum('scraped_item_status', ['new', 'in_draft', 'ignored']);
 export const magazineStatus = pgEnum('magazine_status', ['draft', 'editing', 'ready', 'publishing', 'published', 'partially_failed', 'archived']);
-export const draftOrigin = pgEnum('draft_origin', ['scraped', 'manual_url', 'manual_write']);
+export const draftOrigin = pgEnum('draft_origin', ['scraped', 'manual_url', 'manual_write', 'research']);
 export const draftStatus = pgEnum('draft_status', ['queued_ai', 'ai_processing', 'ai_failed', 'editing', 'text_final', 'ready', 'skipped', 'published']);
 export const draftColor = pgEnum('draft_color', ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray']);
 export const homepagePlacement = pgEnum('homepage_placement', ['main', 'trending', 'none']);
@@ -75,6 +75,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'visual_prompt',
   'visual_learning',
   'legal_review',
+  'research',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -505,7 +506,10 @@ export const articleDrafts = pgTable(
   (t) => [
     index('article_drafts_magazine_idx').on(t.magazineId, t.position),
     index('article_drafts_status_idx').on(t.status, t.updatedAt.desc()),
-    check('original_required', sql`${t.origin} = 'manual_write' or ${t.scrapedItemId} is not null`),
+    // A research may have no page to keep (screenshots, a post that can't be read): its file is the original.
+    // Compared as text: the migration that adds "research" to the enum runs in the same transaction,
+    // where PostgreSQL refuses the new value itself.
+    check('original_required', sql`${t.origin}::text in ('manual_write', 'research') or ${t.scrapedItemId} is not null`),
     check(
       'ready_means_complete',
       sql`${t.status} not in ('ready', 'published') or (${t.categoryId} is not null and ${t.heroMediaId} is not null and ${t.textFinalizedAt} is not null and ${t.title} <> '')`,
@@ -531,6 +535,71 @@ export const draftRevisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('draft_revisions_draft_idx').on(t.draftId, t.id.desc())],
+);
+
+/**
+ * A source of a research, with the proof kept of it: a copy of the page's text (here, since media
+ * storage keeps only images and videos) and the storage key of a screenshot.
+ */
+export type ResearchSourceRecord = {
+  id: string;
+  url: string;
+  title: string;
+  publisher: string;
+  kind: string;
+  approved: boolean;
+  usedFor: string;
+  /** skipped: past the number of sources kept per research. */
+  archive: { status: 'pending' | 'saved' | 'failed' | 'skipped'; capturedAt: string | null; text: string | null; screenshotKey: string | null; error: string | null };
+};
+
+/** What the research reporter found: every detail with its label and sources (see ResearchDossierDto). */
+export type ResearchDossierRecord = {
+  original: { who: string; when: string; what: string; url: string | null };
+  summary: string;
+  claims: { id: string; text: string; label: string; sourceIds: string[]; note: string }[];
+  background: string[];
+  openQuestions: string[];
+  responseNeeded: string[];
+  sources: ResearchSourceRecord[];
+  creditLine: string;
+};
+
+/**
+ * A research from a link or from screenshots: the input, the research file, and the draft it
+ * became. The article is written only from the file, and the file stays as proof.
+ */
+export const researchTasks = pgTable(
+  'research_tasks',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** link | screenshot */
+    kind: text().notNull(),
+    /** quick | regular | deep */
+    depth: text().notNull().default('quick'),
+    url: text(),
+    /** The uploaded screenshots. */
+    mediaIds: uuid().array().notNull().default(sql`'{}'::uuid[]`),
+    note: text().notNull().default(''),
+    /** Where the draft goes: a magazine, or a single article with this color. */
+    magazineId: uuid().references(() => magazines.id, { onDelete: 'set null' }),
+    colorLabel: draftColor(),
+    /** queued | researching | writing | done | failed */
+    status: text().notNull().default('queued'),
+    dossier: jsonb().$type<ResearchDossierRecord | null>(),
+    /** Stories we already have that look like the same one: [{ kind, id, title, at, href }] */
+    similar: jsonb().$type<{ kind: 'article' | 'draft'; id: string; title: string; at: string; href: string }[]>().notNull().default([]),
+    draftId: uuid().references(() => articleDrafts.id, { onDelete: 'set null' }),
+    searches: integer().notNull().default(0),
+    costUsd: numeric({ precision: 10, scale: 4 }).notNull().default('0'),
+    lastError: text(),
+    createdBy: uuid()
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('research_tasks_created_idx').on(t.createdAt.desc()), index('research_tasks_draft_idx').on(t.draftId)],
 );
 
 /** One risk the legal review found, with the AI's safer wording and a person's decision. */
