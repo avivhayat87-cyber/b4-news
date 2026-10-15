@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
-import { Badge, Empty, ErrorBox, Loading, PageHeader, cx } from '@/components/ui';
+import { Badge, Empty, ErrorBox, LinkButton, Loading, PageHeader, cx } from '@/components/ui';
 import { admin } from '@/lib/api';
 import { RUN_STATUS, formatDateTime } from '@/lib/labels';
 
@@ -14,7 +14,11 @@ function Runs() {
 
   return (
     <>
-      <PageHeader title="איתורים קודמים" subtitle="כל איתור נשמר עם התאריך ומספר הכתבות שנמצאו. אפשר להיכנס ולהעביר כתבה לאיתור האחרון." />
+      <PageHeader
+        title="איתורים קודמים"
+        subtitle="כל איתור נשמר עם התאריך ומספר הכתבות שנמצאו. אפשר להיכנס ולהעביר כתבה לאיתור האחרון."
+        actions={<LinkButton href={region === 'international' ? '/discovery/international' : '/discovery'}>חזרה לאיתור</LinkButton>}
+      />
       <div className="mb-5 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist" aria-label="סוג האתרים">
         {(
           [

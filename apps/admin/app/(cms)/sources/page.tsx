@@ -173,7 +173,7 @@ export default function SourcesPage() {
       </div>
       {region === 'international' && (
         <p className="mb-5 rounded-xl bg-info-soft px-5 py-3 text-[15px] text-info">
-          אתרים מחו״ל נסרקים בנפרד, ב&quot;איתור מחו״ל&quot;. הכותרות מתורגמות לעברית אחרי כל איתור; כשכתבה עוברת לעריכה, המקור מתורגם במלואו וה-AI כותב את הכתבה החדשה בעברית.
+          אתרים מחו״ל נסרקים בנפרד, ב&quot;איתור כתבות&quot; ← &quot;אתרים מחו״ל&quot;. הכותרות מתורגמות לעברית אחרי כל איתור; כשכתבה עוברת לעריכה, המקור מתורגם במלואו וה-AI כותב את הכתבה החדשה בעברית.
         </p>
       )}
       <ol className="mb-6 grid gap-3 text-sm md:grid-cols-4">

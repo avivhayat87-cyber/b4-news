@@ -21,18 +21,6 @@ const I = {
       <path d="M12 12l6-6" />
     </>
   ),
-  history: (
-    <>
-      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-      <path d="M3 3v5h5M12 7v5l3 2" />
-    </>
-  ),
-  globe: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3.5 9h17M3.5 15h17M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-    </>
-  ),
   upload: <path d="M12 16V4m0 0-5 5m5-5 5 5M4 20h16" />,
   saved: <path d="M6 3h12v18l-6-4-6 4z" />,
   articles: <path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8" />,
@@ -98,9 +86,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const nav: NavItem[] = [
     { href: '/', label: 'לוח בקרה', icon: I.home },
     { href: '/agent', label: 'סוכן AI', icon: I.agent },
+    // One item for all of discovery: the Israeli/abroad tabs and the past runs are inside it.
     { href: '/discovery', label: 'איתור כתבות', icon: I.radar },
-    { href: '/discovery/international', label: 'איתור מחו״ל', icon: I.globe },
-    { href: '/discovery/runs', label: 'איתורים קודמים', icon: I.history },
     { href: '/manual', label: 'העלאה ידנית', icon: I.upload },
     { href: '/saved', label: 'עריכות שמורות', icon: I.saved, badge: dash.data ? dash.data.drafts.working + dash.data.drafts.ready : undefined },
     { href: '/review', label: 'בדיקה משפטית', icon: I.review, badge: dash.data?.review.waiting || undefined },
@@ -116,10 +103,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/settings', label: 'הגדרות', icon: I.settings },
   ];
 
-  const active = (href: string) =>
-    href === '/'
-      ? pathname === '/'
-      : pathname === href || (pathname.startsWith(`${href}/`) && !(href === '/discovery' && (pathname.startsWith('/discovery/runs') || pathname.startsWith('/discovery/international'))));
+  const active = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
 
   async function logout() {
     await api.post('/auth/staff/logout').catch(() => undefined);
