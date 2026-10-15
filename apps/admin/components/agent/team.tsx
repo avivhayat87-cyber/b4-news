@@ -97,6 +97,15 @@ function Settings({ id }: { id: AgentId }) {
         </div>
       </div>
     );
+  if (id === 'ads')
+    return (
+      <div className="space-y-3">
+        <p className="text-[15px] text-ink-2">
+          מפעילים אותו מדף &quot;פרסום&quot;: בלשונית &quot;סוכן הפרסום&quot; מקבלים הצעת קמפיין לעסק, ובכל מודעה יש כפתור לבדיקה שלו. עולה בערך סנט להצעה או לבדיקה, ותמונה מ-AI רק כשמבקשים. הוא אף פעם לא מעלה מודעה בעצמו.
+        </p>
+        <LinkButton href="/ads">לדף הפרסום</LinkButton>
+      </div>
+    );
   if (id === 'learning')
     return (
       <div className="space-y-3">

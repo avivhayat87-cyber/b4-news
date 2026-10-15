@@ -1,10 +1,12 @@
 // A copy of the live data made safe for the workshop, so code is developed against real articles
 // and comments. What identifies readers, newsletter subscribers and people who asked for a
-// takedown is replaced; sessions, sign-in codes, access tokens, push devices and the live keys
-// are removed; background work is cancelled and the social accounts are switched off. The
+// takedown is replaced; sessions, sign-in codes, access tokens, push devices, the live keys and
+// the ad leads are removed, and advertisers lose their contacts; background work is cancelled and the social accounts are switched off. The
 // workshop can't reach a real person or a real page. Its own keys and staff sign-ins are put back.
 import {
   type Db,
+  adLeads,
+  advertisers,
   appSettings,
   consents,
   devices,
@@ -60,6 +62,15 @@ export async function prepareWorkshopCopy(copy: Db, workshop: Db | null): Promis
       .set({ name: 'פונה', email: sql`'takedown-' || ${takedownRequests.id} || '@example.invalid'`, ipHash: null })
       .returning({ id: takedownRequests.id }),
   );
+  // Ad leads are people's details (sealed with the live key anyway): none come along. Advertisers
+  // keep their names, but no contact, so a test lead never emails a real business.
+  report.adLeads = await n(copy.delete(adLeads).returning({ id: adLeads.id }));
+  report.advertisers = await n(
+    copy
+      .update(advertisers)
+      .set({ contactName: '', phone: '', email: sql`case when ${advertisers.email} = '' then '' else 'advertiser-' || ${advertisers.id} || '@example.invalid' end` })
+      .returning({ id: advertisers.id }),
+  );
 
   // Work the live site had queued (publishing, posts, AI) never runs in the workshop.
   report.cancelledJobs = await n(copy.update(jobs).set({ status: 'cancelled' }).where(inArray(jobs.status, ['queued', 'running'])).returning({ id: jobs.id }));
@@ -112,5 +123,9 @@ export async function leftovers(copy: Db): Promise<string[]> {
   if (a?.n) found.push(`${a.n} active social accounts`);
   const [j] = await copy.select({ n: sql<number>`count(*)::int` }).from(jobs).where(inArray(jobs.status, ['queued', 'running']));
   if (j?.n) found.push(`${j.n} queued jobs`);
+  const [l] = await copy.select({ n: sql<number>`count(*)::int` }).from(adLeads);
+  if (l?.n) found.push(`${l.n} ad leads`);
+  const [ad] = await copy.select({ n: sql<number>`count(*)::int` }).from(advertisers).where(sql`${advertisers.email} <> '' and ${advertisers.email} not like '%@example.invalid'`);
+  if (ad?.n) found.push(`${ad.n} advertiser emails`);
   return found;
 }

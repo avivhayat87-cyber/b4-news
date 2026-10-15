@@ -334,6 +334,43 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 | GET | `/admin/takedowns?view=open\|closed` | editor | `TakedownDto[]`: open ones oldest first, with the answer-by time (48 hours) |
 | PATCH | `/admin/takedowns/:id` | editor | `DecideTakedownInput` (`in_review` · `removed` · `rejected`, note, hide the comment); mails the requester |
 
+### Advertising ("פרסום", admins only, reading included: leads are personal data)
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/ads` | admin | `AdsOverviewDto`: the switches, advertisers (each with its private report link), campaigns waiting/running/paused, the archive (ended, newest 200), new leads and inquiries. Moves campaigns whose date or view cap passed to the archive first |
+| PUT | `/admin/ads/settings` | admin | `AdSettings` (on/off for every ad, the house promo in empty places, the app feed's spacing) |
+| POST · PUT · DELETE | `/admin/ads/advertisers[/:id]` | admin | `AdvertiserInput` → `AdvertiserDto`; delete only without campaigns (409) |
+| POST | `/admin/ads/advertisers/:id/new-link` | admin | a new report link; the old one stops working |
+| GET | `/admin/ads/campaigns/:id` | admin | `CampaignDto` with its ads, numbers and new leads |
+| POST · PUT | `/admin/ads/campaigns[/:id]` | admin | `CampaignInput`; a new campaign is a draft |
+| POST | `/admin/ads/campaigns/:id/status` | admin | `{ status }`: `active` approves it (recorded with who; 409 without a usable ad, after its end date, or a link ad without a URL), `paused`, `ended` (to the archive) |
+| PUT | `/admin/ads/campaigns/:id/report-note` | admin | `{ note }`: the summary on the advertiser's page |
+| DELETE | `/admin/ads/campaigns/:id` | admin | → 204: the campaign with its ads, pictures, numbers and leads (audited with the lead count) |
+| GET | `/admin/ads/campaigns/:id/days` | admin | `AdDayDto[]`: the last 90 days |
+| POST | `/admin/ads/campaigns/:id/creatives` | admin | `CreativeInput` → `CampaignDto`; the format must fit one of its places, a banner needs its picture, a native ad its headline |
+| PUT · DELETE | `/admin/ads/creatives/:id` | admin | a changed ad loses its check; an ad that ran can't be deleted (409: turn it off) |
+| POST | `/admin/ads/images?use=billboard-desktop\|billboard-mobile\|rectangle\|native\|photo` | admin | multipart, one file → `AdImageDto`; banners only in their own proportions (±3%), kept at twice the display size, first frame only |
+| POST | `/admin/ads/compose` | admin | `AdComposeInput` → `AdComposeDto`: a banner set in the brand fonts from words (and a photo), in every size of its format (free) |
+| GET | `/admin/ads/leads?kind=lead\|inquiry&campaignId=` | admin | `AdLeadDto[]` (decrypted), newest first |
+| PATCH · DELETE | `/admin/ads/leads/:id` | admin | `{ status: new\|handled }` / delete one (audited) |
+| POST | `/admin/ads/agent/brief` | admin | `AdBriefInput` → 202 `AdTaskDto`: the ads agent's campaign proposal (a job) |
+| POST | `/admin/ads/creatives/:id/review` | admin | → 202 `AdTaskDto`: the agent checks the ad (its text and its picture); saved on the ad |
+| POST | `/admin/ads/campaigns/:id/report` | admin | → 202 `AdTaskDto`: a proposed summary for the advertiser (saved only by `report-note`) |
+| POST | `/admin/ads/agent/draw` | admin | `{ idea }` → 202 `AdTaskDto`: a picture from a Hebrew description (one image) |
+| GET | `/admin/ads/agent/tasks/:id` | admin | `AdTaskDto` (ask until `done` or `failed`) |
+
+Public, never cached:
+
+| Method | Path | |
+| --- | --- | --- |
+| GET | `/public/ads/:slot?device=desktop\|mobile&category=&exclude=` | `PublicAdSlot`: one ad (signed `token`) or none, `housePromo`, `appFeedEvery` |
+| POST | `/public/ads/view` | `{ token, kind: view\|open }` → 204: a measured view, or a lead ad's form opened (its click) |
+| GET | `/public/ads/go/:token` | counts the click → 302 to the advertiser's URL with utm tags (theirs win); a stale token → the site |
+| POST | `/public/ads/lead` | `AdLeadInput` (consent required) → 201 `{ thankYou }`; 5 per 10 minutes per address |
+| POST | `/public/ads/inquiry` | `AdInquiryInput` → 204 ("advertise with us"); 5 an hour |
+| GET | `/public/partners/:key` | `PartnerReportDto`: an advertiser's campaigns, days and leads behind their signed link |
+
 ## Site cache revalidation (site side)
 
 `POST {site}/api/revalidate` with header `x-revalidate-secret` and `{ "tags": [...] }`. Tags: `home`, `search`, `category:<slug>`, `article:<id>`, `article-slug:<slug>`.

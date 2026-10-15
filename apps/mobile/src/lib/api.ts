@@ -1,6 +1,8 @@
 // API client for the app. Readers authenticate with a Bearer token (never cookies),
 // so the app is unaffected by the site's cross-site protections.
 import type {
+  AdLeadInput,
+  AdSlot,
   ArticleCard,
   ArticleFull,
   CategoryPage,
@@ -13,6 +15,7 @@ import type {
   HomeData,
   LikeResult,
   Page,
+  PublicAdSlot,
   PublicSite,
   ReaderDto,
   ReaderNotificationList,
@@ -116,4 +119,10 @@ export const api = {
 
   registerDevice: (platform: 'ios' | 'android' | 'web', pushToken: string, appVersion?: string) =>
     call<void>('/public/devices', { method: 'POST', body: json({ platform, pushToken, appVersion }) }),
+
+  ad: (slot: AdSlot, opts: { category?: string; exclude: string[] }) =>
+    call<PublicAdSlot>(`/public/ads/${slot}?device=mobile${opts.category ? `&category=${enc(opts.category)}` : ''}${opts.exclude.length ? `&exclude=${opts.exclude.join(',')}` : ''}`),
+  /** A lost view is only a number: never an error on screen. */
+  adSeen: (token: string, kind: 'view' | 'open' = 'view') => call<void>('/public/ads/view', { method: 'POST', body: json({ token, kind }) }).catch(() => undefined),
+  adLead: (body: AdLeadInput) => call<{ thankYou: string }>('/public/ads/lead', { method: 'POST', body: json(body) }),
 };

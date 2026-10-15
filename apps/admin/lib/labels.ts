@@ -1,5 +1,12 @@
 // Hebrew labels for everything the CMS shows.
 import {
+  type AdDevice,
+  type AdFormat,
+  type AdGoal,
+  type AdReviewDto,
+  type AdSlot,
+  type AdStatus,
+  type BannerTheme,
   type AgentId,
   type ARTICLE_LENGTHS,
   type AudienceSetupKey,
@@ -131,6 +138,11 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
     role: 'לומד מהתיקונים שלכם אחרי כל פרסום',
     about: 'אחרי כל פרסום קורא בבת אחת מה שיניתם בטיוטות, ומעדכן את כללי סגנון הבית של עורך השכתוב. כותב לכם דוח קצר על מה שלמד.',
   },
+  ads: {
+    name: 'סוכן הפרסום',
+    role: 'מציע קמפיינים למפרסמים ובודק מודעות',
+    about: 'מקבל תיאור קצר של עסק (ואת האתר שלו), ומציע קמפיין שלם: כותרות, טקסט, כפתור, מקומות ומדורים, טופס לידים ותיאור לתמונה. לפני שמודעה עולה הוא בודק אותה: הבטחות מטעות, פרסום פיננסי בלי גילוי, ומודעה שמתחפשת לכתבה. בסוף קמפיין הוא כותב למפרסם סיכום של המספרים. הוא רק מציע: אתם יוצרים את הקמפיין ומאשרים אותו.',
+  },
 };
 
 /** The periods the agents' costs are shown for: the filter button, and the words after "עלות" / "עבודות". */
@@ -165,6 +177,9 @@ export const SKILL: Record<string, { name: string; use: string }> = {
   'translate.system': { name: 'תרגום לעברית', use: 'כותרות אחרי האיתור, וכתבה מלאה לעורך' },
   'learning.batch': { name: 'למידה אחרי פרסום', use: 'מעדכן את כללי סגנון הבית ומסכם מה נלמד' },
   'newsroom.rules': { name: 'נהלי המערכת', use: 'כל סוכן שכותב קורא אותם אחרי הסקיל שלו' },
+  'ads.brief': { name: 'הצעת קמפיין', use: '"פרסום" > "סוכן הפרסום": מה מציעים לעסק, ואיך מודעה טובה אצלנו נראית' },
+  'ads.review': { name: 'בדיקת מודעה', use: 'לפני שמודעה עולה: מה בודקים בטקסט ובתמונה' },
+  'ads.report': { name: 'סיכום למפרסם', use: 'הסיכום בעמוד הדוח של המפרסם, מהמספרים של הקמפיין' },
 };
 
 /** A model id as people say it ("Claude Sonnet 5.5"); other ids stay as they are. */
@@ -394,6 +409,41 @@ export const DIVERGENCE_LABEL: Record<Divergence, { name: string; description: s
   strong: { name: 'כתבה אחרת', description: 'זווית, פתיחה ומבנה חדשים לגמרי, עם כל הנתונים של המקור' },
 };
 export const ARTICLE_LENGTH: Record<(typeof ARTICLE_LENGTHS)[number], string> = { shorter: 'קצר מהמקור', same: 'כמו המקור', longer: 'ארוך מהמקור' };
+
+// --- Advertising ------------------------------------------------------------------------------
+export const AD_SLOT: Record<AdSlot, { name: string; where: string }> = {
+  home_top: { name: 'באנר בדף הבית', where: 'מתחת לכתבות הראשיות בדף הבית' },
+  sidebar: { name: 'טור הצד', where: 'בטור הצד של דף הבית ושל המדורים' },
+  article_side: { name: 'ליד כתבה', where: 'בטור הצד של כתבה (במחשב)' },
+  article_end: { name: 'בסוף כתבה', where: 'אחרי הטקסט של הכתבה, לפני התגובות' },
+  app_feed: { name: 'פיד האפליקציה', where: 'בין הכתבות בדף הבית של האפליקציה' },
+  app_article: { name: 'כתבה באפליקציה', where: 'אחרי כתבה באפליקציה' },
+};
+
+export const AD_FORMAT: Record<AdFormat, { name: string; size: string }> = {
+  billboard: { name: 'באנר רחב', size: 'מחשב 970×250, נייד 320×100' },
+  rectangle: { name: 'מלבן', size: '300×250' },
+  native: { name: 'בסגנון כתבה', size: 'תמונה 16:9, כותרת, שורה וכפתור' },
+};
+
+export const AD_STATUS: Record<AdStatus, { label: string; tone: Tone }> = {
+  draft: { label: 'ממתין לאישור', tone: 'warn' },
+  active: { label: 'רץ באתר', tone: 'ok' },
+  paused: { label: 'מושהה', tone: 'muted' },
+  ended: { label: 'הסתיים', tone: 'ink' },
+};
+
+export const AD_DEVICE: Record<AdDevice, string> = { all: 'מחשב ונייד', desktop: 'מחשב בלבד', mobile: 'נייד בלבד' };
+export const AD_GOAL: Record<AdGoal, string> = { leads: 'פניות (לידים)', traffic: 'כניסות לאתר שלהם', awareness: 'חשיפה' };
+export const BANNER_THEME: Record<BannerTheme, string> = { dark: 'כהה', light: 'בהיר', brand: 'אדום', custom: 'הצבע של המפרסם' };
+export const AD_VERDICT: Record<AdReviewDto['verdict'], { label: string; tone: Tone }> = {
+  ok: { label: 'תקינה', tone: 'ok' },
+  fix: { label: 'צריך תיקון', tone: 'warn' },
+  block: { label: 'אסור לפרסם', tone: 'danger' },
+};
+
+/** Click rate, as advertisers say it ("0.42%"). */
+export const ctr = (clicks: number, views: number) => (views ? `${((clicks / views) * 100).toFixed(2)}%` : '—');
 
 export const ROLE: Record<string, string> = { admin: 'מנהל/ת', editor: 'עורך/ת', developer: 'מפתח/ת', viewer: 'צפייה בלבד' };
 

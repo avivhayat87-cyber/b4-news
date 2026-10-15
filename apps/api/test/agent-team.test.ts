@@ -43,7 +43,7 @@ describe('agent team', () => {
   it('shows every agent with its model and skills, the newsroom rules and the fixed ones', async () => {
     const res = await editor.get('/agents');
     expect(res.status).toBe(200);
-    expect(res.body.agents.map((a: { id: string }) => a.id)).toEqual(['chief', 'reporter', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning']);
+    expect(res.body.agents.map((a: { id: string }) => a.id)).toEqual(['chief', 'reporter', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning', 'ads']);
     const rewrite = res.body.agents.find((a: { id: string }) => a.id === 'rewrite');
     expect(rewrite.skills.map((x: { key: string }) => x.key)).toEqual(['rewrite.system', 'refine.system']);
     expect(res.body.rules).toMatchObject({ key: 'newsroom.rules', kind: 'rules', updatedBy: null });

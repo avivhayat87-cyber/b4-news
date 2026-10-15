@@ -81,6 +81,10 @@ Two folders sit outside the repository and are never edited by hand:
 site moves to a Google Cloud server, and how that server is built and operated must be
 repeatable from files rather than done by hand.
 
+The **advertising** domain (our own ad server, leads, the advertiser's page and the ads agent)
+was added on 2026-10-15 with the owner's approval: selling ad space directly is a revenue line
+the newsroom controls, and Google fills only what we leave empty, later.
+
 ### 2.1 `apps/api/`: the backend
 
 ```
@@ -104,7 +108,12 @@ src/
                         (skills.ts: versions in prompt_templates), editor-agent settings, the visual agent
                         (visual.ts: image and reel prompts, and its learning), the social editor (social.ts:
                         its settings, and the corrections it learns from), the research reporter (researcher.ts:
-                        its settings, and which source may back a fact)
+                        its settings, and which source may back a fact), the ads agent (ads.ts: proposals,
+                        checks and summaries for advertisers, as jobs)
+    ads/              Advertising: campaigns.ts (the switches, advertisers, campaigns and their ads, the numbers,
+                        the archive), serve.ts (choosing a place's ad, the signed token, views and clicks),
+                        leads.ts (leads, "advertise with us" inquiries, the advertiser's page), banner.ts
+                        (banners set from words in the brand fonts)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
@@ -140,9 +149,10 @@ assets/fonts/       Fonts for server-side image rendering (with their licenses)
 ```
 app/              Routes (App Router): home, article/[slug], category/[slug], search, markets,
                     account, my (the reader's feed), newsletter/*, report, [page] (info pages), a/[id] (short links),
+                    partner/[key] (an advertiser's private report),
                     api/revalidate (cache refresh after publishing), sitemap.ts, robots.ts
 components/       Flat, one file per piece of UI: header, footer, hero, carousels, comments,
-                    sidebar, share…; primitives in ui.tsx; hooks named use-*.ts
+                    sidebar, share, ad-slot (an ad place)…; primitives in ui.tsx; hooks named use-*.ts
 lib/              api.ts (server-only reads with cache tags) · client-api.ts (browser calls: comments,
                     sign-in) · site.ts (site constants, link builders) · format.ts · markets.ts · types.ts
 public/brand/     Logo files
@@ -154,9 +164,9 @@ public/brand/     Logo files
 app/(cms)/        One folder per CMS screen, behind the sign-in shell ((cms)/layout.tsx):
                     page.tsx (dashboard) · discovery/ (Israeli sites, international/, runs/) · sources/
                     saved/ · magazines/[id] (+ preview) · drafts/[id] (+ preview) · review/ · manual/
-                    social/ · comments/ · takedowns/ · learning/ · agent/ · settings/
+                    social/ · ads/ (+ new, [id]; admins only) · comments/ · takedowns/ · learning/ · agent/ · settings/
 app/login/        Sign-in
-components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/, review/, research/
+components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/, review/, research/, ads/
                     primitives in ui.tsx (Button, Card, Field, Badge, Loading, ErrorBox, Empty,
                     PageHeader, Thumb, inputClass, cx, useToast)
 lib/              api.ts (the only way to call the server) · auth.tsx (session, useCan) ·
@@ -170,7 +180,7 @@ src/app/          Screens only (Expo Router): (tabs)/ (home, my feed, categories
                     article/[slug], category/[slug], a/[id], account, _layout.tsx
 src/components/   UI pieces (top bar, tabs, article body, comments, welcome…)
 src/lib/          api.ts · token.ts (Bearer token in secure storage) · push.ts · saved.ts ·
-                    consent.ts · theme.ts · format.ts
+                    consent.ts · theme.ts · format.ts · ads.ts (the daily cap, the view timer)
 AGENTS.md         Expo rules (versioned docs, `npx expo install`); binding inside apps/mobile
 ```
 
@@ -179,7 +189,8 @@ AGENTS.md         Expo rules (versioned docs, `npx expo install`); binding insid
 ```
 shared/src/       One file per domain, all re-exported by index.ts:
                     categories · content (public shapes) · comments · auth · cms (CMS DTOs and inputs) ·
-                    settings (integrations, site settings) · legal · social · agent · doc (article body format)
+                    settings (integrations, site settings) · legal · social · agent · research · ads ·
+                    doc (article body format)
 shared/test/      Tests of the pure logic (the document sanitizer and renderer)
 db/src/           schema.ts (every table, in sections) · client.ts (createDb: memory: | pglite:<dir> | postgres://)
                     seed.ts (reference data, prompts, development sample content) · scripts/ (migrate, seed, check-migrations)
@@ -198,6 +209,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, `digest.ts` (the personal issue at the reader's hour, a self-rescheduling job), push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages (incl. preferences), "העיתון שלי" in account, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
+| **Advertising** (פרסום) | `services/ads/*` (campaigns, serving and counting, leads and the advertiser's page, banners), `services/agent/ads.ts` (the ads agent), `routes/admin/ads.ts`, `routes/ads.ts` (public: the ads, views, clicks, leads, inquiries, `/public/partners/:key`), `lib/images.ts` (`ingestAdImage`) | `ads/` (admins only), `components/ads/`, the "סוכן הפרסום" card in `settings/` | `components/ad-slot.tsx`, `advertise-form.tsx`, `partner/[key]`; app `components/ad-card.tsx`, `lib/ads.ts` | `advertisers`, `ad_campaigns`, `ad_creatives`, `ad_stats`, `ad_leads`, `ad_agent_tasks` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
 | **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `lib/expo-push.ts` | `comments/`, `takedowns/`, `audience/` ("מנויים וגולשים") | comments, the bell, account (notification settings), `my/` (the feed), report; app comments, account and the "הפיד שלי" tab | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
@@ -294,6 +306,14 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video
   again before it goes out. The options it chooses from are generated from the code, never
   listed by hand in a prompt. Decided by the owner on 2026-10-14.
+- **Ads are few, calm and labeled.** The places are fixed in code (`AD_SLOTS`), at most two per
+  page and a few in the app's feed; nothing pops up, floats or covers the content. Every ad shows
+  "פרסומת" and the advertiser's name, drawn by the site and the app, and no setting turns it off.
+  A campaign runs only after an admin approves it; the ads agent only proposes and checks. A lead
+  is taken only with explicit consent, kept word for word, and the details are encrypted; leads
+  are deleted only by hand (an ended campaign waits in the archive). Advertising, leads included,
+  is for admins only. Google's ads, when they come, fill only places marked for them where no
+  campaign of ours runs, never automatic placement. Decided by the owner on 2026-10-15.
 - **Right to left:** "start" is the right side.
   - The site and the CMS set `dir="rtl"` on `<html>`, plus the editor canvas.
   - The app sets direction in its component styles.

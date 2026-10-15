@@ -6,7 +6,8 @@ import type { MarketQuote } from '@/lib/types';
 import { SocialIcon } from './icons';
 import { NewsletterForm } from './newsletter-form';
 import { MarketOverview } from './tradingview';
-import { HousePromo, NEW_WINDOW, SectionHeader } from './ui';
+import { AdSlot } from './ad-slot';
+import { NEW_WINDOW, SectionHeader } from './ui';
 
 const changeStyle: Record<MarketQuote['direction'], string> = {
   up: 'bg-[#E7F6EC] text-[#11743A]',
@@ -89,7 +90,8 @@ export function MarketOverviewBox() {
   );
 }
 
-export async function Sidebar({ quotes, marketOverview = false }: { quotes: MarketQuote[]; marketOverview?: boolean }) {
+/** category: the section page it stands beside (an ad for that section may appear in it). */
+export async function Sidebar({ quotes, marketOverview = false, category }: { quotes: MarketQuote[]; marketOverview?: boolean; category?: string }) {
   const site = await getSite();
   const hasSocial = socialLinks(site.links).length > 0;
   return (
@@ -103,7 +105,7 @@ export async function Sidebar({ quotes, marketOverview = false }: { quotes: Mark
           <SocialLinks variant="solid" links={site.links} />
         </section>
       ) : null}
-      <HousePromo />
+      <AdSlot slot="sidebar" category={category} fallback="promo" />
     </aside>
   );
 }

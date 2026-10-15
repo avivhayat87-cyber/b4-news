@@ -1,0 +1,228 @@
+// Advertising: campaigns run only after an admin approves them, and only in their places, sections
+// and dates; views, clicks and leads are counted against a signed token; a lead needs consent, is
+// encrypted, reaches the advertiser and their private page; ended campaigns wait in the archive;
+// and the ads agent proposes and checks, while a person decides.
+import { adLeads, eq } from '@b4/db';
+import sharp from 'sharp';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ORIGIN, setup, signInStaff, staffClient } from './helpers';
+
+describe('advertising', () => {
+  let ctx: Awaited<ReturnType<typeof setup>>;
+  let admin: ReturnType<typeof staffClient>;
+  let editor: ReturnType<typeof staffClient>;
+  let adminCookie: string;
+  let advertiserId: string;
+  let linkCampaign: string;
+  let leadCampaign: string;
+
+  beforeAll(async () => {
+    ctx = await setup();
+    adminCookie = await signInStaff(ctx, 'admin');
+    admin = staffClient(ctx, adminCookie);
+    editor = staffClient(ctx, await signInStaff(ctx, 'editor'));
+  });
+  afterAll(() => ctx.close());
+
+  const pub = async <T = any>(method: 'GET' | 'POST', url: string, payload?: object, ip = '10.9.0.1') => {
+    const res = await ctx.app.inject({ method, url: `/api/v1/public${url}`, headers: { origin: ORIGIN }, remoteAddress: ip, ...(payload ? { payload } : {}) });
+    return { status: res.statusCode, headers: res.headers, body: (res.body ? JSON.parse(res.body) : null) as T };
+  };
+
+  async function upload(use: string, width: number, height: number) {
+    const png = await sharp({ create: { width, height, channels: 3, background: '#224466' } }).png().toBuffer();
+    const boundary = '----b4ads';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/ads/images?use=${use}`,
+      headers: { cookie: adminCookie, origin: ORIGIN, 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: Buffer.concat([
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`),
+        png,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]),
+    });
+    return { status: res.statusCode, body: JSON.parse(res.body) };
+  }
+
+  const campaign = (over: Record<string, unknown> = {}) => ({
+    advertiserId,
+    name: 'משכנתא בסתיו',
+    slots: ['sidebar', 'article_end'],
+    categories: ['real-estate'],
+    action: 'link',
+    url: 'https://bank.example/offer?utm_source=theirs',
+    ...over,
+  });
+
+  it('keeps advertising to admins: editors see neither the campaigns nor the leads', async () => {
+    expect((await editor.get('/ads')).status).toBe(403);
+    expect((await editor.get('/ads/leads')).status).toBe(403);
+    expect((await editor.post('/ads/advertisers', { name: 'עסק' })).status).toBe(403);
+  });
+
+  it('runs a campaign only after an admin approves it, and only in its places and sections', async () => {
+    const a = await admin.post('/ads/advertisers', { name: 'בנק הדוגמה', email: 'ads@bank.example' });
+    expect(a.status).toBe(201);
+    advertiserId = a.body.id;
+    const c = await admin.post('/ads/campaigns', campaign());
+    expect(c.status).toBe(201);
+    expect(c.body.status).toBe('draft');
+    linkCampaign = c.body.id;
+
+    const ask = (slot: string, query = '') => pub('GET', `/ads/${slot}?device=desktop${query}`);
+    expect((await ask('sidebar', '&category=real-estate')).body.ad).toBeNull();
+    // Nothing to show yet: it can't be approved.
+    expect((await admin.post(`/ads/campaigns/${linkCampaign}/status`, { status: 'active' })).status).toBe(409);
+
+    expect((await admin.post(`/ads/campaigns/${linkCampaign}/creatives`, { format: 'billboard' })).status).toBe(400);
+    const added = await admin.post(`/ads/campaigns/${linkCampaign}/creatives`, { format: 'native', headline: 'משכנתא בריבית קבועה', body: 'בדקו את ההצעה', cta: 'לפרטים' });
+    expect(added.status).toBe(201);
+    const approved = await admin.post(`/ads/campaigns/${linkCampaign}/status`, { status: 'active' });
+    expect(approved.status).toBe(200);
+    expect(approved.body.approvedBy).toBe('Test admin');
+
+    const shown = (await ask('sidebar', '&category=real-estate')).body.ad;
+    expect(shown.sponsor).toBe('בנק הדוגמה');
+    expect(shown.headline).toBe('משכנתא בריבית קבועה');
+    expect(shown.href).toContain('/api/v1/public/ads/go/');
+    // A campaign for a section stays in it, and in its own places.
+    expect((await ask('sidebar')).body.ad).toBeNull();
+    expect((await ask('sidebar', '&category=health')).body.ad).toBeNull();
+    expect((await ask('home_top', '&category=real-estate')).body.ad).toBeNull();
+    expect((await ask('sidebar', `&category=real-estate&exclude=${linkCampaign}`)).body.ad).toBeNull();
+  });
+
+  it('counts a view, and a click on the way to the advertiser, but never a forged token', async () => {
+    const { ad } = (await pub('GET', '/ads/article_end?device=mobile&category=real-estate')).body;
+    expect((await pub('POST', '/ads/view', { token: ad.token })).status).toBe(204);
+    const forged = ad.token.slice(0, -1) + (ad.token.endsWith('0') ? '1' : '0');
+    expect((await pub('POST', '/ads/view', { token: forged })).status).toBe(204);
+
+    const click = await pub('GET', `/ads/go/${ad.token}`);
+    expect(click.status).toBe(302);
+    const to = new URL(String(click.headers.location));
+    expect(to.origin + to.pathname).toBe('https://bank.example/offer');
+    expect(to.searchParams.get('utm_source')).toBe('theirs');
+    expect(to.searchParams.get('utm_medium')).toBe('native');
+    expect(to.searchParams.get('utm_content')).toBe('article_end');
+    expect((await pub('GET', `/ads/go/${forged}`)).headers.location).toBe(ORIGIN);
+
+    const totals = (await admin.get(`/ads/campaigns/${linkCampaign}`)).body.totals;
+    expect(totals).toMatchObject({ views: 1, clicks: 1 });
+    expect(totals.served).toBeGreaterThanOrEqual(2);
+  });
+
+  it('takes a lead only with consent, keeps it encrypted, emails the advertiser and shows it on their page', async () => {
+    const c = await admin.post('/ads/campaigns', campaign({ name: 'ייעוץ חינם', slots: ['app_feed'], categories: [], action: 'lead', url: '', leadForm: { fields: ['name', 'phone'], question: 'רוצים שנחזור אליכם?' } }));
+    leadCampaign = c.body.id;
+    await admin.post(`/ads/campaigns/${leadCampaign}/creatives`, { format: 'native', headline: 'ייעוץ משכנתא', cta: 'השאירו פרטים' });
+    await admin.post(`/ads/campaigns/${leadCampaign}/status`, { status: 'active' });
+
+    const { ad } = (await pub('GET', '/ads/app_feed?device=mobile')).body;
+    expect(ad.href).toBeNull();
+    expect(ad.lead.fields).toEqual(['name', 'phone']);
+    expect(ad.lead.consent).toContain('בנק הדוגמה');
+
+    // Opening the form is the lead ad's click.
+    expect((await pub('POST', '/ads/view', { token: ad.token, kind: 'open' })).status).toBe(204);
+    const send = (body: object) => pub('POST', '/ads/lead', { token: ad.token, ...body }, '10.9.0.7');
+    expect((await send({ fields: { name: 'דנה כהן', phone: '050-1234567' } })).status).toBe(400);
+    expect((await send({ fields: { name: 'דנה כהן' }, consent: true })).status).toBe(400);
+    const ok = await send({ fields: { name: 'דנה כהן', phone: '050-1234567', email: 'not asked' }, consent: true });
+    expect(ok.status).toBe(201);
+
+    const [row] = await ctx.db.select().from(adLeads).where(eq(adLeads.campaignId, leadCampaign));
+    expect(row!.sealed).not.toContain('דנה');
+    expect(row!.consentText).toContain('בנק הדוגמה');
+    expect(ctx.mailer.lastTo('ads@bank.example')?.text).toContain('050-1234567');
+
+    const listed = (await admin.get('/ads/leads?kind=lead')).body;
+    expect(listed[0].fields).toEqual({ name: 'דנה כהן', phone: '050-1234567' });
+
+    const advertiser = (await admin.get('/ads')).body.advertisers.find((x: { id: string }) => x.id === advertiserId);
+    const key = String(advertiser.reportUrl).split('/partner/')[1];
+    const page = await pub('GET', `/partners/${key}`);
+    expect(page.status).toBe(200);
+    expect(page.body.leads[0].fields.name).toBe('דנה כהן');
+    expect(page.body.campaigns.find((x: { id: string }) => x.id === leadCampaign).totals).toMatchObject({ clicks: 1, leads: 1 });
+
+    // A new link cancels the old one.
+    const renewed = await admin.post(`/ads/advertisers/${advertiserId}/new-link`);
+    expect((await pub('GET', `/partners/${key}`)).status).toBe(404);
+    expect((await pub('GET', `/partners/${String(renewed.body.reportUrl).split('/partner/')[1]}`)).status).toBe(200);
+  });
+
+  it('keeps businesses that ask to advertise as inquiries', async () => {
+    expect((await pub('POST', '/ads/inquiry', { name: 'יוסי', email: 'yossi@shop.example', consent: true, website: 'bot' }, '10.9.0.8')).status).toBe(400);
+    expect((await pub('POST', '/ads/inquiry', { name: 'יוסי', company: 'החנות', email: 'yossi@shop.example', consent: true }, '10.9.0.8')).status).toBe(204);
+    const inquiries = (await admin.get('/ads/leads?kind=inquiry')).body;
+    expect(inquiries[0].fields).toMatchObject({ name: 'יוסי', company: 'החנות' });
+    expect((await admin.get('/ads')).body.newInquiries).toBe(1);
+  });
+
+  it('takes a banner only in its own proportions, and sets one from words in every size', async () => {
+    expect((await upload('billboard-desktop', 1000, 500)).status).toBe(422);
+    const ok = await upload('billboard-desktop', 1940, 500);
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ width: 1940, height: 500 });
+
+    const set = await admin.post('/ads/compose', { format: 'billboard', headline: 'משכנתא בריבית קבועה', body: 'לכל החיים', cta: 'לפרטים', sponsor: 'בנק הדוגמה', theme: 'dark' });
+    expect(set.status).toBe(201);
+    const desktop = await sharp(await ctx.storage.get(set.body.desktop.key)).metadata();
+    const mobile = await sharp(await ctx.storage.get(set.body.mobile.key)).metadata();
+    expect([desktop.width, desktop.height]).toEqual([1940, 500]);
+    expect([mobile.width, mobile.height]).toEqual([640, 200]);
+  });
+
+  it('moves an ended campaign to the archive with its numbers, and deletes only by hand, leads and all', async () => {
+    const current = (await admin.get(`/ads/campaigns/${linkCampaign}`)).body;
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const updated = await admin.put(`/ads/campaigns/${linkCampaign}`, { ...campaign(), startsAt: new Date(Date.now() - 86_400_000).toISOString(), endsAt: past, weight: current.weight });
+    expect(updated.status).toBe(200);
+    const overview = (await admin.get('/ads')).body;
+    const archived = overview.archive.find((x: { id: string }) => x.id === linkCampaign);
+    expect(archived.status).toBe('ended');
+    expect(archived.totals.views).toBe(1);
+    expect((await pub('GET', '/ads/sidebar?device=desktop&category=real-estate')).body.ad).toBeNull();
+
+    // An ad that ran keeps its numbers: it is turned off, not deleted.
+    expect((await admin.del(`/ads/creatives/${archived.creatives[0].id}`)).status).toBe(409);
+    expect((await admin.del(`/ads/advertisers/${advertiserId}`)).status).toBe(409);
+    expect((await admin.del(`/ads/campaigns/${leadCampaign}`)).status).toBe(204);
+    expect(await ctx.db.select().from(adLeads).where(eq(adLeads.campaignId, leadCampaign))).toHaveLength(0);
+  });
+
+  it('lets the ads agent propose a campaign and check an ad, and saves nothing on its own', async () => {
+    const started = await admin.post('/ads/agent/brief', { business: 'סטודיו לעיצוב מטבחים', offer: 'מטבחים בהתאמה אישית, ייעוץ ראשון חינם בבית הלקוח.', goal: 'leads' });
+    expect(started.status).toBe(202);
+    await ctx.drain();
+    const brief = (await admin.get(`/ads/agent/tasks/${started.body.id}`)).body;
+    expect(brief.status).toBe('done');
+    expect(brief.brief.action).toBe('lead');
+    expect(brief.brief.headlines.length).toBeGreaterThan(0);
+
+    const c = await admin.post('/ads/campaigns', campaign({ name: 'בדיקה', slots: ['sidebar'], categories: [] }));
+    const withAd = await admin.post(`/ads/campaigns/${c.body.id}/creatives`, { format: 'native', headline: 'המשכנתא הכי זולה בארץ' });
+    const creativeId = withAd.body.creatives[0].id;
+    const review = await admin.post(`/ads/creatives/${creativeId}/review`);
+    await ctx.drain();
+    expect((await admin.get(`/ads/agent/tasks/${review.body.id}`)).body.review.verdict).toBe('fix');
+    expect((await admin.get(`/ads/campaigns/${c.body.id}`)).body.creatives[0].review.verdict).toBe('fix');
+    expect((await admin.get(`/ads/campaigns/${c.body.id}`)).body.status).toBe('draft');
+
+    const team = (await admin.get('/agents')).body;
+    expect(team.agents.find((x: { id: string }) => x.id === 'ads').skills.map((x: { key: string }) => x.key)).toEqual(['ads.brief', 'ads.review', 'ads.report']);
+  });
+
+  it('empties every place when ads are switched off', async () => {
+    const c = await admin.post('/ads/campaigns', campaign({ name: 'כללי', slots: ['sidebar'], categories: [] }));
+    await admin.post(`/ads/campaigns/${c.body.id}/creatives`, { format: 'native', headline: 'הצעה' });
+    await admin.post(`/ads/campaigns/${c.body.id}/status`, { status: 'active' });
+    expect((await pub('GET', '/ads/sidebar?device=desktop')).body.ad).not.toBeNull();
+    await admin.put('/ads/settings', { enabled: false, housePromo: true, appFeedEvery: 8 });
+    const off = (await pub('GET', '/ads/sidebar?device=desktop')).body;
+    expect(off.ad).toBeNull();
+    expect(off.housePromo).toBe(true);
+  });
+});

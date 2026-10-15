@@ -34,17 +34,18 @@ export type DesignInput = {
   time?: string;
 };
 
-type Block = { input: Buffer; width: number; height: number };
+/** A rendered piece (text, a label, the logo) to place on a frame. Ad banners (ads/banner.ts) are set with the same pieces. */
+export type Block = { input: Buffer; width: number; height: number };
 type Layer = OverlayOptions;
 type Frame = { W: number; H: number; pad: number; story: boolean; layers: Layer[] };
 
 // --- Text ------------------------------------------------------------------------
 const escapeMarkup = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-type TextOpts = { font: FontKey; size: number; color: string; alpha?: number; width: number; /** Extra space between lines, as a fraction of the size (negative = tighter than the font's own). */ leading?: number; align?: 'start' | 'center' };
+export type TextOpts = { font: FontKey; size: number; color: string; alpha?: number; width: number; /** Extra space between lines, as a fraction of the size (negative = tighter than the font's own). */ leading?: number; align?: 'start' | 'center' };
 
 /** One block of text. RTL is forced (a leading RLM), so a headline that starts with a number still reads right to left. */
-async function text(content: string, o: TextOpts): Promise<Block | null> {
+export async function text(content: string, o: TextOpts): Promise<Block | null> {
   const clean = content.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!clean) return null;
   const f = FONTS[o.font];
@@ -69,7 +70,7 @@ async function text(content: string, o: TextOpts): Promise<Block | null> {
 }
 
 /** Shrinks the type until the text fits the height; below the minimum size, drops words and ends with "…". */
-async function fit(content: string, o: TextOpts, maxHeight: number, minSize: number): Promise<Block | null> {
+export async function fit(content: string, o: TextOpts, maxHeight: number, minSize: number): Promise<Block | null> {
   let size = o.size;
   let words = content.trim().split(/\s+/);
   let current = content;
@@ -85,7 +86,7 @@ async function fit(content: string, o: TextOpts, maxHeight: number, minSize: num
 }
 
 /** A label on a colored, rounded background. */
-async function chip(label: string, o: { bg: string; color: string; size: number; padX: number; padY: number; radius: number; font?: FontKey }): Promise<Block | null> {
+export async function chip(label: string, o: { bg: string; color: string; size: number; padX: number; padY: number; radius: number; font?: FontKey }): Promise<Block | null> {
   const t = await text(label, { font: o.font ?? 'label', size: o.size, color: o.color, width: 900 });
   if (!t) return null;
   const width = t.width + o.padX * 2;

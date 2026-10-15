@@ -160,3 +160,40 @@ export function toMediaDto(storage: MediaStorage, m: MediaRow): MediaDto {
 export function variantUrl(storage: MediaStorage, m: MediaRow, name: keyof typeof RENDITIONS): string {
   return storage.url(m.variants[name] ?? m.storageKey);
 }
+
+/** How an ad picture is fitted: exact (a banner carries its words, so only its own proportions, give or take 3%), cover (a photo, cut around its center), or free (kept whole). */
+export type FitRule = 'exact' | 'cover' | 'free';
+
+/**
+ * A picture for an ad, outside the newsroom's media library: validated, its first frame only (no
+ * animation), stripped of metadata and kept at twice the size it is shown at, as "ad-<name>-…".
+ */
+export async function ingestAdImage(
+  storage: MediaStorage,
+  input: Buffer,
+  opts: { name: string; width: number; height: number; fit: FitRule },
+): Promise<{ key: string; width: number; height: number }> {
+  let info: SharpMetadata;
+  try {
+    info = await sharp(input, { limitInputPixels: MAX_INPUT_PIXELS }).metadata();
+  } catch {
+    throw badImage('הקובץ אינו תמונה תקינה');
+  }
+  if (!info.format || !ACCEPTED.has(info.format)) throw badImage('סוג קובץ לא נתמך. אפשר JPG, PNG, WebP או AVIF');
+  const oriented = await sharp(input, { limitInputPixels: MAX_INPUT_PIXELS, animated: false }).rotate().toBuffer({ resolveWithObject: true });
+  const { width: srcW, height: srcH } = oriented.info;
+  const { width: w, height: h } = opts;
+  if (opts.fit === 'exact' && Math.abs(srcW / srcH - w / h) > (w / h) * 0.03) {
+    throw badImage(`המידות לא מתאימות: ${srcW}×${srcH}. צריך ${w}×${h} (או ${w * 2}×${h * 2} למסכים חדים)`);
+  }
+  if (srcW < w || srcH < h) throw badImage(`התמונה קטנה מדי (${srcW}×${srcH}). צריך לפחות ${w}×${h}`);
+  const img =
+    opts.fit === 'free'
+      ? sharp(oriented.data).resize({ width: w * 2, height: h * 2, fit: 'inside', withoutEnlargement: true })
+      : sharp(oriented.data).resize({ width: Math.min(w * 2, Math.round((srcH * w) / h), srcW), height: Math.min(h * 2, Math.round((srcW * h) / w), srcH), fit: 'cover', position: 'centre' });
+  const out = await img.webp({ quality: 90 }).toBuffer({ resolveWithObject: true });
+  const now = new Date();
+  const key = `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}/ad-${opts.name}-${randomUUID().slice(0, 6)}.webp`;
+  await storage.put(key, out.data, 'image/webp');
+  return { key, width: out.info.width, height: out.info.height };
+}

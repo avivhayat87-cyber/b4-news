@@ -9,3 +9,4 @@ export * from './legal';
 export * from './social';
 export * from './agent';
 export * from './research';
+export * from './ads';

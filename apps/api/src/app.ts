@@ -11,6 +11,7 @@ import type { MediaStorage } from './lib/storage';
 import { authPlugin } from './plugins/auth';
 import { securityPlugin } from './plugins/security';
 import { adminRoutes } from './routes/admin';
+import { publicAdRoutes } from './routes/ads';
 import { audienceRoutes } from './routes/audience';
 import { commentRoutes, publicCommentRoutes } from './routes/comments';
 import { contentRoutes } from './routes/content';
@@ -108,6 +109,7 @@ export async function buildApp({ config, db, logger = true, ...overrides }: AppD
       await v1.register(publicCommentRoutes, { prefix: '/public', db });
       await v1.register(audienceRoutes, { prefix: '/public', s: services });
       await v1.register(publicTakedownRoutes, { prefix: '/public', s: services });
+      await v1.register(publicAdRoutes, { prefix: '/public', s: services });
       await v1.register(commentRoutes, { s: services });
       await v1.register(readerAuthRoutes, { prefix: '/auth/reader', s: services });
       await v1.register(staffAuthRoutes, { prefix: '/auth/staff', db, config });

@@ -10,8 +10,8 @@ const iso = z.string();
 // The agent team: who the agents are, their skills (editable instructions, in Hebrew, versioned
 // in prompt_templates), the newsroom rules every agent follows, and what each one cost in a period.
 // ---------------------------------------------------------------------------
-/** chief: the chat agent that runs the others; reporter: research from a link or screenshots; reviewer: the legal review before publishing. */
-export const AGENT_IDS = ['chief', 'reporter', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning'] as const;
+/** chief: the chat agent that runs the others; reporter: research from a link or screenshots; reviewer: the legal review before publishing; ads: proposes and checks advertisers' ads. */
+export const AGENT_IDS = ['chief', 'reporter', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning', 'ads'] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
 
 /** skill: an agent's instructions; template: a technical text sent to an image or video model (English on purpose); rules: the newsroom rules every writing agent follows. */

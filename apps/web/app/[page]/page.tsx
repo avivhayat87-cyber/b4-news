@@ -4,6 +4,7 @@ import { PAGE_SLUGS, type PageSlug } from '@b4/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { AdvertiseForm } from '@/components/advertise-form';
 import { wrap } from '@/components/ui';
 import { getPage, getSite } from '@/lib/api';
 
@@ -72,6 +73,7 @@ export default async function InfoPage({ params }: Props) {
               ) : null}
             </dl>
           ) : null}
+          {page === 'advertise' ? <AdvertiseForm /> : null}
         </article>
         <aside>
           <ul className="flex flex-col gap-1 rounded-[10px] border border-line p-3 text-[15px]">

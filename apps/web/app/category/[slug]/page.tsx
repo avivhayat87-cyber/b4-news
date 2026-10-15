@@ -70,7 +70,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           </>
         )}
       </div>
-      <Sidebar quotes={markets} />
+      <Sidebar quotes={markets} category={slug} />
     </div>
   );
 }

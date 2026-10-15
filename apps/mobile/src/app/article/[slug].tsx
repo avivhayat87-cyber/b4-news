@@ -1,9 +1,11 @@
 import { INVESTMENT_NOTICE, needsInvestmentNotice, type ArticleFull } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import { ArticleAd } from '@/components/ad-card';
 import { ArticleBody } from '@/components/article-body';
 import { Comments } from '@/components/comments';
 import { IconButton, TopBar } from '@/components/top-bar';
@@ -35,6 +37,8 @@ export default function ArticleScreen() {
 
   const a = article.data;
   const saved = isSaved(slug);
+  // Where the reader is in the article: the ad after it counts a view only once really seen.
+  const [scroll, setScroll] = useState({ y: 0, height: 0 });
 
   const actions = a ? (
     <>
@@ -59,7 +63,13 @@ export default function ArticleScreen() {
       ) : !a ? (
         <CenterMessage title="לא הצלחנו לטעון את הכתבה" body="בדקו את החיבור ונסו שוב." action="לנסות שוב" onAction={() => article.refetch()} />
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 48 }}
+          keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={250}
+          onLayout={(e) => setScroll((v) => ({ ...v, height: e.nativeEvent.layout.height }))}
+          onScroll={(e) => setScroll({ y: e.nativeEvent.contentOffset.y, height: e.nativeEvent.layoutMeasurement.height })}
+        >
           <View style={styles.head}>
             <Pill label={a.category.name} />
             <Text style={styles.title} accessibilityRole="header">
@@ -96,6 +106,8 @@ export default function ArticleScreen() {
               ))}
             </View>
           ) : null}
+
+          <ArticleAd category={a.category.slug} scroll={scroll} />
 
           <View style={{ marginTop: space.xl }}>
             <Comments articleId={a.id} articleSlug={a.slug} enabled={a.commentsEnabled} />

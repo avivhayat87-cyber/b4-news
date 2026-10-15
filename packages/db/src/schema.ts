@@ -2,7 +2,7 @@
 // database (drizzle `casing: 'snake_case'`) and camelCase in TypeScript.
 //
 // Sections: people & sessions · taxonomy · media · sources & discovery ·
-// editorial workflow · published content · comments · social · learning loop · operations
+// editorial workflow · published content · comments · social · advertising · learning loop · operations
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -77,6 +77,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'legal_review',
   'research',
   'meeting',
+  'ads',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -1191,6 +1192,167 @@ export const socialPlans = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index('social_plans_article_idx').on(t.articleId)],
+);
+
+// ---------------------------------------------------------------------------
+// Advertising (our own ad server; see AD_SLOTS in @b4/shared)
+// ---------------------------------------------------------------------------
+/** A business that advertises with us. Its private report page is signed with linkVersion. */
+export const advertisers = pgTable('advertisers', {
+  id: uuid().primaryKey().defaultRandom(),
+  name: text().notNull(),
+  contactName: text().notNull().default(''),
+  email: text().notNull().default(''),
+  phone: text().notNull().default(''),
+  website: text().notNull().default(''),
+  notes: text().notNull().default(''),
+  /** Email each new lead to the advertiser. */
+  notifyLeads: boolean().notNull().default(true),
+  /** Raised to cancel the advertiser's report link (a new one is made). */
+  linkVersion: integer().notNull().default(1),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** What the ads agent found when it checked an ad (see AdReviewDto). */
+export type AdReviewRecord = { verdict: 'ok' | 'fix' | 'block'; issues: { what: string; why: string; fix: string }[]; checkedAt: string };
+
+/**
+ * A campaign: where, when and to whom its ads appear, and what a click does. It runs only after an
+ * admin approves it; when it ends (its date, its cap, or by hand) it moves to the archive with its
+ * numbers and its leads, and is deleted only by hand.
+ */
+export const adCampaigns = pgTable(
+  'ad_campaigns',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    advertiserId: uuid()
+      .notNull()
+      .references(() => advertisers.id, { onDelete: 'restrict' }),
+    name: text().notNull(),
+    /** draft | active | paused | ended */
+    status: text().notNull().default('draft'),
+    slots: text().array().notNull().default(sql`'{}'::text[]`),
+    /** Empty: every section. */
+    categories: text().array().notNull().default(sql`'{}'::text[]`),
+    /** all | desktop | mobile */
+    devices: text().notNull().default('all'),
+    startsAt: tstz(),
+    endsAt: tstz(),
+    weight: smallint().notNull().default(5),
+    maxViews: integer(),
+    perReaderDaily: smallint().notNull().default(3),
+    /** link | lead */
+    action: text().notNull().default('link'),
+    url: text().notNull().default(''),
+    leadForm: jsonb().$type<{ fields: string[]; question: string; thankYou: string }>().notNull().default({ fields: ['name', 'phone'], question: '', thankYou: '' }),
+    notes: text().notNull().default(''),
+    /** The ads agent's summary for the advertiser's page. */
+    reportNote: text().notNull().default(''),
+    approvedBy: uuid().references(() => users.id, { onDelete: 'set null' }),
+    approvedAt: tstz(),
+    endedAt: tstz(),
+    createdBy: uuid().references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('ad_campaigns_status_idx').on(t.status), index('ad_campaigns_advertiser_idx').on(t.advertiserId)],
+);
+
+/** One ad of a campaign: a banner (its pictures) or a native card (a picture and words). Pictures are media storage keys ("…/ad-desktop-….webp"). */
+export const adCreatives = pgTable(
+  'ad_creatives',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    campaignId: uuid()
+      .notNull()
+      .references(() => adCampaigns.id, { onDelete: 'cascade' }),
+    /** billboard | rectangle | native */
+    format: text().notNull(),
+    headline: text().notNull().default(''),
+    body: text().notNull().default(''),
+    cta: text().notNull().default(''),
+    sponsor: text().notNull().default(''),
+    desktopImage: text(),
+    mobileImage: text(),
+    alt: text().notNull().default(''),
+    active: boolean().notNull().default(true),
+    review: jsonb().$type<AdReviewRecord | null>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('ad_creatives_campaign_idx').on(t.campaignId)],
+);
+
+/** Counters per Israel day, ad and place. No reader is identified: only numbers. */
+export const adStats = pgTable(
+  'ad_stats',
+  {
+    /** YYYY-MM-DD, Israel time. */
+    day: text().notNull(),
+    creativeId: uuid()
+      .notNull()
+      .references(() => adCreatives.id, { onDelete: 'cascade' }),
+    slot: text().notNull(),
+    /** Sent to a page. */
+    served: integer().notNull().default(0),
+    /** Seen: at least half of it on the screen for a second. */
+    views: integer().notNull().default(0),
+    clicks: integer().notNull().default(0),
+    leads: integer().notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.creativeId, t.slot] }), index('ad_stats_creative_idx').on(t.creativeId)],
+);
+
+/**
+ * A reader's details from an ad's form (kind lead), or a business asking to advertise (kind
+ * inquiry). The details are encrypted (SECRETS_KEY), with the consent the person gave, word for word.
+ */
+export const adLeads = pgTable(
+  'ad_leads',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** lead | inquiry */
+    kind: text().notNull().default('lead'),
+    campaignId: uuid().references(() => adCampaigns.id, { onDelete: 'cascade' }),
+    creativeId: uuid().references(() => adCreatives.id, { onDelete: 'set null' }),
+    /** The details as encrypted JSON. */
+    sealed: text().notNull(),
+    consentText: text().notNull(),
+    ipHash: text(),
+    /** new | handled */
+    status: text().notNull().default('new'),
+    notifiedAt: tstz(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('ad_leads_created_idx').on(t.createdAt.desc()), index('ad_leads_campaign_idx').on(t.campaignId)],
+);
+
+/**
+ * A piece of work for the ads agent, run as a job: a campaign proposal (brief), a check of an ad
+ * (review), a summary for the advertiser (report), or a picture drawn from a description (draw).
+ * It only proposes: a person decides what to do with the result.
+ */
+export const adAgentTasks = pgTable(
+  'ad_agent_tasks',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** brief | review | report | draw */
+    kind: text().notNull(),
+    /** queued | running | done | failed */
+    status: text().notNull().default('queued'),
+    input: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    result: jsonb().$type<Record<string, unknown> | null>(),
+    /** Why it failed, in Hebrew. */
+    lastError: text(),
+    campaignId: uuid().references(() => adCampaigns.id, { onDelete: 'cascade' }),
+    creativeId: uuid().references(() => adCreatives.id, { onDelete: 'cascade' }),
+    costUsd: numeric({ precision: 10, scale: 4 }).notNull().default('0'),
+    createdBy: uuid().references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('ad_agent_tasks_created_idx').on(t.createdAt.desc())],
 );
 
 // ---------------------------------------------------------------------------

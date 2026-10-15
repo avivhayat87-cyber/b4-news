@@ -1,7 +1,7 @@
-// A copy of the live data for the workshop: nothing that identifies a reader, a subscriber or a
-// requester, no sessions, tokens, devices or live keys, no queued work and no active social
+// A copy of the live data for the workshop: nothing that identifies a reader, a subscriber, a
+// requester or an ad lead, no advertiser contacts, no sessions, tokens, devices or live keys, no queued work and no active social
 // account; the workshop's own keys and staff sign-ins come back. The articles stay as they are.
-import { appSettings, articles, createDb, devices, jobs, newsletterSubscribers, readers, secrets, seedReferenceData, sessions, socialAccounts, users } from '@b4/db';
+import { adCampaigns, adLeads, advertisers, appSettings, articles, createDb, devices, jobs, newsletterSubscribers, readers, secrets, seedReferenceData, sessions, socialAccounts, users } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { leftovers, prepareWorkshopCopy } from '../src/services/workshop-copy';
 import { setup } from './helpers';
@@ -30,6 +30,9 @@ describe('a copy of the live data for the workshop', () => {
     await db.insert(secrets).values({ key: 'integration:gemini:apiKey', ciphertext: 'live-cipher', hint: 'LIVE' });
     await db.insert(jobs).values({ kind: 'social.publish', payload: {}, status: 'queued' });
     await db.update(socialAccounts).set({ isActive: true });
+    const [advertiser] = await db.insert(advertisers).values({ name: 'בנק', email: 'ads@bank.co.il', phone: '03-1234567', contactName: 'רונית' }).returning();
+    const [campaign] = await db.insert(adCampaigns).values({ advertiserId: advertiser!.id, name: 'קמפיין', action: 'lead' }).returning();
+    await db.insert(adLeads).values({ campaignId: campaign!.id, sealed: 'v1:live', consentText: 'מסכים/ה' });
     const [admin] = await db.insert(users).values({ email: 'admin@b4.local', fullName: 'מנהל', role: 'admin', passwordHash: 'live-hash' }).returning();
     const articleCount = (await db.select({ id: articles.id }).from(articles)).length;
 
@@ -50,6 +53,8 @@ describe('a copy of the live data for the workshop', () => {
     expect((await db.select().from(newsletterSubscribers))[0]).toMatchObject({ email: expect.stringMatching(/@example\.invalid$/), confirmTokenHash: null });
     expect(await db.select().from(sessions)).toEqual([]);
     expect((await db.select().from(socialAccounts)).every((a) => !a.isActive)).toBe(true);
+    expect(await db.select().from(adLeads)).toEqual([]);
+    expect((await db.select().from(advertisers))[0]).toMatchObject({ name: 'בנק', phone: '', contactName: '', email: expect.stringMatching(/@example\.invalid$/) });
 
     // The workshop signs in and connects as before; the live keys are gone.
     expect((await db.select().from(secrets)).map((s) => s.ciphertext)).toEqual(['workshop-cipher']);

@@ -63,6 +63,7 @@ const I = {
     </>
   ),
   learn: <path d="M12 3 2 8l10 5 10-5zM6 10.5V16c3 2 9 2 12 0v-5.5" />,
+  ads: <path d="M4 10v4h3l6 4V6L7 10zM16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11" />,
   review: <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6zM9 12l2 2 4-4" />,
   settings: (
     <>
@@ -105,6 +106,8 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/review', label: 'בדיקה משפטית', icon: I.review, badge: dash.data?.review.waiting || undefined },
     { href: '/articles', label: 'כתבות באתר', icon: I.articles },
     { href: '/social', label: 'רשתות חברתיות', icon: I.social },
+    // Advertising holds leads (personal data): admins only.
+    ...(staff.role === 'admin' ? [{ href: '/ads', label: 'פרסום', icon: I.ads }] : []),
     { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },
     { href: '/audience', label: 'מנויים וגולשים', icon: I.audience },
     { href: '/comments', label: 'תגובות גולשים', icon: I.comments, badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported || undefined : undefined },

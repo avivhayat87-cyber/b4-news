@@ -1,8 +1,9 @@
-// Home: 7 main articles in a swipeable carousel, 14 trending in a strip, then an endless mixed feed.
+// Home: 7 main articles in a swipeable carousel, 14 trending in a strip, then an endless mixed feed
+// with a calm ad every few stories (a few at most).
 import { CATEGORIES, type ArticleCard, type HomeData } from '@b4/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -15,12 +16,20 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FeedAd } from '@/components/ad-card';
 import { Logo } from '@/components/brand';
 import { ArticleImage, ArticleRow, Byline, CenterMessage, Loading, Pill, RankBadge, SectionHeader, openArticle } from '@/components/ui';
+import { reachedCap } from '@/lib/ads';
 import { api } from '@/lib/api';
 import { colors, fonts, rtl, space } from '@/lib/theme';
+
+/** At most this many ads in the feed, however far the reader scrolls: calm, never crowded. */
+const MAX_FEED_ADS = 3;
+
+type Row = { kind: 'article'; article: ArticleCard } | { kind: 'ad'; pos: number };
 
 export default function HomeScreen() {
   const home = useQuery({ queryKey: ['home'], queryFn: api.home });
@@ -30,12 +39,40 @@ export default function HomeScreen() {
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
+  // How many stories between ads, as the newsroom set it (the first place's answer carries it).
+  const first = useQuery({ queryKey: ['ad', 'app_feed', 1], queryFn: () => api.ad('app_feed', { exclude: reachedCap() }), staleTime: Infinity });
+  const every = first.data?.appFeedEvery ?? 8;
 
   // The feed skips what the carousel and the trending strip already show.
   const feedItems = useMemo(() => {
     const shown = new Set([...(home.data?.main ?? []), ...(home.data?.trending ?? [])].map((a) => a.id));
     return (feed.data?.pages.flatMap((p) => p.items) ?? []).filter((a) => !shown.has(a.id));
   }, [feed.data, home.data]);
+  const rows = useMemo(() => {
+    const out: Row[] = [];
+    feedItems.forEach((article, i) => {
+      out.push({ kind: 'article', article });
+      const pos = (i + 1) / every;
+      if (Number.isInteger(pos) && pos <= MAX_FEED_ADS) out.push({ kind: 'ad', pos });
+    });
+    return out;
+  }, [feedItems, every]);
+
+  // A view is counted when half the ad was on screen for a second (the list measures it).
+  const taken = useRef(new Set<string>()).current;
+  const tokens = useRef(new Map<number, string>()).current;
+  const sent = useRef(new Set<string>()).current;
+  const onToken = useCallback((pos: number, token: string) => void tokens.set(pos, token), [tokens]);
+  const viewability = useRef({ itemVisiblePercentThreshold: 50, minimumViewTime: 1000 }).current;
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken<Row>[] }) => {
+    for (const v of viewableItems) {
+      const token = v.item?.kind === 'ad' ? tokens.get(v.item.pos) : undefined;
+      if (token && !sent.has(token)) {
+        sent.add(token);
+        void api.adSeen(token);
+      }
+    }
+  }).current;
 
   if (home.isPending) return <Loading />;
   if (home.isError)
@@ -48,13 +85,19 @@ export default function HomeScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
       <FlatList
-        data={feedItems}
-        keyExtractor={(a) => String(a.id)}
-        renderItem={({ item }) => (
-          <View style={{ paddingHorizontal: space.lg }}>
-            <ArticleRow article={item} />
-          </View>
-        )}
+        data={rows}
+        keyExtractor={(r) => (r.kind === 'ad' ? `ad-${r.pos}` : String(r.article.id))}
+        renderItem={({ item }) =>
+          item.kind === 'ad' ? (
+            <FeedAd pos={item.pos} taken={taken} onToken={onToken} />
+          ) : (
+            <View style={{ paddingHorizontal: space.lg }}>
+              <ArticleRow article={item.article} />
+            </View>
+          )
+        }
+        viewabilityConfig={viewability}
+        onViewableItemsChanged={onViewable}
         ListHeaderComponent={<HomeHeader home={home.data} />}
         ListFooterComponent={feed.isFetchingNextPage ? <ActivityIndicator color={colors.brand} style={{ margin: space.xl }} /> : <View style={{ height: space.xl }} />}
         onEndReached={() => {

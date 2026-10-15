@@ -160,7 +160,7 @@ export function ArticleImage({
   );
 }
 
-/** The ad position, until an ad network is connected: a house promo for advertisers. */
+/** An ad place with no campaign in it (AdSlot's fallback): a house promo for advertisers. */
 export function HousePromo() {
   return (
     <Link

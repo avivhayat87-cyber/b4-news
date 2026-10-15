@@ -5,7 +5,8 @@ import { notFound } from 'next/navigation';
 import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
-import { ArticleImage, HousePromo, NewWindowHint, RankBadge, SectionHeader, wrap } from '@/components/ui';
+import { AdSlot } from '@/components/ad-slot';
+import { ArticleImage, NewWindowHint, RankBadge, SectionHeader, wrap } from '@/components/ui';
 import { getArticle, getHome, getRelated, getSite } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { SITE, articleHref, categoryHref } from '@/lib/site';
@@ -164,6 +165,8 @@ export default async function ArticlePage({ params }: Props) {
             </div>
           </footer>
 
+          <AdSlot slot="article_end" category={article.category.slug} className="mx-auto mt-10 max-w-[68ch]" />
+
           <Comments
             articleId={article.id}
             articleUrl={url}
@@ -187,7 +190,7 @@ export default async function ArticlePage({ params }: Props) {
               ))}
             </ol>
           </section>
-          <HousePromo />
+          <AdSlot slot="article_side" category={article.category.slug} fallback="promo" minWidth={1024} />
         </aside>
       </div>
 

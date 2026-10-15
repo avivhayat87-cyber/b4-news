@@ -7,6 +7,7 @@ import type { AccountsOutput, AccountsRequest, MeetingOutput, MeetingRequest, Re
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
+import type { AdBriefOutput, AdBriefRequest, AdReportOutput, AdReportRequest, AdReviewOutput, AdReviewRequest } from './types';
 
 const usage = () => ({ model: 'fake', inputTokens: null, outputTokens: null, latencyMs: 1 });
 const sentences = (text: string) => text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
@@ -254,6 +255,46 @@ export class FakeText implements TextAI {
   /** The stand-in doesn't translate; the image stand-in only guesses a section from the words. */
   async toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>> {
     return { data: { texts }, usage: usage() };
+  }
+
+  /** A proposal from the brief's own words, so the ads flow works without an AI key. */
+  async adBrief(req: AdBriefRequest): Promise<AiResult<AdBriefOutput>> {
+    const b = req.brief;
+    const first = sentences(b.offer)[0] ?? b.offer;
+    const leads = b.goal === 'leads';
+    return {
+      data: {
+        summary: `(ספק לדוגמה) קמפיין ל${b.business}: ${first}`.slice(0, 800),
+        headlines: [`${b.business}: ${first}`.slice(0, 60), `מחפשים ${b.business}?`.slice(0, 60)],
+        bodies: [first.slice(0, 140)],
+        ctas: [leads ? 'השאירו פרטים' : 'לפרטים'],
+        slots: ['sidebar', 'article_end', 'app_feed'],
+        categories: [],
+        action: leads ? 'lead' : 'link',
+        lead_fields: leads ? ['name', 'phone'] : [],
+        lead_question: leads ? 'רוצים שנחזור אליכם? השאירו פרטים' : '',
+        image_idea: `תמונה נקייה שמראה את ${b.business}`,
+        warnings: /תשואה|השקע|הלווא|ביטוח/.test(b.offer) ? ['מוצר פיננסי: צריך פרטי רישיון ואזהרת סיכון.'] : [],
+      },
+      usage: usage(),
+    };
+  }
+
+  /** Finds the classic forbidden words, so the check works without an AI key. */
+  async adReview(req: AdReviewRequest): Promise<AiResult<AdReviewOutput>> {
+    const text = `${req.ad.headline} ${req.ad.body} ${req.ad.cta}`;
+    const words = text.match(/הכי זול|מובטח|ללא סיכון|100%|הטוב ביותר/g) ?? [];
+    return {
+      data: {
+        verdict: words.length ? 'fix' : 'ok',
+        issues: words.map((w) => ({ what: w, why: 'טענה שאי אפשר להוכיח (ספק לדוגמה).', fix: 'למחוק או לנסח בלי הבטחה.' })),
+      },
+      usage: usage(),
+    };
+  }
+
+  async adReport(req: AdReportRequest): Promise<AiResult<AdReportOutput>> {
+    return { data: { note: `(ספק לדוגמה) סיכום הקמפיין:\n${req.facts.split('\n').slice(0, 6).join('\n')}` }, usage: usage() };
   }
 }
 

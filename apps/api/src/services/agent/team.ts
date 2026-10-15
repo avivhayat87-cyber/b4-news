@@ -38,6 +38,7 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   legal_review: 'reviewer',
   research: 'reporter',
   meeting: 'chief',
+  ads: 'ads',
 };
 
 const ISRAEL = 'Asia/Jerusalem';
@@ -159,6 +160,8 @@ export async function agentTeam(s: Services): Promise<AgentTeamDto> {
     // Headlines go to the fast model, a whole article to the main one.
     translator: { provider: 'anthropic', model: [claude.modelFast, claude.model].filter(Boolean).join(' / '), live: Boolean(text?.live) },
     learning: { provider: 'anthropic', model: claude.model ?? '', live: Boolean(text?.live) },
+    // Its words on the fast model; a picture it is asked for on the image model.
+    ads: { provider: 'anthropic', model: [claude.modelFast, gemini.imageModel].filter(Boolean).join(' / '), live: Boolean(text?.live) },
   };
   const agents: AgentCardDto[] = AGENT_IDS.map((id) => ({
     id,

@@ -16,6 +16,7 @@ export const AGENT_SKILLS: Record<AgentId, string[]> = {
   visual: ['visual.image', 'reel.prompts', 'visual.learn', 'reel.image', 'reel.video'],
   translator: ['translate.system'],
   learning: ['learning.batch'],
+  ads: ['ads.brief', 'ads.review', 'ads.report'],
 };
 /** The newsroom rules every writing agent reads after its own skill. */
 export const RULES_KEY = 'newsroom.rules';

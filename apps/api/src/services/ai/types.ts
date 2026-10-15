@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, CLAIM_LABELS, OFFICIAL_PLATFORMS, REEL_MOTIONS, RESEARCH_DEPTHS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth, type ResearchKind } from '@b4/shared';
+import { AD_ACTIONS, AD_LEAD_FIELDS, AD_SLOTS, CATEGORY_SLUGS, CLAIM_LABELS, OFFICIAL_PLATFORMS, REEL_MOTIONS, RESEARCH_DEPTHS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth, type ResearchKind } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -302,6 +302,59 @@ export type LearnBatchRequest = {
   articles: { section: string; source: string; diff: string; editRatio: number; images: string }[];
 };
 
+// ---------------------------------------------------------------------------
+// The ads agent: proposes campaigns, checks ads, sums up for the advertiser (Hebrew). A person
+// approves everything it writes before readers see it.
+// ---------------------------------------------------------------------------
+export const AdBriefOutput = z.object({
+  summary: clip(800),
+  headlines: upTo(clip(90), 5),
+  bodies: upTo(clip(200), 5),
+  ctas: upTo(clip(30), 5),
+  slots: upTo(z.enum(AD_SLOTS), AD_SLOTS.length),
+  categories: upTo(z.enum(CATEGORY_SLUGS), 6),
+  action: z.enum(AD_ACTIONS),
+  lead_fields: upTo(z.enum(AD_LEAD_FIELDS), AD_LEAD_FIELDS.length),
+  lead_question: clip(200),
+  image_idea: clip(800),
+  warnings: upTo(clip(300), 8),
+});
+export type AdBriefOutput = z.infer<typeof AdBriefOutput>;
+
+export type AdBriefRequest = {
+  /** prompt_templates "ads.brief" */
+  systemPrompt: string;
+  /** What the places are, generated from the code. */
+  options: string;
+  brief: { business: string; website: string; offer: string; goal: string; audience: string; notes: string };
+  /** The advertiser's home page as we read it (untrusted), or empty. */
+  siteText: string;
+};
+
+export const AdReviewOutput = z.object({
+  verdict: z.enum(['ok', 'fix', 'block']),
+  issues: upTo(z.object({ what: clip(300), why: clip(600), fix: clip(600) }), 10),
+});
+export type AdReviewOutput = z.infer<typeof AdReviewOutput>;
+
+export type AdReviewRequest = {
+  /** prompt_templates "ads.review" */
+  systemPrompt: string;
+  ad: { advertiser: string; sponsor: string; format: string; headline: string; body: string; cta: string; alt: string; url: string; action: string; leadQuestion: string };
+  /** The banner as readers see it (its words are in the picture). */
+  images: ImageReference[];
+};
+
+export const AdReportOutput = z.object({ note: z.string().min(1).transform((s) => s.slice(0, 2000)) });
+export type AdReportOutput = z.infer<typeof AdReportOutput>;
+
+export type AdReportRequest = {
+  /** prompt_templates "ads.report" */
+  systemPrompt: string;
+  /** The campaign and its numbers, as text. */
+  facts: string;
+};
+
 export interface TextAI {
   readonly provider: string;
   /** False for the development stand-in: the UI says the text was not really rewritten. */
@@ -325,6 +378,9 @@ export interface TextAI {
   learnBatch(req: LearnBatchRequest): Promise<AiResult<LearnBatchOutput>>;
   /** Hebrew prompts the editor approved, in English for the image and video models (same order). */
   toEnglish(texts: string[]): Promise<AiResult<EnglishOutput>>;
+  adBrief(req: AdBriefRequest): Promise<AiResult<AdBriefOutput>>;
+  adReview(req: AdReviewRequest): Promise<AiResult<AdReviewOutput>>;
+  adReport(req: AdReportRequest): Promise<AiResult<AdReportOutput>>;
 }
 
 export type ImageShape = 'landscape' | 'portrait';

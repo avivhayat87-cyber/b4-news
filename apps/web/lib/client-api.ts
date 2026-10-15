@@ -1,6 +1,6 @@
-// Browser-side calls for reader features (sign-in, comments). The API session
+// Browser-side calls for reader features (sign-in, comments, ads). The API session
 // cookie is httpOnly, so it is sent with `credentials: 'include'` and never read here.
-import type { DigestPrefs, FeedMode, FeedPage, ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
+import type { AdInquiryInput, AdLeadInput, AdSlot, DigestPrefs, FeedMode, FeedPage, PartnerReportDto, PublicAdSlot, ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
 import type { CommentDto, CommentList, ReaderDto, ReaderSession } from './types';
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -76,6 +76,17 @@ export const consentApi = {
 
 export const takedownApi = {
   submit: (body: TakedownInput) => call<{ id: string; reference: string; dueAt: string }>('/public/takedown', { method: 'POST', body: json(body) }),
+};
+
+export const adsApi = {
+  slot: (slot: AdSlot, q: { device: 'desktop' | 'mobile'; category?: string; exclude: string[] }) =>
+    call<PublicAdSlot>(`/public/ads/${slot}?device=${q.device}${q.category ? `&category=${encodeURIComponent(q.category)}` : ''}${q.exclude.length ? `&exclude=${q.exclude.join(',')}` : ''}`),
+  /** Sent even while the reader leaves the page (keepalive), and never fails loudly: a lost view is only a number. */
+  view: (token: string, kind: 'view' | 'open' = 'view') =>
+    fetch(`${BASE}/public/ads/view`, { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: json({ token, kind }) }).catch(() => undefined),
+  lead: (body: AdLeadInput) => call<{ thankYou: string }>('/public/ads/lead', { method: 'POST', body: json(body) }),
+  inquiry: (body: AdInquiryInput) => call<void>('/public/ads/inquiry', { method: 'POST', body: json(body) }),
+  partner: (key: string) => call<PartnerReportDto>(`/public/partners/${encodeURIComponent(key)}`),
 };
 
 export const commentsApi = {
