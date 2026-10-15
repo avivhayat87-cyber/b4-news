@@ -1,8 +1,19 @@
 // The agent team as the CMS shows it ("הגדרות" > "צוות הסוכנים"): each agent with the model it
-// runs on, its skills (skills.ts), and what it did and cost this month, from ai_jobs. Who the
-// agents are is fixed here; what they know is edited in the CMS.
-import { AGENT_IDS, type AgentCardDto, type AgentId, type AgentTeamDto, type AgentUsageDto, NEWSROOM_FIXED_RULES } from '@b4/shared';
-import { aiJobs, and, eq, gte, sql } from '@b4/db';
+// runs on and its skills (skills.ts), and what each did and cost in a period (a day, a month, a
+// year, since the start, or between two days), from ai_jobs. Who the agents are is fixed here;
+// what they know is edited in the CMS.
+import {
+  AGENT_IDS,
+  type AgentCardDto,
+  type AgentId,
+  type AgentTeamDto,
+  type AgentUsageDto,
+  type AgentUsageQuery,
+  type AgentUsageReportDto,
+  NEWSROOM_FIXED_RULES,
+} from '@b4/shared';
+import { aiJobs, and, eq, gte, lt, sql } from '@b4/db';
+import { AppError } from '../../errors';
 import { textCostUsd } from '../ai/prices';
 import type { Services } from '../context';
 import { AGENT_MODEL, agentEngine } from './engine';
@@ -29,17 +40,55 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   meeting: 'chief',
 };
 
-/** The first moment of this month in Israel, and the month as YYYY-MM. */
-export function israelMonthStart(now = new Date()): { start: Date; month: string } {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
-  const midnightUtc = new Date(`${p.year}-${p.month}-01T00:00:00Z`);
-  // Israel is UTC+2 or +3: the offset at that moment, from how Israel writes it.
-  const there = new Date(midnightUtc.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-  const here = new Date(midnightUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
-  return { start: new Date(midnightUtc.getTime() - (there.getTime() - here.getTime())), month: `${p.year}-${p.month}` };
+const ISRAEL = 'Asia/Jerusalem';
+
+/** The day it is in Israel at a moment, as YYYY-MM-DD. */
+export function israelDay(at = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: ISRAEL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
 }
 
-async function usageSince(s: Services, since: Date): Promise<Map<AgentId, AgentUsageDto>> {
+/** The moment a day (YYYY-MM-DD) begins in Israel. */
+export function israelMidnight(day: string): Date {
+  const midnightUtc = new Date(`${day}T00:00:00Z`);
+  // Israel is UTC+2 or +3: the offset at that moment, from how Israel writes it.
+  const there = new Date(midnightUtc.toLocaleString('en-US', { timeZone: ISRAEL }));
+  const here = new Date(midnightUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(midnightUtc.getTime() - (there.getTime() - here.getTime()));
+}
+
+const nextDay = (day: string) => new Date(Date.parse(`${day}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+/** A real calendar day (2026-02-30 is not). */
+const isDay = (day: string) => !Number.isNaN(Date.parse(`${day}T12:00:00Z`)) && new Date(`${day}T12:00:00Z`).toISOString().startsWith(day);
+
+/** The first moment of this month in Israel, and the month as YYYY-MM. */
+export function israelMonthStart(now = new Date()): { start: Date; month: string } {
+  const month = israelDay(now).slice(0, 7);
+  return { start: israelMidnight(`${month}-01`), month };
+}
+
+/** The days a usage report covers, both included (from is null since the start). */
+export function usageRange(q: AgentUsageQuery, now = new Date()): { from: string | null; to: string } {
+  const today = israelDay(now);
+  switch (q.period) {
+    case 'day':
+      return { from: today, to: today };
+    case 'month':
+      return { from: `${today.slice(0, 7)}-01`, to: today };
+    case 'year':
+      return { from: `${today.slice(0, 4)}-01-01`, to: today };
+    case 'all':
+      return { from: null, to: today };
+    case 'custom':
+      if (!q.from || !q.to || !isDay(q.from) || !isDay(q.to)) throw new AppError(400, 'bad_range', 'בחרו תאריך התחלה ותאריך סיום.');
+      if (q.from > q.to) throw new AppError(400, 'bad_range', 'תאריך ההתחלה אחרי תאריך הסיום.');
+      return { from: q.from, to: q.to };
+  }
+}
+
+const noUsage = (): AgentUsageDto => ({ calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, partial: false });
+
+async function usageBetween(s: Services, from: Date | null, until: Date): Promise<Map<AgentId, AgentUsageDto>> {
+  const unpriced = sql`${aiJobs.costUsd} is null`;
   const rows = await s.db
     .select({
       type: aiJobs.type,
@@ -47,32 +96,51 @@ async function usageSince(s: Services, since: Date): Promise<Map<AgentId, AgentU
       calls: sql<number>`count(*)::int`,
       input: sql<number>`coalesce(sum(${aiJobs.inputTokens}), 0)::int`,
       output: sql<number>`coalesce(sum(${aiJobs.outputTokens}), 0)::int`,
-      priced: sql<string | null>`sum(${aiJobs.costUsd})`,
+      priced: sql<string>`coalesce(sum(${aiJobs.costUsd}), 0)`,
+      // Calls without a price of their own: a text call is priced from its tokens.
+      unpricedCalls: sql<number>`(count(*) filter (where ${unpriced}))::int`,
+      unpricedInput: sql<number>`coalesce(sum(${aiJobs.inputTokens}) filter (where ${unpriced}), 0)::int`,
+      unpricedOutput: sql<number>`coalesce(sum(${aiJobs.outputTokens}) filter (where ${unpriced}), 0)::int`,
     })
     .from(aiJobs)
-    .where(and(gte(aiJobs.createdAt, since), eq(aiJobs.status, 'succeeded')))
+    .where(and(eq(aiJobs.status, 'succeeded'), lt(aiJobs.createdAt, until), from ? gte(aiJobs.createdAt, from) : undefined))
     .groupBy(aiJobs.type, aiJobs.model);
-  const out = new Map<AgentId, AgentUsageDto>(AGENT_IDS.map((id) => [id, { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, partial: false }]));
+  const out = new Map<AgentId, AgentUsageDto>(AGENT_IDS.map((id) => [id, noUsage()]));
   for (const r of rows) {
     const u = out.get(JOB_AGENT[r.type])!;
     u.calls += r.calls;
     u.inputTokens += r.input;
     u.outputTokens += r.output;
-    const price = textCostUsd(r.model, r.input, r.output);
-    if (r.priced !== null) u.costUsd += Number(r.priced);
-    else if (price !== null) u.costUsd += price;
+    u.costUsd += Number(r.priced);
+    if (r.unpricedCalls === 0) continue;
+    const price = textCostUsd(r.model, r.unpricedInput, r.unpricedOutput);
+    if (price !== null) u.costUsd += price;
     // The development stand-in costs nothing; anything else without a known price is billed elsewhere (Google).
     else if (!['fake', 'demo', 'placeholder'].some((m) => r.model.startsWith(m))) u.partial = true;
   }
-  for (const u of out.values()) u.costUsd = Math.round(u.costUsd * 10_000) / 10_000;
   return out;
 }
 
-/** The team: each agent's model, skills and usage this month, and the newsroom rules. */
+const rounded = (u: AgentUsageDto): AgentUsageDto => ({ ...u, costUsd: Math.round(u.costUsd * 10_000) / 10_000 });
+
+/** What each agent did and cost in a period, and all of them together. */
+export async function agentUsage(s: Services, q: AgentUsageQuery): Promise<AgentUsageReportDto> {
+  const { from, to } = usageRange(q);
+  const usage = await usageBetween(s, from ? israelMidnight(from) : null, israelMidnight(nextDay(to)));
+  const total = noUsage();
+  for (const u of usage.values()) {
+    total.calls += u.calls;
+    total.inputTokens += u.inputTokens;
+    total.outputTokens += u.outputTokens;
+    total.costUsd += u.costUsd;
+    total.partial ||= u.partial;
+  }
+  return { period: q.period, from, to, agents: AGENT_IDS.map((id) => ({ id, usage: rounded(usage.get(id)!) })), total: rounded(total) };
+}
+
+/** The team: each agent's model and skills, and the newsroom rules. */
 export async function agentTeam(s: Services): Promise<AgentTeamDto> {
-  const { start, month } = israelMonthStart();
-  const [usage, skills, claude, gemini] = await Promise.all([
-    usageSince(s, start),
+  const [skills, claude, gemini] = await Promise.all([
     skillSummaries(s.db, [...AGENT_IDS.flatMap((a) => AGENT_SKILLS[a]), RULES_KEY]),
     s.settings.integration('anthropic'),
     s.settings.integration('gemini'),
@@ -96,7 +164,6 @@ export async function agentTeam(s: Services): Promise<AgentTeamDto> {
     id,
     ...model[id],
     skills: AGENT_SKILLS[id].map((k) => skills.get(k)).filter((x) => x !== undefined),
-    usage: usage.get(id)!,
   }));
-  return { agents, rules: skills.get(RULES_KEY)!, fixedRules: [...NEWSROOM_FIXED_RULES], month };
+  return { agents, rules: skills.get(RULES_KEY)!, fixedRules: [...NEWSROOM_FIXED_RULES] };
 }

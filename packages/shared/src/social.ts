@@ -70,7 +70,13 @@ export const REEL_DURATIONS = [4, 6, 8] as const;
 export const REEL_RESOLUTIONS = ['720p', '1080p'] as const;
 
 /** The Veo models offered in the CMS (any other Google video model id can be entered in Settings). */
-export const VIDEO_MODELS = ['veo-3.1-fast-generate-preview', 'veo-3.1-lite-generate-preview', 'veo-3.1-generate-preview'] as const;
+export const VIDEO_MODELS = ['veo-3.1-lite-generate-preview', 'veo-3.1-fast-generate-preview', 'veo-3.1-generate-preview'] as const;
+
+/**
+ * Reels are made with Veo Lite at 720p unless the editor picks better for one reel: less than half
+ * the price of Fast at 1080p, and a phone shows little difference. Decided by the owner on 2026-10-15.
+ */
+export const DEFAULT_VIDEO_MODEL = 'veo-3.1-lite-generate-preview';
 
 /**
  * Estimated price per second of video, in US dollars, from Google's published rates (September 2026).
@@ -86,7 +92,7 @@ export const ReelSettings = z.object({
   /** Empty = the model set in Settings > Connections > Gemini */
   model: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,80}$/).optional(),
   durationSeconds: z.union([z.literal(4), z.literal(6), z.literal(8)]).default(8),
-  resolution: z.enum(REEL_RESOLUTIONS).default('1080p'),
+  resolution: z.enum(REEL_RESOLUTIONS).default('720p'),
   motion: z.enum(REEL_MOTIONS).default('zoom_in'),
   /** Extra direction for the video, in the editor's words */
   instruction: z.string().trim().max(500).default(''),

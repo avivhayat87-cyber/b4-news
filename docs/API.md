@@ -251,7 +251,8 @@ The editor's social tab now shows the distribution plan. These endpoints stay fo
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/agents` | any | `AgentTeamDto`: every agent (`chief`, `rewrite`, `social`, `visual`, `translator`, `learning`) with its model, whether it is live, its skills (the version in use, who wrote it) and its usage this month (calls, tokens, estimated cost; `partial` when Google bills part of it), the newsroom rules, and the fixed rules |
+| GET | `/admin/agents` | any | `AgentTeamDto`: every agent (`chief`, `reporter`, `rewrite`, `reviewer`, `social`, `visual`, `translator`, `learning`) with its model, whether it is live, its skills (the version in use, who wrote it), the newsroom rules, and the fixed rules |
+| GET | `/admin/agents/usage?period=all\|day\|month\|year\|custom&from=&to=` | any | `AgentUsageReportDto`: what each agent did and cost in the period (calls, tokens, estimated cost; `partial` when some calls have no known price), and all of them together. Days are Israel time; `custom` takes `from` and `to` (YYYY-MM-DD, both included). Default `month` |
 | GET | `/admin/skills/:key` | any | `SkillDto`: every version (newest first), which one is in use, the markers a new version must keep; 404 for an unknown key |
 | PUT | `/admin/skills/:key` | admin | `SaveSkillInput` → `SkillDto`: a new version, in use at once (audited); 422 `missing_placeholder` when a marker such as `{{style_rules}}` is gone |
 | POST | `/admin/skills/:key/versions/:version/restore` | admin | → `SkillDto`: the older version comes back as a new version under the admin (audited) |

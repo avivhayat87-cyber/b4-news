@@ -99,7 +99,7 @@ describe('distribution plan', () => {
     // The AI only recommends a reel: a person approves it, so it isn't in what goes out yet.
     expect(p.reel).toMatchObject({ recommended: true, motion: 'zoom_in', durationSeconds: 8 });
     expect(p.reel.idea).toMatch(/[א-ת]/);
-    expect(p.reelEstimateUsd).toBeCloseTo(0.96);
+    expect(p.reelEstimateUsd).toBeCloseTo(0.4); // 8 seconds of Veo Lite at 720p
     expect(p.rendered.feed).toMatch(/plan-feed-\w+\.jpg$/);
     expect(p.rendered.story).toMatch(/plan-story-\w+\.jpg$/);
 

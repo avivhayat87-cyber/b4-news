@@ -289,13 +289,13 @@ export class PlaceholderImages implements ImageAI {
 
   constructor(private readonly tier: ImageTier = 'final') {}
 
-  private size(shape: ImageShape): [number, number] {
+  private dimensions(shape: ImageShape): [number, number] {
     const [w, h] = shape === 'portrait' ? [1080, 1920] : [1600, 900];
     return this.tier === 'draft' ? [Math.round(w * 0.64), Math.round(h * 0.64)] : [w, h];
   }
 
   async generate(prompt: string, opts: { count: number; shape: ImageShape }): Promise<Buffer[]> {
-    const [w, h] = this.size(opts.shape);
+    const [w, h] = this.dimensions(opts.shape);
     const guessed = classifyHeadline(prompt);
     const out: Buffer[] = [];
     for (let i = 0; i < opts.count; i++) {
@@ -310,7 +310,7 @@ export class PlaceholderImages implements ImageAI {
 
   /** The same picture, enlarged: what the editor chose is what they get. */
   async finish(_prompt: string, draft: ImageReference, shape: ImageShape): Promise<Buffer> {
-    const [w, h] = this.size(shape);
+    const [w, h] = this.dimensions(shape);
     return sharp(draft.data).resize(w, h, { fit: 'cover' }).png().toBuffer();
   }
 }

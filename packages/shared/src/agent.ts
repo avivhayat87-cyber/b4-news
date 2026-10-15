@@ -8,7 +8,7 @@ const iso = z.string();
 
 // ---------------------------------------------------------------------------
 // The agent team: who the agents are, their skills (editable instructions, in Hebrew, versioned
-// in prompt_templates), the newsroom rules every agent follows, and what each one cost this month.
+// in prompt_templates), the newsroom rules every agent follows, and what each one cost in a period.
 // ---------------------------------------------------------------------------
 /** chief: the chat agent that runs the others; reporter: research from a link or screenshots; reviewer: the legal review before publishing. */
 export const AGENT_IDS = ['chief', 'reporter', 'rewrite', 'reviewer', 'social', 'visual', 'translator', 'learning'] as const;
@@ -42,7 +42,7 @@ export const AgentUsageDto = z.object({
   outputTokens: z.number().int(),
   /** Estimated, in US dollars, for the calls whose price is known. */
   costUsd: z.number(),
-  /** Some calls (Google's images) are billed elsewhere and not counted in costUsd. */
+  /** Some calls have no known price (a Google text model, images from before prices were kept) and are not in costUsd. */
   partial: z.boolean(),
 });
 export type AgentUsageDto = z.infer<typeof AgentUsageDto>;
@@ -54,7 +54,6 @@ export const AgentCardDto = z.object({
   /** false: the development stand-in (or no key) answers instead of the AI. */
   live: z.boolean(),
   skills: z.array(SkillSummary),
-  usage: AgentUsageDto,
 });
 export type AgentCardDto = z.infer<typeof AgentCardDto>;
 
@@ -63,10 +62,32 @@ export const AgentTeamDto = z.object({
   /** The newsroom rules every writing agent reads (editable), and the fixed ones (not editable). */
   rules: SkillSummary,
   fixedRules: z.array(z.string()),
-  /** The month the usage covers, as YYYY-MM (Israel time). */
-  month: z.string(),
 });
 export type AgentTeamDto = z.infer<typeof AgentTeamDto>;
+
+/** What the agents cost: since the start, today, this month, this year, or between two days (Israel time). */
+export const USAGE_PERIODS = ['all', 'day', 'month', 'year', 'custom'] as const;
+export type UsagePeriod = (typeof USAGE_PERIODS)[number];
+
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'תאריך לא תקין');
+
+export const AgentUsageQuery = z.object({
+  period: z.enum(USAGE_PERIODS).default('month'),
+  /** custom: the first and the last day, both included. */
+  from: day.optional(),
+  to: day.optional(),
+});
+export type AgentUsageQuery = z.infer<typeof AgentUsageQuery>;
+
+export const AgentUsageReportDto = z.object({
+  period: z.enum(USAGE_PERIODS),
+  /** The first and the last day covered (YYYY-MM-DD, Israel time); from is null since the start. */
+  from: day.nullable(),
+  to: day,
+  agents: z.array(z.object({ id: z.enum(AGENT_IDS), usage: AgentUsageDto })),
+  total: AgentUsageDto,
+});
+export type AgentUsageReportDto = z.infer<typeof AgentUsageReportDto>;
 
 export const SkillVersionDto = z.object({ version: z.number().int(), body: z.string(), isActive: z.boolean(), createdAt: iso, createdBy: z.string().nullable() });
 export type SkillVersionDto = z.infer<typeof SkillVersionDto>;

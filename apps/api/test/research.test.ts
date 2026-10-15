@@ -197,6 +197,7 @@ describe('the research reporter', () => {
     const team = (await admin.get('/agents')).body;
     const reporter = team.agents.find((a: { id: string }) => a.id === 'reporter');
     expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write']);
-    expect(reporter.usage.calls).toBeGreaterThan(0);
+    const usage = (await admin.get('/agents/usage')).body;
+    expect(usage.agents.find((a: { id: string }) => a.id === 'reporter').usage.calls).toBeGreaterThan(0);
   });
 });

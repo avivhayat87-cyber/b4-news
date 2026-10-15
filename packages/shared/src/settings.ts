@@ -2,6 +2,7 @@
 // stored encrypted on the server) and the public site details (links, contact,
 // info pages) that the site and the app display.
 import { z } from 'zod';
+import { DEFAULT_VIDEO_MODEL } from './social';
 
 // ---------------------------------------------------------------------------
 // Integrations
@@ -77,9 +78,9 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
         key: 'videoModel',
         label: 'מודל לסרטוני ריל (Veo)',
         secret: false,
-        defaultValue: 'veo-3.1-fast-generate-preview',
+        defaultValue: DEFAULT_VIDEO_MODEL,
         pattern: '^[a-z0-9][a-z0-9.\\-]{2,80}$',
-        help: 'ברירת המחדל Veo 3.1 Fast. אפשר לרשום מודל אחר של Google: veo-3.1-lite-generate-preview (זול יותר) או veo-3.1-generate-preview (איכותי ויקר יותר). סרטון נוצר רק כשמבקשים ריל לכתבה.',
+        help: 'ברירת המחדל Veo 3.1 Lite (הזול). לריל מסוים אפשר לבחור מודל ואיכות אחרים במסך הריל. מודלים אחרים של Google: veo-3.1-fast-generate-preview (מהיר, יקר יותר) או veo-3.1-generate-preview (הכי איכותי ויקר). סרטון נוצר רק כשמבקשים ריל לכתבה.',
       },
     ],
   },

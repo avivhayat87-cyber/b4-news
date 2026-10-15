@@ -22,7 +22,7 @@ export class GeminiImages implements ImageAI {
   constructor(
     private readonly apiKey: string,
     readonly model: string,
-    private readonly size: ImageSize = '2K',
+    readonly size: ImageSize = '2K',
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 

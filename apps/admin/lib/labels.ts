@@ -28,6 +28,7 @@ import {
   type SourceKind,
   type SourceStatus,
   type SubscriberStatus,
+  type UsagePeriod,
   type VisualAgentOverview,
 } from '@b4/shared';
 
@@ -127,6 +128,15 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
     role: 'לומד מהתיקונים שלכם אחרי כל פרסום',
     about: 'אחרי כל פרסום קורא בבת אחת מה שיניתם בטיוטות, ומעדכן את כללי סגנון הבית של עורך השכתוב. כותב לכם דוח קצר על מה שלמד.',
   },
+};
+
+/** The periods the agents' costs are shown for: the filter button, and the words after "עלות" / "עבודות". */
+export const USAGE_PERIOD: Record<UsagePeriod, { label: string; when: string }> = {
+  all: { label: 'כללי', when: 'מההתחלה' },
+  day: { label: 'היום', when: 'היום' },
+  month: { label: 'החודש', when: 'החודש' },
+  year: { label: 'השנה', when: 'השנה' },
+  custom: { label: 'התאמה אישית', when: 'בטווח' },
 };
 
 /** Every skill: its name, and what it is used for. */
@@ -326,8 +336,8 @@ export const REEL_MOTION: Record<ReelMotion, string> = {
 };
 /** The Veo models offered by default; any other model id can be set in Settings. */
 export const VIDEO_MODEL: Record<string, string> = {
-  'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast (מומלץ)',
-  'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite (זול)',
+  'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite (זול, ברירת המחדל)',
+  'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast (חד יותר, יקר יותר)',
   'veo-3.1-generate-preview': 'Veo 3.1 (הכי איכותי, יקר)',
 };
 export const SHARE_FILTER: Record<ShareFilter, string> = { pending: 'ממתינות לרשתות', shared: 'פורסמו ברשתות', all: 'כל הכתבות' };

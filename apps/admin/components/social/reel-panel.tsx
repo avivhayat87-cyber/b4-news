@@ -230,7 +230,7 @@ export function ReelPanel({ share, textDirty }: { share: ShareDto; textDirty: bo
                 <select id="reel-resolution" value={settings.resolution} disabled={busy} onChange={(e) => setSetting({ resolution: e.target.value as ReelSettings['resolution'] })} className={inputClass}>
                   {REEL_RESOLUTIONS.map((r) => (
                     <option key={r} value={r}>
-                      {r === '1080p' ? '1080p (מומלץ לרילס)' : r}
+                      {r === '1080p' ? '1080p (איכות גבוהה, יקר יותר)' : '720p (ברירת המחדל)'}
                     </option>
                   ))}
                 </select>

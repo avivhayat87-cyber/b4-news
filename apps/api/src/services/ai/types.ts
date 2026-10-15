@@ -290,6 +290,8 @@ export interface ImageAI {
   readonly provider: string;
   readonly model: string;
   readonly live: boolean;
+  /** The size it draws at (1K, 2K, 4K), which sets the price; none for the stand-in. */
+  readonly size?: string;
   generate(prompt: string, opts: { count: number; shape: ImageShape; references?: ImageReference[] }): Promise<Buffer[]>;
   /** The approved draft, redrawn at this generator's quality and kept as it is. */
   finish(prompt: string, draft: ImageReference, shape: ImageShape): Promise<Buffer>;
