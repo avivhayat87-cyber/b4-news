@@ -29,13 +29,10 @@ export function PageMock() {
           </div>
         </div>
         <div className="h-20 rounded-md bg-[linear-gradient(135deg,#3A3A40,#1C1C20)]" />
-        <div className="relative flex h-14 items-center justify-between rounded-md bg-brand px-3 text-white">
+        <div className="relative flex h-8 items-center justify-between rounded-md bg-brand pl-3 pr-12 text-white">
           <MiniLabel />
-          <span className="space-y-1.5">
-            <span className="block h-2.5 w-36 rounded-full bg-white/90" />
-            <span className="block h-2 w-24 rounded-full bg-white/60" />
-          </span>
-          <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-extrabold text-brand">לפרטים</span>
+          <span className="block h-2.5 w-36 rounded-full bg-white/90" />
+          <span className="rounded-full bg-white px-2 py-0.5 text-[8px] font-extrabold text-brand">לפרטים</span>
         </div>
         <div className="grid grid-cols-[1fr_96px] gap-3">
           <div className="space-y-2.5">
@@ -67,12 +64,9 @@ export function PageMock() {
 export function FormatMock({ kind }: { kind: 'billboard' | 'rectangle' | 'native' | 'lead' }) {
   if (kind === 'billboard')
     return (
-      <div aria-hidden="true" className="relative flex h-16 items-center justify-between rounded-md bg-[linear-gradient(115deg,#1C1C20,#3B1418)] px-4">
+      <div aria-hidden="true" className="relative flex h-10 items-center justify-between rounded-md bg-[linear-gradient(115deg,#1C1C20,#3B1418)] pl-4 pr-12">
         <MiniLabel />
-        <span className="space-y-1.5">
-          <span className="block h-2.5 w-28 rounded-full bg-white/90" />
-          <span className="block h-2 w-20 rounded-full bg-white/50" />
-        </span>
+        <span className="block h-2.5 w-28 rounded-full bg-white/90" />
         <span className="rounded-full bg-brand px-2.5 py-1 text-[9px] font-extrabold text-white">לפרטים</span>
       </div>
     );

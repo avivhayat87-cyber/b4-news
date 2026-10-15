@@ -426,7 +426,7 @@ const SLOT_WHERE: Record<AdSlot, string> = {
 export const AD_SLOT = Object.fromEntries(AD_SLOTS.map((s) => [s, { name: AD_SLOT_NAMES[s], where: SLOT_WHERE[s] }])) as Record<AdSlot, { name: string; where: string }>;
 
 export const AD_FORMAT: Record<AdFormat, { name: string; size: string }> = {
-  billboard: { name: 'באנר רחב', size: `מחשב ${adSize(970, 250)}, נייד ${adSize(320, 100)}` },
+  billboard: { name: 'באנר רחב', size: `מחשב ${adSize(970, 90)}, נייד ${adSize(320, 50)}` },
   rectangle: { name: 'מלבן', size: adSize(300, 250) },
   native: { name: 'בסגנון כתבה', size: 'תמונה 16:9, כותרת, שורה וכפתור' },
 };

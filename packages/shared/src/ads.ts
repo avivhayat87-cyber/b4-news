@@ -31,7 +31,11 @@ export const AD_SLOT_NAMES: Record<AdSlot, string> = {
   app_article: 'כתבה באפליקציה',
 };
 
-/** billboard: a wide banner; rectangle: the classic 300x250; native: a card with a picture, a headline and a line. */
+/**
+ * billboard: the wide strip at the top of a page, a classic leaderboard (the name stays, the size
+ * shrank from 970x250 at the owner's request on 2026-10-15: a big banner pushed the news down);
+ * rectangle: the classic 300x250; native: a card with a picture, a headline and a line.
+ */
 export const AD_FORMATS = ['billboard', 'rectangle', 'native'] as const;
 export type AdFormat = (typeof AD_FORMATS)[number];
 
@@ -53,12 +57,12 @@ export const APP_AD_SLOTS: readonly AdSlot[] = ['app_feed', 'app_article'];
  * screens). A billboard has its own picture for phones; the others use one picture everywhere.
  */
 export const AD_SIZES: Record<AdFormat, { desktop: { width: number; height: number }; mobile: { width: number; height: number } }> = {
-  billboard: { desktop: { width: 970, height: 250 }, mobile: { width: 320, height: 100 } },
+  billboard: { desktop: { width: 970, height: 90 }, mobile: { width: 320, height: 50 } },
   rectangle: { desktop: { width: 300, height: 250 }, mobile: { width: 300, height: 250 } },
   native: { desktop: { width: 600, height: 338 }, mobile: { width: 600, height: 338 } },
 };
 
-/** "970×250" set apart, so a right-to-left line never shows it as "250×970". */
+/** "970×90" set apart, so a right-to-left line never shows it as "90×970". */
 export const adSize = (width: number, height: number) => `⁦${width}×${height}⁩`;
 
 export const AD_DEVICES = ['all', 'desktop', 'mobile'] as const;

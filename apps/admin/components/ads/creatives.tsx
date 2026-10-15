@@ -169,8 +169,8 @@ function Editor({ campaign, creative, onDone }: { campaign: CampaignDto; creativ
           {banner && mode === 'upload' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <PickImage use={format === 'billboard' ? 'billboard-desktop' : 'rectangle'} label={format === 'billboard' ? `באנר למחשב: ${adSize(970, 250)}` : `הבאנר: ${adSize(300, 250)}`} onPicked={(p) => setDesktop({ key: p.key, url: p.url })} />
-                {format === 'billboard' && <PickImage use="billboard-mobile" label={`באנר לנייד: ${adSize(320, 100)}`} onPicked={(p) => setMobile({ key: p.key, url: p.url })} />}
+                <PickImage use={format === 'billboard' ? 'billboard-desktop' : 'rectangle'} label={format === 'billboard' ? `באנר למחשב: ${adSize(970, 90)}` : `הבאנר: ${adSize(300, 250)}`} onPicked={(p) => setDesktop({ key: p.key, url: p.url })} />
+                {format === 'billboard' && <PickImage use="billboard-mobile" label={`באנר לנייד: ${adSize(320, 50)}`} onPicked={(p) => setMobile({ key: p.key, url: p.url })} />}
               </div>
               <p className="text-xs text-muted">בדיוק בגודל הזה, או כפול (למסכים חדים). בלי אנימציה. {format === 'billboard' && 'בלי באנר לנייד, המודעה לא תוצג בטלפונים.'}</p>
               {textField('sponsor', 'בחסות', 60)}

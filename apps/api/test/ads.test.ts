@@ -176,16 +176,18 @@ describe('advertising', () => {
 
   it('takes a banner only in its own proportions, and sets one from words in every size', async () => {
     expect((await upload('billboard-desktop', 1000, 500)).status).toBe(422);
-    const ok = await upload('billboard-desktop', 1940, 500);
+    // The old, tall billboard (970x250) no longer fits: the wide place is a thin strip now.
+    expect((await upload('billboard-desktop', 1940, 500)).status).toBe(422);
+    const ok = await upload('billboard-desktop', 1940, 180);
     expect(ok.status).toBe(201);
-    expect(ok.body).toMatchObject({ width: 1940, height: 500 });
+    expect(ok.body).toMatchObject({ width: 1940, height: 180 });
 
     const set = await admin.post('/ads/compose', { format: 'billboard', headline: 'משכנתא בריבית קבועה', body: 'לכל החיים', cta: 'לפרטים', sponsor: 'בנק הדוגמה', theme: 'dark' });
     expect(set.status).toBe(201);
     const desktop = await sharp(await ctx.storage.get(set.body.desktop.key)).metadata();
     const mobile = await sharp(await ctx.storage.get(set.body.mobile.key)).metadata();
-    expect([desktop.width, desktop.height]).toEqual([1940, 500]);
-    expect([mobile.width, mobile.height]).toEqual([640, 200]);
+    expect([desktop.width, desktop.height]).toEqual([1940, 180]);
+    expect([mobile.width, mobile.height]).toEqual([640, 100]);
   });
 
   it('moves an ended campaign to the archive with its numbers, and deletes only by hand, leads and all', async () => {

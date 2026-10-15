@@ -145,7 +145,7 @@ function AdBody({ ad, device }: { ad: PublicAd; device: 'desktop' | 'mobile' }) 
 }
 
 const SPOTS_KEY = 'b4_adspots';
-const FORMAT_SIZE: Record<string, string> = { billboard: `באנר רחב ${adSize(970, 250)} · בנייד ${adSize(320, 100)}`, rectangle: `מלבן ${adSize(300, 250)}`, native: 'מודעה בסגנון כתבה' };
+const FORMAT_SIZE: Record<string, string> = { billboard: `באנר רחב ${adSize(970, 90)} · בנייד ${adSize(320, 50)}`, rectangle: `מלבן ${adSize(300, 250)}`, native: 'מודעה בסגנון כתבה' };
 
 /**
  * "?adspots=1" on any page (the CMS links to it) shows every ad place as a labeled frame, for the
@@ -164,7 +164,7 @@ function spotPreview(): boolean {
 }
 
 function SpotFrame({ slot }: { slot: Slot }) {
-  const height = AD_SLOT_FORMATS[slot].includes('billboard') ? 160 : 250;
+  const height = AD_SLOT_FORMATS[slot].includes('billboard') ? 90 : 250;
   return (
     <div className="flex flex-col items-center justify-center gap-1 rounded-[10px] border-2 border-dashed border-brand bg-brand-soft/60 p-4 text-center" style={{ minHeight: height }}>
       <span className="text-xs font-bold tracking-[.06em] text-brand-deep">מקום פרסום</span>

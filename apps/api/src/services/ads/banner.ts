@@ -57,49 +57,55 @@ function stack(f: Frame, items: { block: Block | null; gap: number }[], inset: n
 
 const ctaChip = (label: string, p: Palette, size: number) => chip(label, { bg: p.ctaBg, color: p.ctaText, size, padX: Math.round(size * 1.1), padY: Math.round(size * 0.45), radius: Math.round(size * 1.3), font: 'label' });
 
-/** The billboard on a large screen: words on the start side, the photo (if any) on the end side, the button under the words. */
+/**
+ * The billboard on a large screen (970x90, a classic leaderboard): the words on the start side; the
+ * button, and the photo (if any), on the end side.
+ */
 async function wide(f: Frame, input: AdComposeInput, p: Palette, photo: Buffer | null): Promise<Buffer> {
   const { W, H } = f;
-  const pad = 64;
+  const pad = 56;
   const base = await sharp(background(W, H, p, Boolean(photo))).png().toBuffer();
-  let textWidth: number;
+  let end = pad;
   if (photo) {
-    const pw = Math.round(W * 0.38);
+    const pw = Math.round(W * 0.24);
     f.layers.push({ input: await cover(photo, pw, H), top: 0, left: 0 });
     // The photo melts into the background toward the words.
     f.layers.push({ input: svg(W, H, `<defs><linearGradient id="m" x1="0" y1="0" x2="1" y2="0"><stop offset="0.55" stop-color="${p.bg}" stop-opacity="0"/><stop offset="1" stop-color="${p.bg}" stop-opacity="1"/></linearGradient></defs><rect width="${pw}" height="${H}" fill="url(#m)"/>`), top: 0, left: 0 });
-    textWidth = W - pw - pad - 40;
-  } else {
-    textWidth = Math.round(W * 0.66);
+    end = pw + 24;
   }
-  const sponsor = await text(input.sponsor, { font: 'label', size: 26, color: p.sub, width: textWidth });
-  const headline = await fit(input.headline, { font: 'display', size: 74, color: p.text, width: textWidth, leading: -0.12 }, input.body ? 190 : 260, 44);
-  const body = input.body ? await fit(input.body, { font: 'medium', size: 34, color: p.sub, width: textWidth, leading: -0.06 }, 88, 26) : null;
-  const cta = input.cta ? await ctaChip(input.cta, p, photo ? 30 : 36) : null;
-  if (photo || !cta) {
-    stack(f, [{ block: sponsor, gap: 0 }, { block: headline, gap: 14 }, { block: body, gap: 12 }, { block: cta, gap: 26 }], pad, pad * 0.7, H - pad * 0.7);
-  } else {
-    // No photo: the button stands alone on the end side, like a classic billboard.
-    stack(f, [{ block: sponsor, gap: 0 }, { block: headline, gap: 14 }, { block: body, gap: 12 }], pad, pad * 0.7, H - pad * 0.7);
-    f.layers.push({ input: cta.input, top: Math.round((H - cta.height) / 2), left: pad + 20 });
+  const cta = input.cta ? await ctaChip(input.cta, p, 28) : null;
+  if (cta) {
+    f.layers.push({ input: cta.input, top: Math.round((H - cta.height) / 2), left: end });
+    end += cta.width + 40;
   }
+  const width = Math.max(W - pad - end, Math.round(W * 0.4));
+  const sponsor = await text(input.sponsor, { font: 'label', size: 20, color: p.sub, width });
+  const headline = await fit(input.headline, { font: 'display', size: 52, color: p.text, width, leading: -0.12 }, input.body ? 70 : 108, 34);
+  const body = input.body ? await fit(input.body, { font: 'medium', size: 28, color: p.sub, width, leading: -0.06 }, 38, 22) : null;
+  stack(f, [{ block: sponsor, gap: 0 }, { block: headline, gap: 4 }, { block: body, gap: 4 }], pad, 12, H - 12);
   return base;
 }
 
-/** The billboard on a phone (320x100): a square photo on the end side, the headline and a small button. */
+/**
+ * The billboard on a phone (320x50): the photo (if any) and a small button on the end side, the
+ * headline beside them. No room for the advertiser's name: the site's label above it says it.
+ */
 async function strip(f: Frame, input: AdComposeInput, p: Palette, photo: Buffer | null): Promise<Buffer> {
   const { W, H } = f;
-  const pad = 22;
+  const pad = 20;
   const base = await sharp(background(W, H, p)).png().toBuffer();
-  let width = W - pad * 2;
+  let end = pad;
   if (photo) {
     f.layers.push({ input: await cover(photo, H, H), top: 0, left: 0 });
-    width = W - H - pad * 2;
+    end = H + 16;
   }
-  const sponsor = await text(input.sponsor, { font: 'label', size: 17, color: p.sub, width });
-  const headline = await fit(input.headline, { font: 'display', size: 36, color: p.text, width, leading: -0.12 }, 92, 24);
   const cta = input.cta ? await ctaChip(input.cta, p, 20) : null;
-  stack(f, [{ block: sponsor, gap: 0 }, { block: headline, gap: 4 }, { block: cta, gap: 8 }], pad, 10, H - 10);
+  if (cta) {
+    f.layers.push({ input: cta.input, top: Math.round((H - cta.height) / 2), left: end });
+    end += cta.width + 16;
+  }
+  const headline = await fit(input.headline, { font: 'display', size: 30, color: p.text, width: Math.max(W - pad - end, Math.round(W * 0.4)), leading: -0.12 }, H - 24, 20);
+  stack(f, [{ block: headline, gap: 0 }], pad, 0, H);
   return base;
 }
 

@@ -161,53 +161,48 @@ export function ArticleImage({
 }
 
 /**
- * A wide ad place with no campaign in it (the home page, the top of a section): a classic house
- * banner inviting businesses to advertise, in the section's words on a section page.
+ * A wide ad place with no campaign in it (the home page, the top of a section): a thin house strip
+ * at most the size of a leaderboard (970x90), inviting businesses to advertise, in the section's
+ * words on a section page. It never pushes the news down more than a real ad would: on a phone
+ * it keeps to one short line, close to a 320x50 banner.
  */
 export function HouseBillboard({ section }: { section?: { slug: string; name: string } }) {
+  // The phone gets a shorter line (measured to fit a 375px screen with the longest section name).
+  const [short, full] = section
+    ? [`מפרסמים בתחום ${section.name}?`, `מפרסמים בתחום ${section.name}? זה המקום שלכם.`]
+    : ['רוצים להגיע לקוראים שלנו?', 'הקוראים שלנו מקבלים החלטות כלכליות. הגיעו אליהם.'];
   return (
     <Link
       href={section ? `/advertise?section=${section.slug}#contact` : '/advertise'}
-      className="on-dark group relative flex flex-col gap-5 overflow-hidden rounded-[12px] bg-[linear-gradient(115deg,#1C1C20_0%,#26262C_55%,#3B1418_100%)] px-6 py-6 text-white md:flex-row md:items-center md:justify-between md:px-10 md:py-8"
+      className="on-dark group relative mx-auto flex max-w-[970px] items-center justify-between gap-2.5 overflow-hidden rounded-[10px] bg-[linear-gradient(115deg,#1C1C20_0%,#26262C_55%,#3B1418_100%)] px-3 py-2 text-white sm:px-4 md:min-h-[90px] md:gap-4 md:px-7 md:py-3"
     >
-      {/* The seal's orbit, as a quiet watermark. */}
-      <svg aria-hidden="true" viewBox="0 0 120 120" className="pointer-events-none absolute -left-20 -top-28 h-[360px] w-[360px] opacity-[.07]">
-        <circle cx="60" cy="60" r="54" fill="none" stroke="#FFFFFF" strokeWidth="5" />
-        <circle cx="60" cy="60" r="34" fill="none" stroke="#FFFFFF" strokeWidth="2" />
-      </svg>
-      <div className="relative flex items-center gap-5">
+      <div className="flex items-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
-        <img src="/brand/b4-mark.svg" alt="" width={60} height={60} className="hidden h-[60px] w-[60px] shrink-0 md:block" />
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-bold tracking-[.08em] text-[#FF5A63]">פרסום ב-B4 NEW&apos;S</span>
-          <span className="text-balance font-display text-[22px] font-extrabold leading-tight md:text-[28px]">
-            {section ? `מפרסמים בתחום ${section.name}? זה המקום שלכם.` : 'הקוראים שלנו מקבלים החלטות כלכליות. הגיעו אליהם.'}
-          </span>
-          <span className="text-[15px] leading-relaxed text-mist">
-            {section ? `המודעה שלכם מול קוראי המדור, בדיוק כשהם קוראים על ${section.name}.` : 'באנרים, מודעות עם טופס פניות ופרסום לפי מדור, באתר ובאפליקציה.'}
+        <img src="/brand/b4-mark.svg" alt="" width={40} height={40} className="hidden h-10 w-10 shrink-0 md:block" />
+        <div className="flex flex-col md:gap-0.5">
+          <span className="text-[10px] font-bold tracking-[.08em] text-[#FF5A63] md:text-[11px]">פרסום ב-B4 NEW&apos;S</span>
+          <span className="text-balance font-display text-[14px] font-extrabold leading-tight sm:text-[15px] md:text-[19px]">
+            <span className="sm:hidden">{short}</span>
+            <span className="hidden sm:inline">{full}</span>
           </span>
         </div>
       </div>
-      <span className="relative inline-flex h-11 shrink-0 items-center self-start whitespace-nowrap rounded-full bg-white px-6 font-extrabold text-ink transition-colors group-hover:bg-brand group-hover:text-white md:self-auto">
-        לפרטים ולהצעת מחיר ←
+      <span className="inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3 text-[13px] font-extrabold text-ink transition-colors group-hover:bg-brand group-hover:text-white md:h-9 md:px-4 md:text-sm">
+        לפרטים ←
       </span>
     </Link>
   );
 }
 
-/** A side ad place with no campaign in it (AdSlot's fallback): a house promo for advertisers. */
+/** A side ad place with no campaign in it (AdSlot's fallback): a small house card for advertisers. */
 export function HousePromo() {
   return (
-    <Link
-      href="/advertise"
-      className="on-dark group flex min-h-[250px] flex-col justify-between rounded-[10px] bg-[linear-gradient(135deg,#1C1C20_0%,#3A3A40_100%)] p-6 text-white"
-    >
+    <Link href="/advertise" className="on-dark group flex items-center gap-4 rounded-[10px] bg-[linear-gradient(135deg,#1C1C20_0%,#3A3A40_100%)] p-4 text-white">
       {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
-      <img src="/brand/b4-mark.svg" alt="" width={52} height={52} className="h-[52px] w-[52px]" />
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-bold tracking-[.08em] text-mist">פרסום</span>
-        <span className="font-display text-[22px] font-extrabold leading-tight">רוצים להגיע לקוראים של B4?</span>
-        <span className="text-[15px] font-bold text-[#FF5A63] group-hover:underline">לפרטים על פרסום באתר ←</span>
+      <img src="/brand/b4-mark.svg" alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
+      <div className="flex flex-col gap-1">
+        <span className="font-display text-[17px] font-extrabold leading-tight">רוצים להגיע לקוראים של B4?</span>
+        <span className="text-sm font-bold text-[#FF5A63] group-hover:underline">לפרטים על פרסום באתר ←</span>
       </div>
     </Link>
   );
