@@ -3,8 +3,8 @@
 News platform: public site, mobile app, and an AI-assisted newsroom CMS. "B4" reads "before".
 
 ```
-apps/web/       Public site: Next.js 15 (App Router, SSR/ISR), Tailwind v4       :3000
-apps/admin/     Newsroom CMS: Next.js, TipTap canvas, TanStack Query             :3001
+apps/web/       Public site: Next.js 16 (App Router, SSR/ISR), Tailwind v4       :3000
+apps/admin/     Newsroom CMS: Next.js 16, TipTap canvas, TanStack Query          :3001
 apps/api/       API + background jobs: Fastify 5, Drizzle, zod                    :4000
 apps/mobile/    App: Expo SDK 57 (iOS, Android; web build for preview)            :8081
 packages/db/    Database schema, migrations, seeds (PostgreSQL; PGlite locally)

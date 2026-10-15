@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'body must be { "tags": string[] }' }, { status: 400 });
   }
 
-  for (const tag of tags) revalidateTag(tag);
+  // Gone at once, not served stale while it refreshes: a removed or corrected article must not linger.
+  for (const tag of tags) revalidateTag(tag, { expire: 0 });
   return Response.json({ revalidated: tags, at: new Date().toISOString() });
 }

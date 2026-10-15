@@ -13,8 +13,14 @@ const nextConfig = {
   // Workspace package shipped as TypeScript source.
   transpilePackages: ['@b4/shared'],
   poweredByHeader: false,
+  // `next dev` would otherwise write an AGENTS.md here on every run (the docs it points at stay in node_modules/next/dist/docs).
+  agentRules: false,
   images: {
     formats: ['image/avif', 'image/webp'],
+    // Next 16 won't fetch images from a local address unless told to. On this computer (the
+    // workshop and the PC's live site) the media come from the API on localhost; in the cloud
+    // they come from the bucket's domain and this stays off.
+    dangerouslyAllowLocalIP: ['localhost', '127.0.0.1', '[::1]'].includes(media.hostname),
     remotePatterns: [
       ...imageHosts.map((hostname) => ({ protocol: 'https', hostname })),
       { protocol: media.protocol.replace(':', ''), hostname: media.hostname, port: media.port, pathname: `${media.pathname.replace(/\/$/, '')}/**` },

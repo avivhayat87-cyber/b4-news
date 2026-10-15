@@ -8,6 +8,8 @@ const dev = process.env.NODE_ENV === 'development';
 const nextConfig = {
   transpilePackages: ['@b4/shared'],
   poweredByHeader: false,
+  // `next dev` would otherwise write an AGENTS.md here on every run (the docs it points at stay in node_modules/next/dist/docs).
+  agentRules: false,
   async headers() {
     return [
       {
