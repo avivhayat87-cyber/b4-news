@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # First-time setup of the cloud server (Ubuntu 24.04 on Google Compute Engine). Run once,
-# as root, by `npm run cloud -- setup`; safe to run again (each step checks what is there).
+# as root, by `npm run cloud -- setup`; safe to run again (each step checks what is there), also
+# on the live server: it neither upgrades every package nor restarts the database there.
 #
 #   sudo bash setup.sh <site-domain>        e.g. b4news.co.il
 #
@@ -23,9 +24,14 @@ say() { echo "[setup] $*"; }
 say "Israel time (backups, logs and release names read in local time)"
 timedatectl set-timezone Asia/Jerusalem
 
+# A server that is already live (it has live.env) only gets what is missing: a full upgrade could
+# restart the database under the running site, and unattended-upgrades keeps it patched anyway.
+LIVE=false
+[ -f /srv/b4/live/live.env ] && LIVE=true
+
 say "System updates and automatic security updates"
 apt-get update -q
-apt-get upgrade -yq
+$LIVE || apt-get upgrade -yq
 apt-get install -yq ca-certificates curl gnupg git unattended-upgrades
 dpkg-reconfigure -f noninteractive unattended-upgrades
 
@@ -58,9 +64,11 @@ if ! command -v /usr/lib/postgresql/17/bin/postgres >/dev/null; then
   apt-get update -q
   apt-get install -yq postgresql-17
 fi
-# Only this server talks to it.
-sed -i "s/^#\?listen_addresses.*/listen_addresses = 'localhost'/" /etc/postgresql/17/main/postgresql.conf
-systemctl restart postgresql
+# Only this server talks to it (restarted only when that changes: the live site uses it).
+if ! grep -q "^listen_addresses = 'localhost'" /etc/postgresql/17/main/postgresql.conf; then
+  sed -i "s/^#\?listen_addresses.*/listen_addresses = 'localhost'/" /etc/postgresql/17/main/postgresql.conf
+  systemctl restart postgresql
+fi
 
 say "cloudflared (the tunnel; it is connected later with: npm run cloud -- tunnel)"
 if ! command -v cloudflared >/dev/null; then
