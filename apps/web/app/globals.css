@@ -17,10 +17,17 @@
   --color-mist: #C9C9D0;
 
   --animate-ticker: ticker 70s linear infinite;
+  /* The next ad in a rotating place fades in (ad-slot.tsx; not for reduced motion). */
+  --animate-ad-in: ad-in 0.4s ease-out;
 
   @keyframes ticker {
     from { transform: translateX(0); }
     to { transform: translateX(50%); }
+  }
+
+  @keyframes ad-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 }
 

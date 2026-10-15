@@ -1,0 +1,1 @@
+ALTER TABLE "ad_campaigns" ADD COLUMN "share" smallint DEFAULT 1 NOT NULL;

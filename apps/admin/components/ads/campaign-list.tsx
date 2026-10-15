@@ -1,14 +1,14 @@
 'use client';
 // The campaigns: those waiting for approval, running and paused, as cards with their numbers; and
 // the archive, compact, with the numbers of each campaign that ended (deleted only by hand).
-import { type CampaignDto } from '@b4/shared';
+import { type AdSettings, type CampaignDto } from '@b4/shared';
 import Link from 'next/link';
-import { AD_SLOT, AD_STATUS, ctr, formatDateTime } from '@/lib/labels';
+import { AD_SLOT, AD_STATUS, adShare, ctr, formatDateTime } from '@/lib/labels';
 import { Badge, Empty } from '../ui';
 
 const dates = (c: CampaignDto) => `${c.startsAt ? formatDateTime(c.startsAt) : 'מהאישור'} – ${c.endedAt ? formatDateTime(c.endedAt) : c.endsAt ? formatDateTime(c.endsAt) : 'בלי תאריך סיום'}`;
 
-export function CampaignCards({ campaigns }: { campaigns: CampaignDto[] }) {
+export function CampaignCards({ campaigns, places }: { campaigns: CampaignDto[]; places: AdSettings['places'] }) {
   if (!campaigns.length)
     return (
       <Empty title="אין מודעות פעילות">
@@ -27,7 +27,7 @@ export function CampaignCards({ campaigns }: { campaigns: CampaignDto[] }) {
               {c.creatives.some((x) => x.review?.verdict === 'block' || x.review?.verdict === 'fix') && <Badge tone="warn">יש מה לתקן</Badge>}
             </div>
             <p className="text-sm text-ink-2">
-              {c.advertiserName} · {c.slots.map((s) => AD_SLOT[s].name).join(' · ')}
+              {c.advertiserName} · {c.slots.map((s) => `${AD_SLOT[s].name} (${adShare(c.share, places[s].positions)})`).join(' · ')}
             </p>
             <p className="text-xs text-muted">{dates(c)}</p>
             <dl className="grid grid-cols-4 gap-2 text-center text-sm">

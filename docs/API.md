@@ -343,12 +343,13 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 | --- | --- | --- | --- |
 | GET | `/admin/dashboard` | staff | also `ads: { newLeads, newInquiries }` (zeros for anyone but an admin): the "פרסום" menu badge |
 | GET | `/admin/ads` | admin | `AdsOverviewDto`: the switches, advertisers (each with its private report link), campaigns waiting/running/paused, the archive (ended, newest 200), new leads and inquiries. Moves campaigns whose date or view cap passed to the archive first |
-| PUT | `/admin/ads/settings` | admin | `AdSettings` (on/off for every ad, the house promo in empty places, the app feed's spacing, and `google`: on/off, the AdSense publisher id `ca-pub-…`, the places Google may fill and each one's ad unit; 400 when switched on without a publisher id). Refreshes the site's "site" tag |
+| PUT | `/admin/ads/settings` | admin | `AdSettings` (on/off for every ad, the house promo in empty places, the app feed's spacing, `places`: each place's rotation positions 1–8 and seconds per ad 0/15/20/30/60, and `google`: on/off, the AdSense publisher id `ca-pub-…`, the places Google may fill and each one's ad unit; 400 when switched on without a publisher id). Refreshes the site's "site" tag |
 | POST · PUT · DELETE | `/admin/ads/advertisers[/:id]` | admin | `AdvertiserInput` → `AdvertiserDto`; delete only without campaigns (409) |
 | POST | `/admin/ads/advertisers/:id/new-link` | admin | a new report link; the old one stops working |
 | GET | `/admin/ads/campaigns/:id` | admin | `CampaignDto` with its ads, numbers and new leads |
-| POST · PUT | `/admin/ads/campaigns[/:id]` | admin | `CampaignInput`; a new campaign is a draft |
-| POST | `/admin/ads/campaigns/:id/status` | admin | `{ status }`: `active` approves it (recorded with who; 409 without a usable ad, after its end date, or a link ad without a URL), `paused`, `ended` (to the archive) |
+| GET | `/admin/ads/availability` | admin | `AdAvailabilityDto`: today, each place's rotation, and every campaign not in the archive as an `AdBooking` (places, sections, devices, Israel days, share); the CMS counts what is free with `occupancy` / `placeFit` from `@b4/shared` |
+| POST · PUT | `/admin/ads/campaigns[/:id]` | admin | `CampaignInput` (with `share`: how many of each place's rotation positions); a new campaign is a draft; a running or paused one changed beyond what is free → 409 `place_full` |
+| POST | `/admin/ads/campaigns/:id/status` | admin | `{ status }`: `active` approves it (recorded with who; 409 without a usable ad, after its end date, a link ad without a URL, or `place_full` where its share is not free, naming the places and days), `paused`, `ended` (to the archive) |
 | PUT | `/admin/ads/campaigns/:id/report-note` | admin | `{ note }`: the summary on the advertiser's page |
 | DELETE | `/admin/ads/campaigns/:id` | admin | → 204: the campaign with its ads, pictures, numbers and leads (audited with the lead count) |
 | GET | `/admin/ads/campaigns/:id/days` | admin | `AdDayDto[]`: the last 90 days |
@@ -368,9 +369,9 @@ Public, never cached:
 
 | Method | Path | |
 | --- | --- | --- |
-| GET | `/public/ads/:slot?device=desktop\|mobile&category=&exclude=` | `PublicAdSlot`: one ad (signed `token`) or none, `housePromo`, `appFeedEvery`, and `google` (`client`, `unit`, `consentVersion`) when no campaign runs there and Google may fill it |
+| GET | `/public/ads/:slot?device=desktop\|mobile&category=&exclude=` | `PublicAdSlot`: `rotation` (one entry per position, an unsold one null, shuffled; each ad with its signed `token`), `ad` (the first), `rotateSeconds` (0 in the app), `housePromo`, `appFeedEvery`, and `google` (`client`, `unit`, `consentVersion`) when no campaign runs there and Google may fill it |
 | GET | `{site}/ads.txt` | (site) Google's seller line while Google ads are on (`PublicSite.ads.googleClient`), else 404 |
-| POST | `/public/ads/view` | `{ token, kind: view\|open }` → 204: a measured view, or a lead ad's form opened (its click) |
+| POST | `/public/ads/view` | `{ token, kind: view\|open\|shown }` → 204: a measured view, a lead ad's form opened (its click), or the rotation moved to this ad (counted as served) |
 | GET | `/public/ads/go/:token` | counts the click → 302 to the advertiser's URL with utm tags (theirs win); a stale token → the site |
 | POST | `/public/ads/lead` | `AdLeadInput` (consent required) → 201 `{ thankYou }`; 5 per 10 minutes per address |
 | POST | `/public/ads/inquiry` | `AdInquiryInput` (name and phone; email, business, `interests`, `section` and a message optional; consent required) → 204 ("advertise with us"); emails every active admin and the site's contact address; 5 an hour |

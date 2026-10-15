@@ -4,6 +4,10 @@
 // there until an admin deletes it. Serving and counting are serve.ts; leads are leads.ts.
 import {
   AD_SLOT_FORMATS,
+  AD_SLOT_NAMES,
+  AD_SLOTS,
+  type AdAvailabilityDto,
+  type AdBooking,
   type AdDayDto,
   type AdDevice,
   type AdFormat,
@@ -19,6 +23,9 @@ import {
   type CampaignInput,
   type CreativeDto,
   type CreativeInput,
+  bookingConflicts,
+  bookingDays,
+  dayRanges,
 } from '@b4/shared';
 import { type Db, adCampaigns, adCreatives, adLeads, adStats, advertisers, and, appSettings, desc, eq, gte, inArray, sql, users } from '@b4/db';
 import { AppError, errors } from '../../errors';
@@ -212,7 +219,7 @@ async function campaignDtos(s: Services, rows: { c: CampaignRow; advertiser: str
       devices: c.devices as AdDevice,
       startsAt: c.startsAt?.toISOString() ?? null,
       endsAt: c.endsAt?.toISOString() ?? null,
-      weight: c.weight,
+      share: c.share,
       maxViews: c.maxViews,
       perReaderDaily: c.perReaderDaily,
       action: c.action as CampaignDto['action'],
@@ -300,7 +307,7 @@ function campaignValues(input: CampaignInput) {
     devices: input.devices,
     startsAt: toTime(input.startsAt),
     endsAt: toTime(input.endsAt),
-    weight: input.weight,
+    share: input.share,
     maxViews: input.maxViews,
     perReaderDaily: input.perReaderDaily,
     action: input.action,
@@ -317,11 +324,59 @@ export async function createCampaign(s: Services, staff: Staff, input: CampaignI
   return campaignDetail(s, row!.id);
 }
 
+/** A running or paused campaign changed must still fit its places (a draft is checked when it is approved). */
 export async function updateCampaign(s: Services, id: string, input: CampaignInput): Promise<CampaignDto> {
-  await loadCampaign(s, id);
+  const c = await loadCampaign(s, id);
   await loadAdvertiser(s, input.advertiserId);
-  await s.db.update(adCampaigns).set({ ...campaignValues(input), updatedAt: new Date() }).where(eq(adCampaigns.id, id));
+  const values = campaignValues(input);
+  if (c.status === 'active' || c.status === 'paused') await assertFits(s, { ...c, ...values });
+  await s.db.update(adCampaigns).set({ ...values, updatedAt: new Date() }).where(eq(adCampaigns.id, id));
   return campaignDetail(s, id);
+}
+
+// ---------------------------------------------------------------------------
+// The occupancy board: each place sells a few rotation positions
+// ---------------------------------------------------------------------------
+
+function toBooking(c: CampaignRow, advertiserName: string, today: string): AdBooking {
+  const days = bookingDays({ startsAt: c.startsAt?.toISOString() ?? null, endsAt: c.endsAt?.toISOString() ?? null, approvedAt: c.approvedAt?.toISOString() ?? null }, today);
+  return {
+    campaignId: c.id,
+    name: c.name,
+    advertiserName,
+    status: c.status as AdBooking['status'],
+    share: c.share,
+    slots: c.slots as AdSlot[],
+    categories: c.categories as AdBooking['categories'],
+    devices: c.devices as AdDevice,
+    ...days,
+  };
+}
+
+/** Every campaign not in the archive, as the board counts it, and each place's rotation. */
+export async function adAvailability(s: Services): Promise<AdAvailabilityDto> {
+  await closeEnded(s.db);
+  const today = israelDay();
+  const [settings, rows] = await Promise.all([getAdSettings(s.db), campaignQuery(s.db).where(inArray(adCampaigns.status, ['draft', 'active', 'paused']))]);
+  return {
+    today,
+    places: AD_SLOTS.map((slot) => ({ slot, ...settings.places[slot] })),
+    bookings: rows.map((r) => toBooking(r.c, r.advertiser, today)),
+  };
+}
+
+/**
+ * A campaign runs only where its share is free: other running and paused campaigns hold the rest of
+ * the positions. Otherwise 409, saying which places and days are full.
+ */
+async function assertFits(s: Services, c: CampaignRow): Promise<void> {
+  const board = await adAvailability(s);
+  const size = (slot: AdSlot) => board.places.find((p) => p.slot === slot)?.positions ?? 1;
+  const me = toBooking(c, '', board.today);
+  const full = bookingConflicts(board.bookings, me, size, board.today);
+  if (!full.length) return;
+  const where = full.map((x) => `"${AD_SLOT_NAMES[x.slot]}" ב-${dayRanges(x.days)} (פנויות ${x.free} מתוך ${size(x.slot)}, והקמפיין צריך ${Math.min(me.share, size(x.slot))})`).join('; ');
+  throw new AppError(409, 'place_full', `אין מספיק מקום ברוטציה: ${where}. אפשר להקטין את הנתח, לשנות תאריכים או מקומות, או לסיים קמפיין אחר.`);
 }
 
 /** Whether an ad can appear in a place, on large screens or on phones. */
@@ -345,6 +400,7 @@ export async function setCampaignStatus(s: Services, staff: Staff, id: string, s
     if (!usable) throw new AppError(409, 'no_creative', 'אין בקמפיין מודעה פעילה שמתאימה למקומות שנבחרו. מוסיפים מודעה (עם תמונה, או כותרת למודעה בסגנון כתבה) ואז מאשרים.');
     if (c.endsAt && c.endsAt <= new Date()) throw new AppError(409, 'campaign_over', 'תאריך הסיום של הקמפיין כבר עבר. מעדכנים את התאריך ואז מאשרים.');
     if (c.action === 'link' && !c.url) throw new AppError(409, 'no_url', 'חסרה הכתובת שהמודעה מובילה אליה.');
+    await assertFits(s, { ...c, approvedAt: c.approvedAt ?? new Date() });
   }
   await s.db
     .update(adCampaigns)

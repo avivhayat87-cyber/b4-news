@@ -45,6 +45,7 @@ describe('advertising', () => {
     return { status: res.statusCode, body: JSON.parse(res.body) };
   }
 
+  // The whole place (4 of 4 positions), so these tests always get their ad; the rotation tests below share places.
   const campaign = (over: Record<string, unknown> = {}) => ({
     advertiserId,
     name: 'משכנתא בסתיו',
@@ -52,6 +53,7 @@ describe('advertising', () => {
     categories: ['real-estate'],
     action: 'link',
     url: 'https://bank.example/offer?utm_source=theirs',
+    share: 4,
     ...over,
   });
 
@@ -193,7 +195,7 @@ describe('advertising', () => {
   it('moves an ended campaign to the archive with its numbers, and deletes only by hand, leads and all', async () => {
     const current = (await admin.get(`/ads/campaigns/${linkCampaign}`)).body;
     const past = new Date(Date.now() - 60_000).toISOString();
-    const updated = await admin.put(`/ads/campaigns/${linkCampaign}`, { ...campaign(), startsAt: new Date(Date.now() - 86_400_000).toISOString(), endsAt: past, weight: current.weight });
+    const updated = await admin.put(`/ads/campaigns/${linkCampaign}`, { ...campaign(), startsAt: new Date(Date.now() - 86_400_000).toISOString(), endsAt: past, share: current.share });
     expect(updated.status).toBe(200);
     const overview = (await admin.get('/ads')).body;
     const archived = overview.archive.find((x: { id: string }) => x.id === linkCampaign);
@@ -280,5 +282,88 @@ describe('advertising', () => {
     await admin.put('/ads/settings', { enabled: true, housePromo: true, appFeedEvery: 8, google: { ...google, enabled: false } });
     expect((await pub('GET', '/ads/article_end?device=desktop')).body.google).toBeNull();
     expect((await pub('GET', '/site')).body).toMatchObject({ consent: { adsCookies: false }, ads: { googleClient: null } });
+  });
+
+  describe('rotation: a place shared by a few advertisers', () => {
+    const banner = async (name: string, over: Record<string, unknown>) => {
+      const c = await admin.post('/ads/campaigns', campaign({ name, slots: ['home_top'], categories: [], ...over }));
+      const set = await admin.post('/ads/compose', { format: 'billboard', headline: name, sponsor: 'בנק הדוגמה' });
+      await admin.post(`/ads/campaigns/${c.body.id}/creatives`, { format: 'billboard', desktopImage: set.body.desktop.key, mobileImage: set.body.mobile.key });
+      return c.body.id as string;
+    };
+    let quarter: string;
+    let threeQuarters: string;
+
+    it('serves a place as its rotation: each campaign in as many positions as it bought, the rest our promo', async () => {
+      quarter = await banner('רבע מהשטח', { share: 1 });
+      expect((await admin.post(`/ads/campaigns/${quarter}/status`, { status: 'active' })).status).toBe(200);
+      const place = (await pub('GET', '/ads/home_top?device=desktop')).body;
+      expect(place.rotation).toHaveLength(4);
+      expect(place.rotation.filter((a: { campaignId: string } | null) => a?.campaignId === quarter)).toHaveLength(1);
+      expect(place.rotation.filter((a: unknown) => a === null)).toHaveLength(3);
+      expect(place.ad).toEqual(place.rotation[0]);
+      expect(place.rotateSeconds).toBe(30);
+      expect(place.google).toBeNull();
+      // The app shows one per view.
+      expect((await pub('GET', '/ads/app_article?device=mobile')).body.rotateSeconds).toBe(0);
+    });
+
+    it('refuses to run a campaign where its share is not free, and says where and when', async () => {
+      const whole = await banner('כל השטח', { share: 4 });
+      const refused = await admin.post(`/ads/campaigns/${whole}/status`, { status: 'active' });
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('place_full');
+      expect(refused.body.message).toContain('באנר בדף הבית');
+      expect(refused.body.message).toContain('פנויות 3 מתוך 4');
+      threeQuarters = await banner('שלושה רבעים', { share: 3 });
+      expect((await admin.post(`/ads/campaigns/${threeQuarters}/status`, { status: 'active' })).status).toBe(200);
+      // Growing a running campaign beyond what is free is refused too.
+      const grown = await admin.put(`/ads/campaigns/${quarter}`, campaign({ name: 'רבע מהשטח', slots: ['home_top'], categories: [], share: 2 }));
+      expect(grown.status).toBe(409);
+
+      const board = (await admin.get('/ads/availability')).body;
+      expect(board.places.find((p: { slot: string }) => p.slot === 'home_top')).toEqual({ slot: 'home_top', positions: 4, rotateSeconds: 30 });
+      const home = board.bookings.filter((b: { slots: string[] }) => b.slots.includes('home_top'));
+      expect(home.map((b: { name: string; status: string; share: number }) => [b.name, b.status, b.share]).sort()).toEqual([
+        ['כל השטח', 'draft', 4],
+        ['רבע מהשטח', 'active', 1],
+        ['שלושה רבעים', 'active', 3],
+      ]);
+      // A full place: no unsold position left in the rotation.
+      const full = (await pub('GET', '/ads/home_top?device=desktop')).body;
+      expect(full.rotation.filter((a: unknown) => a === null)).toHaveLength(0);
+    });
+
+    it('counts the ads the rotation moves to, and lets campaigns of different sections hold the same place', async () => {
+      const place = (await pub('GET', '/ads/home_top?device=desktop')).body;
+      const next = place.rotation[1];
+      const before = (await admin.get(`/ads/campaigns/${next.campaignId}`)).body.totals.served;
+      expect((await pub('POST', '/ads/view', { token: next.token, kind: 'shown' })).status).toBe(204);
+      expect((await admin.get(`/ads/campaigns/${next.campaignId}`)).body.totals.served).toBe(before + 1);
+
+      // Each section's whole place at the end of articles, by a different advertiser: both run.
+      const one = await admin.post('/ads/campaigns', campaign({ name: 'נדל"ן', slots: ['article_end'], categories: ['real-estate'] }));
+      const two = await admin.post('/ads/campaigns', campaign({ name: 'ביטוח', slots: ['article_end'], categories: ['insurance'] }));
+      for (const c of [one, two]) {
+        await admin.post(`/ads/campaigns/${c.body.id}/creatives`, { format: 'native', headline: c.body.name });
+        expect((await admin.post(`/ads/campaigns/${c.body.id}/status`, { status: 'active' })).status).toBe(200);
+      }
+      // One for the whole site there meets both: no room in those sections.
+      const everywhere = await admin.post('/ads/campaigns', campaign({ name: 'בכל האתר', slots: ['article_end'], categories: [], share: 1 }));
+      await admin.post(`/ads/campaigns/${everywhere.body.id}/creatives`, { format: 'native', headline: 'בכל האתר' });
+      expect((await admin.post(`/ads/campaigns/${everywhere.body.id}/status`, { status: 'active' })).status).toBe(409);
+    });
+
+    it('shrinks a place from the settings, and shares an overbooked place pro rata', async () => {
+      const settings = (await admin.get('/ads')).body.settings;
+      const saved = await admin.put('/ads/settings', { ...settings, places: { ...settings.places, home_top: { positions: 2, rotateSeconds: 15 } } });
+      expect(saved.status).toBe(200);
+      const place = (await pub('GET', '/ads/home_top?device=desktop')).body;
+      // 1 + min(3, 2) shares in a place of 2: all three positions are sold, none is ours.
+      expect(place.rotation).toHaveLength(3);
+      expect(place.rotation.every((a: unknown) => a !== null)).toBe(true);
+      expect(place.rotateSeconds).toBe(15);
+      expect((await admin.put('/ads/settings', { ...settings, places: { ...settings.places, home_top: { positions: 2, rotateSeconds: 7 } } })).status).toBe(400);
+    });
   });
 });

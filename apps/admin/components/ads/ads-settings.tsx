@@ -1,5 +1,6 @@
 'use client';
-// The switches over all ads, the map of the places (fixed in code: few and calm), and Google
+// The switches over all ads, each place's rotation (positions to sell, seconds per ad), the map of
+// the places (fixed in code: few and calm), and Google
 // AdSense: the publisher id, the places Google may fill (only where no campaign of ours runs, only
 // for readers who agreed to advertising cookies, never Google's automatic placement), each
 // place's ad unit, and a step-by-step guide to opening the account and getting paid.
@@ -9,6 +10,7 @@ import { useState } from 'react';
 import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { AD_SLOT } from '@/lib/labels';
 import { Badge, Button, Card, Field, cx, inputClass, useToast } from '../ui';
+import { PlacesRotation } from './occupancy';
 import { SiteSpotsLinks, SlotMap } from './slot-map';
 
 const GUIDE: { title: string; body: string }[] = [
@@ -167,6 +169,9 @@ export function AdsSettings({ settings }: { settings: AdSettings }) {
           {saveButton}
         </div>
       </Card>
+
+      <PlacesRotation s={s} setS={setS} />
+      <div className="-mt-3">{saveButton}</div>
 
       <GoogleCard s={s} setS={setS} />
       <div className="-mt-3">{saveButton}</div>

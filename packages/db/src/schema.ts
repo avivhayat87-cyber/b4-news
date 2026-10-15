@@ -1254,7 +1254,10 @@ export const adCampaigns = pgTable(
     devices: text().notNull().default('all'),
     startsAt: tstz(),
     endsAt: tstz(),
+    /** Unused since rotation shares (2026-10-15): the share below decides. Drop in a later release. */
     weight: smallint().notNull().default(5),
+    /** How many of each place's rotation positions it holds (a place has `positions` in the ad settings). */
+    share: smallint().notNull().default(1),
     maxViews: integer(),
     perReaderDaily: smallint().notNull().default(3),
     /** link | lead */

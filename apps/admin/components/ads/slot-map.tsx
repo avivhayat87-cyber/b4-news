@@ -9,7 +9,8 @@ import { SITE_URL } from '@/lib/api';
 import { AD_FORMAT, AD_SLOT } from '@/lib/labels';
 import { cx } from '../ui';
 
-type Pick = { selected: AdSlot[]; onToggle?: (slot: AdSlot) => void };
+/** notes: a short line under a place (how much of it is free for the campaign's dates). */
+type Pick = { selected: AdSlot[]; onToggle?: (slot: AdSlot) => void; notes?: Partial<Record<AdSlot, { text: string; full: boolean }>> };
 
 const Bar = ({ className }: { className?: string }) => <span className={cx('block rounded-sm bg-line', className)} />;
 
@@ -19,6 +20,9 @@ function Spot({ slot, pick, className, short }: { slot: AdSlot; pick: Pick; clas
     <>
       <span className="font-bold leading-tight">{AD_SLOT[slot].name}</span>
       {!short && <span className={cx('text-[10px] leading-tight', on ? 'text-white/80' : 'text-brand-deep/70')}>{AD_SLOT_FORMATS[slot].map((f) => AD_FORMAT[f].name).join(' / ')}</span>}
+      {pick.notes?.[slot] && (
+        <span className={cx('rounded px-1 text-[10px] font-bold leading-tight', pick.notes[slot]!.full ? 'bg-ink text-white' : on ? 'bg-white/25 text-white' : 'bg-white text-ok')}>{pick.notes[slot]!.text}</span>
+      )}
     </>
   );
   const style = cx('flex flex-col items-center justify-center gap-0.5 rounded border-2 border-dashed px-1 text-center text-[11px] transition-colors', on ? 'border-brand bg-brand text-white' : 'border-brand/60 bg-brand-soft text-brand-deep', className);
@@ -49,8 +53,8 @@ const Header = () => (
   </div>
 );
 
-export function SlotMap({ selected, onToggle }: Pick) {
-  const pick = { selected, onToggle };
+export function SlotMap({ selected, onToggle, notes }: Pick) {
+  const pick = { selected, onToggle, notes };
   return (
     <div className="space-y-3">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

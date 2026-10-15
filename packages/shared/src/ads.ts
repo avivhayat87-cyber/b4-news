@@ -146,6 +146,34 @@ export const AdsenseSettings = z
   .refine((g) => !g.enabled || g.client !== '', { message: 'כדי להפעיל את Google צריך את מספר המפרסם מ-AdSense', path: ['client'] });
 export type AdsenseSettings = z.infer<typeof AdsenseSettings>;
 
+// ---------------------------------------------------------------------------
+// Rotation: a place is shared by a few advertisers, as news sites sell it
+// ---------------------------------------------------------------------------
+
+/** The most positions a place's rotation may have. */
+export const MAX_AD_POSITIONS = 8;
+
+/** How long an ad stays before the next in its place: 0 is one per page view. Calm: never faster than 15 seconds. */
+export const AD_ROTATE_SECONDS = [0, 15, 20, 30, 60] as const;
+
+/**
+ * A place's rotation: how many positions it has (each campaign buys some of them, so a place of 4
+ * sells quarters; an unsold position shows our own promo), and how often the ad in it changes
+ * while the page is open. The app's places show one ad per view, whatever is set.
+ */
+const PlaceSettings = (rotateSeconds: number) =>
+  z
+    .object({
+      positions: z.number().int().min(1).max(MAX_AD_POSITIONS).default(4),
+      rotateSeconds: z
+        .number()
+        .int()
+        .refine((v) => (AD_ROTATE_SECONDS as readonly number[]).includes(v), 'זמן החלפה לא מוכר')
+        .default(rotateSeconds),
+    })
+    .default({});
+export type AdPlaceSettings = { positions: number; rotateSeconds: number };
+
 /** The switches over all ads. */
 export const AdSettings = z.object({
   /** Off: no ad appears anywhere (the places stay empty or show our own promo). */
@@ -154,6 +182,18 @@ export const AdSettings = z.object({
   housePromo: z.boolean().default(true),
   /** In the app's feed: one ad after this many stories. */
   appFeedEvery: z.number().int().min(4).max(30).default(8),
+  /** Each place's rotation (positions to sell, seconds per ad). */
+  places: z
+    .object({
+      home_top: PlaceSettings(30),
+      category_top: PlaceSettings(30),
+      sidebar: PlaceSettings(30),
+      article_side: PlaceSettings(30),
+      article_end: PlaceSettings(30),
+      app_feed: PlaceSettings(0),
+      app_article: PlaceSettings(0),
+    })
+    .default({}),
   google: AdsenseSettings.default({}),
 });
 export type AdSettings = z.infer<typeof AdSettings>;
@@ -200,8 +240,11 @@ export const CampaignInput = z
     devices: z.enum(AD_DEVICES).default('all'),
     startsAt: iso.datetime({ offset: true }).nullable().default(null),
     endsAt: iso.datetime({ offset: true }).nullable().default(null),
-    /** 1-10: how often it is chosen against other campaigns in the same place. */
-    weight: z.number().int().min(1).max(10).default(5),
+    /**
+     * How many of each place's rotation positions it buys (1 of 4 is a quarter of the views; as
+     * many as the place has is the whole place). Two campaigns can't hold more than a place has.
+     */
+    share: z.number().int().min(1).max(MAX_AD_POSITIONS).default(1),
     /** The campaign ends after this many views (null: no cap). */
     maxViews: z.number().int().min(100).max(100_000_000).nullable().default(null),
     /** How many times a day the same reader sees it, at most. */
@@ -263,7 +306,7 @@ export const CampaignDto = z.object({
   devices: z.enum(AD_DEVICES),
   startsAt: iso.nullable(),
   endsAt: iso.nullable(),
-  weight: z.number().int(),
+  share: z.number().int(),
   maxViews: z.number().int().nullable(),
   perReaderDaily: z.number().int(),
   action: z.enum(AD_ACTIONS),
@@ -295,6 +338,150 @@ export const AdsOverviewDto = z.object({
 export type AdsOverviewDto = z.infer<typeof AdsOverviewDto>;
 
 export const SetCampaignStatusInput = z.object({ status: z.enum(AD_STATUSES) });
+
+// ---------------------------------------------------------------------------
+// The occupancy board: what is free and what is taken, per place and day
+// ---------------------------------------------------------------------------
+
+/** Which pages a place is on: the home page, and the sections (their pages and their articles). */
+export const AD_SLOT_PAGES: Record<AdSlot, { home: boolean; sections: boolean }> = {
+  home_top: { home: true, sections: false },
+  category_top: { home: false, sections: true },
+  sidebar: { home: true, sections: true },
+  article_side: { home: false, sections: true },
+  article_end: { home: false, sections: true },
+  app_feed: { home: true, sections: true },
+  app_article: { home: false, sections: true },
+};
+
+/**
+ * A campaign as the board counts it: its places, sections and devices, its days in Israel time
+ * (YYYY-MM-DD; to null: until ended by hand) and its share. Running and paused campaigns hold their
+ * positions; a draft is shown as waiting, and takes them only when approved.
+ */
+export const AdBooking = z.object({
+  campaignId: id,
+  name: z.string(),
+  advertiserName: z.string(),
+  status: z.enum(['draft', 'active', 'paused']),
+  share: z.number().int(),
+  slots: z.array(z.enum(AD_SLOTS)),
+  categories: z.array(z.enum(CATEGORY_SLUGS)),
+  devices: z.enum(AD_DEVICES),
+  from: z.string(),
+  to: z.string().nullable(),
+});
+export type AdBooking = z.infer<typeof AdBooking>;
+
+export const AdAvailabilityDto = z.object({
+  /** Today in Israel. */
+  today: z.string(),
+  places: z.array(z.object({ slot: z.enum(AD_SLOTS), positions: z.number().int(), rotateSeconds: z.number().int() })),
+  bookings: z.array(AdBooking),
+});
+export type AdAvailabilityDto = z.infer<typeof AdAvailabilityDto>;
+
+/** The day a moment falls on in Israel, as YYYY-MM-DD. */
+export const israelDayOf = (at: Date | string): string =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+
+/** A day plus n days (YYYY-MM-DD). */
+export const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** A campaign's days: from its start (or its approval, or today), to the day its end falls in (null: open). */
+export function bookingDays(c: { startsAt: string | null; endsAt: string | null; approvedAt?: string | null }, today: string): { from: string; to: string | null } {
+  const from = c.startsAt ? israelDayOf(c.startsAt) : c.approvedAt ? israelDayOf(c.approvedAt) : today;
+  // An end at midnight closes the day before it.
+  return { from, to: c.endsAt ? israelDayOf(new Date(Date.parse(c.endsAt) - 1)) : null };
+}
+
+type Context = { page: string; device: 'desktop' | 'mobile' };
+type Target = { categories: readonly string[]; devices: AdDevice };
+
+/** The pages and devices a place appears on, for everything or for one campaign's sections and devices. */
+function contextsOf(slot: AdSlot, target?: Target): Context[] {
+  const where = AD_SLOT_PAGES[slot];
+  const sections = CATEGORY_SLUGS as readonly string[];
+  let pages = [...(where.home ? ['home'] : []), ...(where.sections ? sections : [])];
+  if (target?.categories.length) pages = pages.filter((p) => target.categories.includes(p));
+  const devices: Context['device'][] = (APP_AD_SLOTS as readonly AdSlot[]).includes(slot) ? ['mobile'] : ['desktop', 'mobile'];
+  return pages.flatMap((page) => devices.filter((d) => !target || target.devices === 'all' || target.devices === d).map((device) => ({ page, device })));
+}
+
+const runsOn = (b: Pick<AdBooking, 'from' | 'to'>, day: string) => b.from <= day && (b.to === null || day <= b.to);
+
+/** Whether a campaign shows on a page and device: a campaign for sections never shows on the home page. */
+const covers = (b: Target, c: Context) => (c.page === 'home' ? b.categories.length === 0 : b.categories.length === 0 || b.categories.includes(c.page)) && (b.devices === 'all' || b.devices === c.device);
+
+/**
+ * How full a place is on a day: the most positions taken on any page and device it appears on
+ * (only those of `target` when given), by running and paused campaigns (booked) and by drafts
+ * (waiting), and the campaigns there. A share never counts for more than the place has.
+ */
+export function occupancy(bookings: readonly AdBooking[], slot: AdSlot, day: string, positions: number, opts: { target?: Target; except?: string } = {}) {
+  const here = bookings.filter((b) => b.campaignId !== opts.except && b.slots.includes(slot) && runsOn(b, day));
+  let booked = 0;
+  let waiting = 0;
+  const seen = new Set<string>();
+  for (const c of contextsOf(slot, opts.target)) {
+    const on = here.filter((b) => covers(b, c));
+    for (const b of on) seen.add(b.campaignId);
+    const sum = (list: AdBooking[]) => list.reduce((n, b) => n + Math.min(b.share, positions), 0);
+    booked = Math.max(booked, sum(on.filter((b) => b.status !== 'draft')));
+    waiting = Math.max(waiting, sum(on.filter((b) => b.status === 'draft')));
+  }
+  return { booked, waiting, free: Math.max(0, positions - booked), campaigns: here.filter((b) => seen.has(b.campaignId)) };
+}
+
+/** How far ahead an open-ended campaign is checked. */
+export const AD_BOOKING_HORIZON_DAYS = 180;
+
+type Plan = Pick<AdBooking, 'share' | 'categories' | 'devices' | 'from' | 'to'> & { campaignId?: string };
+
+/**
+ * A campaign in one place: the least free there over its days (other running and paused campaigns
+ * hold the rest), and the days its share doesn't fit. Checked from today (or its start) to its
+ * end, or half a year ahead for an open-ended one.
+ */
+export function placeFit(bookings: readonly AdBooking[], c: Plan, slot: AdSlot, positions: number, today: string): { free: number; need: number; fullDays: string[] } {
+  const start = c.from > today ? c.from : today;
+  const end = c.to ?? addDays(start, AD_BOOKING_HORIZON_DAYS - 1);
+  const need = Math.min(c.share, positions);
+  const fullDays: string[] = [];
+  let free = positions;
+  for (let day = start; day <= end; day = addDays(day, 1)) {
+    const f = occupancy(bookings, slot, day, positions, { target: c, except: c.campaignId }).free;
+    free = Math.min(free, f);
+    if (f < need) fullDays.push(day);
+  }
+  return { free, need, fullDays };
+}
+
+/** Where a campaign doesn't fit: each of its places with the days its share is more than what is free, and the least free there. */
+export function bookingConflicts(
+  bookings: readonly AdBooking[],
+  c: Plan & Pick<AdBooking, 'slots'>,
+  positions: (slot: AdSlot) => number,
+  today: string,
+): { slot: AdSlot; days: string[]; free: number }[] {
+  return c.slots.flatMap((slot) => {
+    const fit = placeFit(bookings, c, slot, positions(slot), today);
+    return fit.fullDays.length ? [{ slot, days: fit.fullDays, free: fit.free }] : [];
+  });
+}
+
+/** Days as people read them: "20.10–22.10", runs of days joined, a few at most. */
+export function dayRanges(days: readonly string[], max = 3): string {
+  const short = (d: string) => `${Number(d.slice(8))}.${Number(d.slice(5, 7))}`;
+  const runs: [string, string][] = [];
+  for (const d of days) {
+    const last = runs[runs.length - 1];
+    if (last && addDays(last[1], 1) === d) last[1] = d;
+    else runs.push([d, d]);
+  }
+  const text = runs.slice(0, max).map(([a, b]) => (a === b ? short(a) : `${short(a)}–${short(b)}`));
+  return runs.length > max ? `${text.join(', ')} ועוד` : text.join(', ');
+}
 
 export const AdDayDto = z.object({ day: z.string(), served: z.number().int(), views: z.number().int(), clicks: z.number().int(), leads: z.number().int() });
 export type AdDayDto = z.infer<typeof AdDayDto>;
@@ -438,15 +625,26 @@ export type PublicAd = z.infer<typeof PublicAd>;
  * a reader who agreed to advertising cookies in this terms version (others get our promo).
  */
 export const PublicAdSlot = z.object({
+  /** What to show first (rotation[0]; the app shows only this). */
   ad: PublicAd.nullable(),
+  /**
+   * The place's rotation, in the order to show it: one entry per position, an unsold one null
+   * (our promo there). Shuffled every time, so each campaign gets its share of first places too.
+   */
+  rotation: z.array(PublicAd.nullable()),
+  /** Seconds before the next entry while the page is open (0: one per page view). */
+  rotateSeconds: z.number().int(),
   housePromo: z.boolean(),
   appFeedEvery: z.number().int(),
   google: z.object({ client: z.string(), unit: z.string(), consentVersion: z.string() }).nullable(),
 });
 export type PublicAdSlot = z.infer<typeof PublicAdSlot>;
 
-/** view: the ad was seen; open: a lead ad's form was opened (its click). */
-export const AdViewInput = z.object({ token: z.string().max(300), kind: z.enum(['view', 'open']).default('view') });
+/**
+ * view: the ad was seen; open: a lead ad's form was opened (its click); shown: the rotation moved
+ * to it (the first entry is counted when the place is served).
+ */
+export const AdViewInput = z.object({ token: z.string().max(300), kind: z.enum(['view', 'open', 'shown']).default('view') });
 
 const leadValue = z.string().trim().max(300);
 export const AdLeadInput = z.object({

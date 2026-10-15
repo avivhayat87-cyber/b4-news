@@ -4,6 +4,7 @@
 import multipart from '@fastify/multipart';
 import {
   AD_SIZES,
+  AdAvailabilityDto,
   AdBriefInput,
   AdComposeDto,
   AdComposeInput,
@@ -55,6 +56,9 @@ export const adsRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s
   });
 
   app.get('/ads', { schema: { response: { 200: AdsOverviewDto } } }, async () => ads.adsOverview(s));
+
+  /** The occupancy board: each place's rotation and every campaign not in the archive (the CMS counts what is free). */
+  app.get('/ads/availability', { schema: { response: { 200: AdAvailabilityDto } } }, async () => ads.adAvailability(s));
 
   // Turning Google on or off changes what the cookie banner asks and the site's ads.txt: the site's "site" pages refresh.
   app.put('/ads/settings', { schema: { body: AdSettings, response: { 200: AdSettings } } }, async (req) => {

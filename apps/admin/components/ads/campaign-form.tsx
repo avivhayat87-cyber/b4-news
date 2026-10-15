@@ -6,6 +6,7 @@ import { AD_LEAD_FIELD_LABELS, AD_LEAD_FIELDS, CATEGORIES, type AdLeadField, typ
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { AD_DEVICE } from '@/lib/labels';
 import { Button, Field, cx, inputClass } from '../ui';
+import { ShareAndFit, freeNotes, useFit } from './occupancy';
 import { SiteSpotsLinks, SlotMap } from './slot-map';
 
 export type CampaignDraft = Omit<CampaignInput, 'startsAt' | 'endsAt'> & { startsAt: string; endsAt: string };
@@ -27,7 +28,7 @@ export function draftFrom(c: CampaignDto | null, advertiserId = ''): CampaignDra
     devices: c?.devices ?? 'all',
     startsAt: toLocal(c?.startsAt ?? null),
     endsAt: toLocal(c?.endsAt ?? null),
-    weight: c?.weight ?? 5,
+    share: c?.share ?? 1,
     maxViews: c?.maxViews ?? null,
     perReaderDaily: c?.perReaderDaily ?? 3,
     action: c?.action ?? 'link',
@@ -43,10 +44,14 @@ export function toInput(d: CampaignDraft): CampaignInput {
 
 const toggle = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
 
-export function CampaignForm({ initial, advertisers, busy, submitLabel, onSubmit }: { initial: CampaignDraft; advertisers: AdvertiserDto[]; busy: boolean; submitLabel: string; onSubmit(d: CampaignDraft): void }) {
+/** campaignId: the campaign being edited (its own positions don't count against it). */
+export function CampaignForm({ initial, campaignId, advertisers, busy, submitLabel, onSubmit }: { initial: CampaignDraft; campaignId?: string; advertisers: AdvertiserDto[]; busy: boolean; submitLabel: string; onSubmit(d: CampaignDraft): void }) {
   const [d, setD] = useState<CampaignDraft>(initial);
   const set = <K extends keyof CampaignDraft>(k: K, v: CampaignDraft[K]) => setD((x) => ({ ...x, [k]: v }));
   const ready = d.advertiserId && d.name.trim().length >= 2 && d.slots.length > 0 && (d.action === 'lead' || d.url.trim());
+  const input = toInput(d);
+  const plan = { campaignId, share: d.share, slots: d.slots, categories: d.categories, devices: d.devices, startsAt: input.startsAt, endsAt: input.endsAt };
+  const fit = useFit(plan);
 
   return (
     <form
@@ -57,7 +62,8 @@ export function CampaignForm({ initial, advertisers, busy, submitLabel, onSubmit
       }}
     >
       <Step n={1} title="איפה המודעה תופיע">
-        <SlotMap selected={d.slots} onToggle={(slot) => set('slots', toggle(d.slots, slot))} />
+        <SlotMap selected={d.slots} onToggle={(slot) => set('slots', toggle(d.slots, slot))} notes={freeNotes(fit)} />
+        <p className="text-xs text-muted">על כל מקום כתוב כמה ממנו פנוי בתאריכים שבחרתם (שלב 2). התמונה המלאה בלשונית &quot;לוח תפוסה&quot;.</p>
         <SiteSpotsLinks />
       </Step>
 
@@ -115,13 +121,12 @@ export function CampaignForm({ initial, advertisers, busy, submitLabel, onSubmit
           <Field label="תקרת צפיות" htmlFor="c-cap" hint="ריק: בלי תקרה. בהגעה לתקרה הקמפיין עובר לארכיון.">
             <input id="c-cap" type="number" min={100} step={100} value={d.maxViews ?? ''} onChange={(e) => set('maxViews', e.target.value ? Number(e.target.value) : null)} className={inputClass} />
           </Field>
-          <Field label="משקל מול קמפיינים אחרים" htmlFor="c-weight" hint={`${d.weight} מתוך 10: 10 מופיע פי שניים מ-5.`}>
-            <input id="c-weight" type="range" min={1} max={10} value={d.weight} onChange={(e) => set('weight', Number(e.target.value))} className="w-full accent-brand" />
-          </Field>
           <Field label="פעמים ביום לאותו גולש" htmlFor="c-freq" hint="כדי שלא יימאס. בדרך כלל 2–4.">
             <input id="c-freq" type="number" min={1} max={20} value={d.perReaderDaily} onChange={(e) => set('perReaderDaily', Number(e.target.value) || 1)} className={inputClass} />
           </Field>
         </div>
+
+        <ShareAndFit plan={plan} onShare={(n) => set('share', n)} />
       </Step>
 
       <Step n={3} title="מה קורה בלחיצה על המודעה">

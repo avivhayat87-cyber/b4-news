@@ -1,10 +1,11 @@
-// Serving ads to the site and the app, and counting them. A place asks for one ad: among the
-// approved campaigns that run now, in that place, for that section and device, one is picked by
-// its weight. Every answer carries a signed token; the view (half the ad on the screen for a
-// second, measured by the browser), the click and the lead are counted against it. Only numbers
-// are kept: no reader is identified, and how often one reader saw an ad is counted in their own
-// browser.
+// Serving ads to the site and the app, and counting them. A place asks for its rotation: the
+// approved campaigns that run now, in that place, for that section and device, each in as many of
+// the place's positions as its share, the unsold ones left to our promo, shuffled. Every ad carries
+// a signed token; the view (half the ad on the screen for a second, measured by the browser), the
+// click and the lead are counted against it. Only numbers are kept: no reader is identified, and
+// how often one reader saw an ad is counted in their own browser.
 import {
+  APP_AD_SLOTS,
   AD_LABEL,
   AD_SLOT_FORMATS,
   AD_SLOTS,
@@ -63,22 +64,26 @@ export async function bump(s: Services, creativeId: string, slot: AdSlot, counte
 
 type Candidate = {
   campaignId: string;
-  weight: number;
+  share: number;
   perReaderDaily: number;
   action: string;
   leadForm: { fields: string[]; question: string; thankYou: string };
   creative: typeof adCreatives.$inferSelect;
 };
 
-/** Picks one by weight (a campaign with weight 10 comes up twice as often as one with 5). */
-function pickWeighted<T extends { weight: number }>(items: T[], random = Math.random): T | null {
-  const total = items.reduce((sum, i) => sum + i.weight, 0);
-  let r = random() * total;
-  for (const item of items) {
-    r -= item.weight;
-    if (r < 0) return item;
+/**
+ * A place's rotation: each campaign fills as many positions as its share, the unsold ones stay
+ * empty (null: our promo), shuffled, so over time each gets its share of the views and of the
+ * first place. More shares than positions (the place was made smaller) share it all, pro rata.
+ */
+export function rotationOf<T extends { campaignId: string; share: number }>(campaigns: T[], positions: number, random = Math.random): (T | null)[] {
+  const filled = campaigns.flatMap((c) => Array.from({ length: Math.min(c.share, positions) }, () => c));
+  const out: (T | null)[] = [...filled, ...Array.from({ length: Math.max(0, positions - filled.length) }, () => null)];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
   }
-  return items[items.length - 1] ?? null;
+  return out;
 }
 
 /** Google's unit for a place nobody bought, when Google is on and allowed there; else null. */
@@ -90,19 +95,23 @@ async function googleFor(s: Services, settings: AdSettings, slot: AdSlot): Promi
 }
 
 /**
- * One place's ad, or none. A switched-off ad system answers none, and the site shows its own promo
- * (or nothing). A place no campaign takes may go to Google, when it is allowed there.
+ * One place's rotation, or none. A switched-off ad system answers none, and the site shows its own
+ * promo (or nothing). A place no campaign takes may go to Google, when it is allowed there; Google
+ * never shares a rotation with our campaigns (its ads may not change in place).
  */
 export async function serveAd(s: Services, slot: AdSlot, q: Query, random = Math.random): Promise<PublicAdSlot> {
   const settings = await getAdSettings(s.db);
-  const base = { ad: null, housePromo: settings.housePromo, appFeedEvery: settings.appFeedEvery, google: null };
+  const place = settings.places[slot];
+  // The app shows one ad per view.
+  const rotateSeconds = (APP_AD_SLOTS as readonly AdSlot[]).includes(slot) ? 0 : place.rotateSeconds;
+  const base = { ad: null, rotation: [], rotateSeconds, housePromo: settings.housePromo, appFeedEvery: settings.appFeedEvery, google: null };
   if (!settings.enabled) return base;
   const empty = async (): Promise<PublicAdSlot> => ({ ...base, google: await googleFor(s, settings, slot) });
   const now = new Date().toISOString();
   const rows = await s.db
     .select({
       campaignId: adCampaigns.id,
-      weight: adCampaigns.weight,
+      share: adCampaigns.share,
       perReaderDaily: adCampaigns.perReaderDaily,
       action: adCampaigns.action,
       leadForm: adCampaigns.leadForm,
@@ -126,14 +135,18 @@ export async function serveAd(s: Services, slot: AdSlot, q: Query, random = Math
       ),
     );
   const fitting: Candidate[] = rows.filter((r) => creativeFits(r.creative, slot, q.device));
-  // The campaign by its weight, then one of its ads at random.
-  const campaigns = [...new Map(fitting.map((r) => [r.campaignId, { id: r.campaignId, weight: r.weight }])).values()];
-  const campaign = pickWeighted(campaigns, random);
-  if (!campaign) return empty();
-  const mine = fitting.filter((r) => r.campaignId === campaign.id);
-  const chosen = mine[Math.floor(random() * mine.length)] ?? mine[0]!;
-  await bump(s, chosen.creative.id, slot, 'served');
-  return { ...base, ad: toPublicAd(s, slot, chosen) };
+  const campaigns = [...new Map(fitting.map((r) => [r.campaignId, { campaignId: r.campaignId, share: r.share }])).values()];
+  if (!campaigns.length) return empty();
+  // Each position of a campaign shows one of its ads, at random (a campaign with two ads rotates both).
+  const picks = rotationOf(campaigns, place.positions, random).map((c) => {
+    if (!c) return null;
+    const mine = fitting.filter((r) => r.campaignId === c.campaignId);
+    return mine[Math.floor(random() * mine.length)] ?? mine[0]!;
+  });
+  // The first is counted as served now; the page reports each one the rotation moves to.
+  if (picks[0]) await bump(s, picks[0].creative.id, slot, 'served');
+  const rotation = picks.map((p) => (p ? toPublicAd(s, slot, p) : null));
+  return { ...base, ad: rotation[0] ?? null, rotation };
 }
 
 function toPublicAd(s: Services, slot: AdSlot, r: Candidate): PublicAd {
@@ -168,7 +181,7 @@ function toPublicAd(s: Services, slot: AdSlot, r: Candidate): PublicAd {
  * A view the browser measured, or a lead ad's form opened (that ad's click: it goes nowhere else).
  * A bad token counts nothing, and says nothing: there is nothing to fix on the reader's side.
  */
-export async function recordView(s: Services, token: string, kind: 'view' | 'open' = 'view'): Promise<void> {
+export async function recordView(s: Services, token: string, kind: 'view' | 'open' | 'shown' = 'view'): Promise<void> {
   const t = readAdToken(s, token);
   if (!t) return;
   const [c] = await s.db
@@ -179,6 +192,7 @@ export async function recordView(s: Services, token: string, kind: 'view' | 'ope
     .limit(1);
   if (!c) return;
   if (kind === 'view') await bump(s, t.creativeId, t.slot, 'views');
+  else if (kind === 'shown') await bump(s, t.creativeId, t.slot, 'served');
   else if (c.action === 'lead') await bump(s, t.creativeId, t.slot, 'clicks');
 }
 

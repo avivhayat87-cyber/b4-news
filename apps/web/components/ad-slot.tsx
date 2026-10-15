@@ -1,11 +1,12 @@
 'use client';
-// One ad place on the site. It asks for its ad when the page shows (never cached), labels it
-// "פרסומת" with the advertiser's name, counts a view only when it was really seen, and opens a
-// short lead form in place when the ad asks for one. How often this reader saw each campaign
-// today is counted here in the browser (no cookie, nothing sent about the reader), and two places
-// on one page never show the same campaign. An outage leaves the place empty, never the page.
+// One ad place on the site. It asks for its rotation when the page shows (never cached), labels
+// every ad "פרסומת" with the advertiser's name, counts a view only when it was really seen, and
+// opens a short lead form in place when the ad asks for one. How often this reader saw each
+// campaign today is counted here in the browser (no cookie, nothing sent about the reader), and
+// two places on one page never show the same campaign at once. An outage leaves the place empty,
+// never the page.
 import { AD_LABEL, AD_LEAD_FIELD_LABELS, AD_SIZES, AD_SLOT_FORMATS, AD_SLOT_NAMES, adSize, type AdLeadField, type AdSlot as Slot, type PublicAd, type PublicAdSlot } from '@b4/shared';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ApiFailure, adsApi } from '@/lib/client-api';
 import { CONSENT_CHANGED_EVENT, adsConsented } from './consent-banner';
 import { GoogleAd } from './google-ad';
@@ -40,8 +41,31 @@ function countSeen(ad: PublicAd) {
 
 const reachedCap = () => Object.entries(readSeen().campaigns).filter(([, c]) => c.n >= c.cap).map(([id]) => id);
 
-/** The campaigns already on each page. */
-const onPage = new Map<string, Set<string>>();
+/** What each place on the page shows right now: one campaign is never in two places at once. */
+const showing = new Map<string, string>();
+const shownElsewhere = (place: string, campaignId: string) => [...showing].some(([p, c]) => p !== place && c === campaignId);
+
+/** One position of a place's rotation: an ad (first: the server counted it when it answered), or our promo (null). */
+type Entry = { ad: PublicAd; first: boolean } | null;
+
+/** The next position to show from `from` on: our promo, or an ad this reader may still see that no other place shows now. */
+function nextShowable(entries: Entry[], from: number, place: string): number {
+  const capped = new Set(reachedCap());
+  for (let k = 0; k < entries.length; k++) {
+    const i = (from + k) % entries.length;
+    const e = entries[i];
+    if (e === null || e === undefined || (!capped.has(e.ad.campaignId) && !shownElsewhere(place, e.ad.campaignId))) return i;
+  }
+  return -1;
+}
+
+const reducedMotion = () => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+};
 
 function Label({ sponsor }: { sponsor: string }) {
   return (
@@ -182,8 +206,13 @@ function SpotFrame({ slot }: { slot: Slot }) {
 /**
  * fallback "promo": an empty side place shows "advertise with B4"; "billboard": an empty wide place
  * shows the house banner (in the section's words when sectionName is given); both when the CMS
- * allows it. minWidth: a place that exists only on wide screens (beside an article) asks for
- * nothing on a phone.
+ * allows it, and both stand in the rotation for its unsold positions. minWidth: a place that
+ * exists only on wide screens (beside an article) asks for nothing on a phone.
+ *
+ * A place shares its rotation among the campaigns that bought it: the next one comes every few
+ * seconds (the CMS sets how many), only while the place is on the screen and the tab is visible,
+ * never while the reader points at it, works in it or has its form open, and never for a reader
+ * who asked for less motion (they see one per page view).
  */
 export function AdSlot({
   slot,
@@ -200,11 +229,18 @@ export function AdSlot({
   minWidth?: number;
   className?: string;
 }) {
-  const [state, setState] = useState<{ ad: PublicAd | null; promo: boolean; preview?: boolean; google?: PublicAdSlot['google'] } | null>(null);
+  const place = useId();
+  const [state, setState] = useState<{ entries: Entry[]; rotateSeconds: number; promo: boolean; preview?: boolean; google?: PublicAdSlot['google'] } | null>(null);
+  // The position shown (-1: nothing showable), and how many times the place changed (each is a new showing).
+  const [view, setView] = useState({ at: -1, turn: 0 });
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [open, setOpen] = useState(false);
+  const [held, setHeld] = useState(false);
+  const [onScreen, setOnScreen] = useState(false);
+  const [tabVisible, setTabVisible] = useState(true);
   const [consented, setConsented] = useState(false);
-  const box = useRef<HTMLElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const counted = useRef(-1);
 
   // Google only for a reader who agreed to advertising cookies, rechecked the moment they answer the banner.
   const google = state?.google ?? null;
@@ -218,37 +254,76 @@ export function AdSlot({
 
   useEffect(() => {
     if (window.innerWidth < minWidth) {
-      setState({ ad: null, promo: false });
+      setState({ entries: [], rotateSeconds: 0, promo: false });
       return;
     }
     if (spotPreview()) {
-      setState({ ad: null, promo: false, preview: true });
+      setState({ entries: [], rotateSeconds: 0, promo: false, preview: true });
       return;
     }
     const dev = window.matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop';
     setDevice(dev);
-    const page = window.location.pathname;
-    const here = onPage.get(page) ?? new Set<string>();
-    onPage.set(page, here);
     let alive = true;
     adsApi
-      .slot(slot, { device: dev, category, exclude: [...new Set([...reachedCap(), ...here])] })
+      .slot(slot, { device: dev, category, exclude: reachedCap() })
       .then((r) => {
         if (!alive) return;
-        if (r.ad) {
-          here.add(r.ad.campaignId);
-          countSeen(r.ad);
-        }
-        setState({ ad: r.ad, promo: r.housePromo, google: r.google });
+        const rotation = r.rotation ?? (r.ad ? [r.ad] : []);
+        // An unsold position shows our promo; a place without one shows only what was sold.
+        const ownPromo = r.housePromo && fallback !== 'none';
+        const entries: Entry[] = rotation.flatMap((ad, i) => (ad ? [{ ad, first: i === 0 }] : ownPromo ? [null] : []));
+        setState({ entries, rotateSeconds: reducedMotion() ? 0 : r.rotateSeconds, promo: r.housePromo, google: r.google });
+        setView({ at: nextShowable(entries, 0, place), turn: 0 });
       })
-      .catch(() => alive && setState({ ad: null, promo: true }));
+      .catch(() => alive && setState({ entries: [], rotateSeconds: 0, promo: true }));
     return () => {
       alive = false;
+      showing.delete(place);
     };
-  }, [slot, category, minWidth]);
+  }, [slot, category, minWidth, fallback, place]);
+
+  const entries = state?.entries ?? [];
+  const current = view.at >= 0 ? entries[view.at] : undefined;
+  const ad = current?.ad ?? null;
+
+  // Each showing: this place now shows that campaign, the reader's daily count goes up, and a
+  // showing the server didn't count when it answered is reported.
+  useEffect(() => {
+    if (current === undefined || counted.current === view.turn) return;
+    counted.current = view.turn;
+    if (!current) {
+      showing.delete(place);
+      return;
+    }
+    showing.set(place, current.ad.campaignId);
+    countSeen(current.ad);
+    if (!(current.first && view.turn === 0)) void adsApi.view(current.ad.token, 'shown');
+  }, [current, view.turn, place]);
+
+  // On the screen, in a visible tab: only then does the rotation move.
+  const hasEntries = entries.length > 0;
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([e]) => setOnScreen(Boolean(e?.isIntersecting)), { threshold: 0.5 });
+    observer.observe(el);
+    const onVisibility = () => setTabVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [hasEntries]);
+
+  const rotates = Boolean(state && state.rotateSeconds > 0 && new Set(entries.map((e) => e?.ad.token ?? 'promo')).size > 1);
+  useEffect(() => {
+    if (!rotates || !state || !onScreen || !tabVisible || held || open || view.at < 0) return;
+    const timer = setTimeout(() => setView((v) => ({ at: nextShowable(entries, v.at + 1, place), turn: v.turn + 1 })), state.rotateSeconds * 1000);
+    return () => clearTimeout(timer);
+  }, [rotates, state, entries, onScreen, tabVisible, held, open, view.at, view.turn, place]);
 
   const onView = useCallback((token: string) => void adsApi.view(token), []);
-  useAdView(box, state?.ad?.token ?? null, onView);
+  useAdView(box, ad?.token ?? null, onView);
 
   if (!state) return fallback === 'promo' ? <div className={`min-h-[250px] ${className}`} aria-hidden="true" /> : null;
   if (state.preview)
@@ -257,9 +332,8 @@ export function AdSlot({
         <SpotFrame slot={slot} />
       </div>
     );
-  const { ad } = state;
-  if (!ad && google && consented) {
-    // Google's unit; when Google has nothing for it, the place (label and all) folds away.
+  if (!hasEntries && google && consented) {
+    // Google's unit, in a place no campaign of ours takes; when Google has nothing for it, the place (label and all) folds away.
     return (
       <aside aria-label={AD_LABEL} className={`has-[ins[data-ad-status=unfilled]]:hidden ${className}`}>
         <Label sponsor="" />
@@ -267,32 +341,46 @@ export function AdSlot({
       </aside>
     );
   }
-  if (!ad) {
-    if (!state.promo || fallback === 'none') return null;
-    return <div className={className}>{fallback === 'promo' ? <HousePromo /> : <HouseBillboard section={category && sectionName ? { slug: category, name: sectionName } : undefined} />}</div>;
-  }
+  const promo =
+    state.promo && fallback !== 'none' ? fallback === 'promo' ? <HousePromo /> : <HouseBillboard section={category && sectionName ? { slug: category, name: sectionName } : undefined} /> : null;
+  if (!hasEntries) return promo ? <div className={className}>{promo}</div> : null;
 
   return (
-    <aside ref={box} aria-label={AD_LABEL} className={className}>
-      <Label sponsor={ad.sponsor} />
-      {ad.action === 'link' && ad.href ? (
-        <a href={ad.href} target="_blank" rel="sponsored noopener" aria-label={`${AD_LABEL}: ${ad.headline || ad.image.alt || ad.sponsor}${NEW_WINDOW}`} className="block">
-          <AdBody ad={ad} device={device} />
-        </a>
-      ) : (
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => {
-            if (!open) void adsApi.view(ad.token, 'open');
-            setOpen(true);
-          }}
-          className="block w-full cursor-pointer"
-        >
-          <AdBody ad={ad} device={device} />
-        </button>
-      )}
-      {open && ad.lead ? <LeadForm ad={ad} onClose={() => setOpen(false)} /> : null}
-    </aside>
+    <div
+      ref={box}
+      className={className}
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
+      onFocusCapture={() => setHeld(true)}
+      onBlurCapture={() => setHeld(false)}
+    >
+      <div key={view.turn} className={view.turn > 0 ? 'motion-safe:animate-ad-in' : undefined}>
+        {!ad ? (
+          promo
+        ) : (
+          <aside aria-label={AD_LABEL}>
+            <Label sponsor={ad.sponsor} />
+            {ad.action === 'link' && ad.href ? (
+              <a href={ad.href} target="_blank" rel="sponsored noopener" aria-label={`${AD_LABEL}: ${ad.headline || ad.image.alt || ad.sponsor}${NEW_WINDOW}`} className="block">
+                <AdBody ad={ad} device={device} />
+              </a>
+            ) : (
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => {
+                  if (!open) void adsApi.view(ad.token, 'open');
+                  setOpen(true);
+                }}
+                className="block w-full cursor-pointer"
+              >
+                <AdBody ad={ad} device={device} />
+              </button>
+            )}
+            {open && ad.lead ? <LeadForm ad={ad} onClose={() => setOpen(false)} /> : null}
+          </aside>
+        )}
+      </div>
+    </div>
   );
 }
