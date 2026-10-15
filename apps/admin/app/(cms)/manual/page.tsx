@@ -1,11 +1,13 @@
 'use client';
 // Manual entry, in tabs: from a link or screenshots (the research reporter, or a plain rewrite of
-// a link, as discovered articles get), or by writing (the editor's own text and image).
+// a link, as discovered articles get), from the newsroom's own idea, from the editorial meeting's
+// pitches, or by writing (the editor's own text and image).
 import { CATEGORIES, type DraftColor, type MediaDto } from '@b4/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { FocalPicker, UploadButton } from '@/components/image-upload';
+import { MeetingTab } from '@/components/research/meeting-tab';
 import { ColorPicker, Destination, ResearchTab } from '@/components/research/research-tab';
 import { Button, Card, Field, PageHeader, cx, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
@@ -101,14 +103,16 @@ function ByWriting() {
 }
 
 export default function ManualPage() {
-  const [mode, setMode] = useState<'research' | 'write'>('research');
+  const [mode, setMode] = useState<'research' | 'idea' | 'meeting' | 'write'>('research');
   return (
     <>
-      <PageHeader title="העלאה ידנית" subtitle="דיווח מקישור או מצילום מסך שהכתב-החוקר בודק וכותב, או כתבה שאתם כותבים. הכול נכנס לאותו תהליך עריכה והעלאה." />
-      <div className="mb-5 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
+      <PageHeader title="העלאה ידנית" subtitle="דיווח שהכתב-החוקר בודק, רעיון שהוא חוקר, הצעות מישיבת המערכת, או כתבה שאתם כותבים. הכול נכנס לאותו תהליך עריכה והעלאה." />
+      <div className="mb-5 inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
         {(
           [
             ['research', 'מקישור או צילום מסך'],
+            ['idea', 'רעיון לתחקיר'],
+            ['meeting', 'ישיבת מערכת'],
             ['write', 'כתיבה ידנית'],
           ] as const
         ).map(([id, label]) => (
@@ -117,7 +121,10 @@ export default function ManualPage() {
           </button>
         ))}
       </div>
-      {mode === 'research' ? <ResearchTab /> : <ByWriting />}
+      {mode === 'research' && <ResearchTab mode="report" />}
+      {mode === 'idea' && <ResearchTab mode="idea" />}
+      {mode === 'meeting' && <MeetingTab />}
+      {mode === 'write' && <ByWriting />}
     </>
   );
 }

@@ -3,7 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
+import type { MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
@@ -149,6 +149,27 @@ export class FakeText implements TextAI {
     const title = (summary.replace(/^\(ספק לדוגמה\)\s*/, '') || details[0] || 'תחקיר לדוגמה').slice(0, 90);
     return {
       data: { title, subtitle: '', paragraphs: details.length ? details : [summary || '(אין פרטים)'], suggested_category: classifyHeadline(title), suggested_tags: [] },
+      usage: usage(),
+    };
+  }
+
+  /** A pitch for each of the three hottest topics, so the meeting works without an AI key. */
+  async meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>> {
+    const top = req.topics.slice(0, 3);
+    return {
+      data: {
+        summary: `(ספק לדוגמה) נקראו ${req.topics.length} נושאים מהאיתור${req.focus ? `, בכיוון: ${req.focus}` : ''}.`,
+        pitches: top.map((t) => ({
+          title: `מה עומד מאחורי: ${t.headlines[0]?.title ?? 'הנושא'}`,
+          angle: 'נבדוק את הנתונים הרשמיים ונסביר מה זה אומר לקורא (ספק לדוגמה).',
+          why_now: `${t.sites} אתרים מסקרים את הנושא.`,
+          checks: ['מה אומרים הנתונים הרשמיים'],
+          official_sources: ['הלשכה המרכזית לסטטיסטיקה'],
+          category: (t.category as MeetingOutput['pitches'][number]['category']) ?? null,
+          cluster_ids: [t.id],
+          depth: 'quick',
+        })),
+      },
       usage: usage(),
     };
   }

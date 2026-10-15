@@ -7,6 +7,7 @@ import { VISUAL_LEARN_JOB, runVisualLearning } from './agent/visual';
 import { BATCH_LEARNING_JOB, runBatchLearning, runDistill } from './learning';
 import { DIGEST_TICK_JOB, ensureDigestTick, runDigestTick } from './digest';
 import { DIGEST_JOB, NOTIFY_JOB, runDigest, runNotify } from './notifications';
+import { MEETING_JOB, markMeetingFailed, runMeeting } from './editorial-meeting';
 import { FIX_JOB, REVIEW_JOB, markFixFailed, markReviewFailed, runFix, runReview } from './legal-review';
 import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
@@ -34,6 +35,7 @@ export const handlers: Handlers<Services> = {
   // A research is paid for by its searches: one attempt; the editor retries from the CMS.
   [RESEARCH_JOB]: { run: runResearch, onFailed: markResearchFailed, maxAttempts: 1 },
   [ARCHIVE_JOB]: { run: runArchive, maxAttempts: 1 },
+  [MEETING_JOB]: { run: runMeeting, onFailed: markMeetingFailed, maxAttempts: 1 },
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   [KIT_JOB]: { run: runKit, maxAttempts: 2 },
   [PLAN_JOB]: { run: runPlan, onFailed: markPlanFailed, maxAttempts: 2 },

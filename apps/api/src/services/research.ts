@@ -25,6 +25,7 @@ import {
   articles,
   desc,
   draftRevisions,
+  editorialMeetings,
   eq,
   gte,
   inArray,
@@ -66,22 +67,28 @@ const COPY_CHARS = 20_000;
 const SOURCE_NAME: Partial<Record<SourceKind, string>> = { social: 'רשתות חברתיות', wiki: 'ויקיפדיה' };
 /** A detail with one of these labels may be written only with a source that may back a fact. */
 const NEEDS_APPROVED: ClaimLabel[] = ['verified', 'suspicion', 'debunked'];
+/** The details whose sources the article names at its end (what they confirmed, or said themselves). */
+const CREDITED: ClaimLabel[] = ['verified', 'claimed', 'suspicion', 'debunked'];
 
 // ---------------------------------------------------------------------------
 // The budget and stories we already have
 // ---------------------------------------------------------------------------
 
-/** What research cost this month (estimated at list prices: tokens and searches). */
+/** What research and the editorial meetings cost this month (estimated at list prices: tokens and searches). */
 export async function researchSpentUsd(s: Services): Promise<number> {
   const { start } = israelMonthStart();
-  const [row] = await s.db
+  const [tasks] = await s.db
     .select({ total: sql<string | null>`sum(${researchTasks.costUsd})` })
     .from(researchTasks)
     .where(gte(researchTasks.createdAt, start));
-  return Math.round(Number(row?.total ?? 0) * 10_000) / 10_000;
+  const [meetings] = await s.db
+    .select({ total: sql<string | null>`sum(${editorialMeetings.costUsd})` })
+    .from(editorialMeetings)
+    .where(gte(editorialMeetings.createdAt, start));
+  return Math.round((Number(tasks?.total ?? 0) + Number(meetings?.total ?? 0)) * 10_000) / 10_000;
 }
 
-async function assertBudget(s: Services) {
+export async function assertBudget(s: Services) {
   const settings = await getResearcherSettings(s.db);
   if ((await researchSpentUsd(s)) >= settings.monthlyBudgetUsd) {
     throw new AppError(409, 'research_budget', `התקציב החודשי לתחקירים ($${settings.monthlyBudgetUsd}) נגמר. אדמין יכול להגדיל אותו ב"הגדרות" > "צוות הסוכנים" > "הכתב-החוקר".`);
@@ -277,8 +284,9 @@ export function checkDossier(out: ResearchOutput, original: string | null, entri
   });
 
   // The line at the end of the article: who the facts and the background came from, names only.
-  const usedIds = new Set(claims.filter((c) => c.label !== 'unverified').flatMap((c) => c.sourceIds));
-  const credited = sources.filter((x) => (x.approved && (usedIds.has(x.id) || x.usedFor !== 'lead')) || (x.kind === 'wiki' && x.usedFor === 'background'));
+  // A source behind a mere report isn't named: it would read as if it confirmed it.
+  const usedIds = new Set(claims.filter((c) => CREDITED.includes(c.label)).flatMap((c) => c.sourceIds));
+  const credited = sources.filter((x) => (x.approved && (usedIds.has(x.id) || x.usedFor === 'background')) || (x.kind === 'wiki' && x.usedFor === 'background'));
   const names = [...new Set(credited.map((x) => x.publisher))];
   return {
     original: { ...out.original, url: originalUrl },
@@ -561,7 +569,19 @@ const TASK_FIELDS = {
   createdAt: researchTasks.createdAt,
 };
 
-type TaskListRow = Omit<TaskRow, 'dossier' | 'magazineId' | 'colorLabel' | 'createdBy' | 'updatedAt'> & { createdBy: string | null; title: string | null; official: boolean };
+export type ResearchState = { id: string; status: ResearchTaskDto['status']; draftId: string | null; official: boolean };
+
+/** Where some research stand (the pitches of a meeting that became research). */
+export async function researchStates(s: Services, ids: string[]): Promise<Map<string, ResearchState>> {
+  if (!ids.length) return new Map();
+  const rows = await s.db
+    .select({ id: researchTasks.id, status: researchTasks.status, draftId: researchTasks.draftId, official: TASK_FIELDS.official })
+    .from(researchTasks)
+    .where(inArray(researchTasks.id, ids));
+  return new Map(rows.map((r) => [r.id, { id: r.id, status: r.status as ResearchState['status'], draftId: r.draftId, official: Boolean(r.official) }]));
+}
+
+type TaskListRow =Omit<TaskRow, 'dossier' | 'magazineId' | 'colorLabel' | 'createdBy' | 'updatedAt'> & { createdBy: string | null; title: string | null; official: boolean };
 
 async function taskDtos(s: Services, rows: TaskListRow[], dossiers: Map<string, ResearchDossierRecord | null> = new Map()): Promise<ResearchTaskDto[]> {
   const mediaIds = [...new Set(rows.flatMap((r) => r.mediaIds))];

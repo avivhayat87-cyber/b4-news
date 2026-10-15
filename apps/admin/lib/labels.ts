@@ -13,6 +13,8 @@ import {
   type PromptAuthor,
   type PublishedArticleDto,
   type ReelMotion,
+  type MeetingStatus,
+  type PitchStatus,
   type ReelStage,
   type ResearchDepth,
   type ResearchStatus,
@@ -87,13 +89,13 @@ export const REEL_STAGE: Record<ReelStage, { label: string; tone: Tone }> = {
 export const AGENT: Record<AgentId, { name: string; role: string; about: string }> = {
   chief: {
     name: 'העורך הראשי',
-    role: 'מקבל פקודות בצ\'אט ומפעיל את כל הסוכנים',
-    about: 'הצ\'אט בדף "סוכן AI" ובאפליקציית Claude. קורא את מצב המערכת ומפעיל את שאר הסוכנים דרך הכלים. כל שינוי מחכה לאישור שלכם.',
+    role: 'מקבל פקודות בצ\'אט, מפעיל את הסוכנים ומנהל את ישיבת המערכת',
+    about: 'הצ\'אט בדף "סוכן AI" ובאפליקציית Claude: קורא את מצב המערכת ומפעיל את שאר הסוכנים דרך הכלים, וכל שינוי מחכה לאישור שלכם. בישיבת המערכת ("העלאה ידנית" > "ישיבת מערכת") מציע כתבות מקוריות ממה שהאיתור מצא; רק מה שתאשרו עובר לכתב-החוקר.',
   },
   reporter: {
     name: 'הכתב-החוקר',
-    role: 'חוקר דיווח מקישור או מצילום מסך, וכותב ממנו כתבה',
-    about: 'מקבל קישור או צילומי מסך (טלגרם, X, וואטסאפ), מחפש את המקור הרשמי לכל פרט ומסמן אותו: עובדה, דיווח, טענה, הערכה, חשד ("לכאורה"), לא מאומת או הופרך. עובדה רק ממקור רשמי, אף פעם לא מאתר חדשות. בונה תיק תחקיר, שומר עותק וצילום של כל מקור כהוכחה, וכותב רק מהתיק. בסוף הכתבה: שמות המקורות, בלי קישורים.',
+    role: 'חוקר דיווח או רעיון, וכותב ממנו כתבה',
+    about: 'מקבל קישור, צילומי מסך (טלגרם, X, וואטסאפ) או רעיון של המערכת, מחפש את המקור הרשמי לכל פרט ומסמן אותו: עובדה, דיווח, טענה, הערכה, חשד ("לכאורה"), לא מאומת או הופרך. עובדה רק ממקור רשמי, אף פעם לא מאתר חדשות. בונה תיק תחקיר, שומר עותק וצילום של כל מקור כהוכחה, וכותב רק מהתיק. בסוף הכתבה: שמות המקורות, בלי קישורים.',
   },
   rewrite: {
     name: 'עורך השכתוב',
@@ -130,7 +132,8 @@ export const AGENT: Record<AgentId, { name: string; role: string; about: string 
 /** Every skill: its name, and what it is used for. */
 export const SKILL: Record<string, { name: string; use: string }> = {
   'agent.system': { name: 'הנחיות העורך הראשי', use: 'איך הוא עונה בצ\'אט ומפעיל את הכלים' },
-  'research.system': { name: 'התחקיר', use: 'איך חוקרים דיווח: סדר העבודה, אילו מקורות מותרים, ואיך מסמנים כל פרט' },
+  'meeting.pitch': { name: 'ישיבת מערכת', use: 'איך מציעים כתבות מקוריות ממה שהאיתור מצא: הזווית, מה לבדוק ובאילו מקורות' },
+  'research.system': { name: 'התחקיר', use: 'איך חוקרים דיווח או רעיון: סדר העבודה, אילו מקורות מותרים, ואיך מסמנים כל פרט' },
   'research.write': { name: 'כתיבה מתיק התחקיר', use: 'איך כל פרט נכתב בכתבה לפי הסימון שלו' },
   'rewrite.system': { name: 'כתיבת כתבה מהמקור', use: 'כל כתבה חדשה. במקום הסימון {{style_rules}} המערכת מכניסה את סגנון הבית שנלמד ואת ההגדרות שלכם.' },
   'refine.system': { name: 'תיקון לפי הערה', use: 'ההערות בעורך: "תקצר", "כותרת חדה יותר"' },
@@ -206,6 +209,19 @@ export const CLAIM_LABEL: Record<ClaimLabel, { name: string; tone: Tone; how: st
   suspicion: { name: 'חשד (לכאורה)', tone: 'warn', how: 'חשד עם מקור רשמי. "לכאורה", "על פי החשד"' },
   unverified: { name: 'לא מאומת', tone: 'danger', how: 'לא נמצא מקור. לא נכנס לכתבה.' },
   debunked: { name: 'הופרך', tone: 'danger', how: 'נבדק ונמצא לא נכון. נכנס רק כהפרכה.' },
+};
+
+export const MEETING_STATUS: Record<MeetingStatus, { label: string; tone: Tone }> = {
+  queued: { label: 'מתכנסת', tone: 'info' },
+  thinking: { label: 'העורך הראשי חושב', tone: 'info' },
+  ready: { label: 'ההצעות מוכנות', tone: 'ok' },
+  failed: { label: 'לא הצליחה', tone: 'danger' },
+};
+
+export const PITCH_STATUS: Record<PitchStatus, { label: string; tone: Tone }> = {
+  pending: { label: 'ממתינה להחלטה', tone: 'warn' },
+  approved: { label: 'אושרה ונחקרת', tone: 'ok' },
+  rejected: { label: 'לא עכשיו', tone: 'muted' },
 };
 
 export const SOURCE_KIND: Record<SourceKind, string> = {
