@@ -10,9 +10,11 @@ import {
   articles,
   asc,
   categories,
+  desc,
   devices,
   eq,
   homepageSlots,
+  imageBatches,
   inArray,
   magazines,
   mediaAssets,
@@ -29,7 +31,9 @@ import { variantUrl } from '../lib/images';
 import { compareWording, similarityWarning } from '../lib/similarity';
 import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import type { Services } from './context';
-import { type DraftRow, loadDraft, summariesFor } from './drafts';
+import { type DraftRow, finishHeroImage, loadDraft, missingOf, summariesFor } from './drafts';
+import { deskPlanDto } from './front-page';
+import { imageErrorMessage } from './image-brief';
 import { queueBatchLearning, recordFeedback } from './learning';
 import { queueVisualLearning, recordImageFeedback } from './agent/visual';
 import { setArticleTags, updateArticleFromDraft } from './article-content';
@@ -40,27 +44,13 @@ import { applyPlan } from './social-plan';
 type Staff = { id: string; fullName: string };
 export type PublishTarget = { magazineId: string } | { draftId: string };
 
-const PUBLISHABLE = ['text_final', 'ready'];
-
-/**
- * draftHeroes: main images that are still a quick AI draft (their full-quality version isn't ready).
- * reviews: what the legal review still waits for, per draft (legal-review.ts).
- */
+/** What a draft still needs before it is published (missingOf in drafts.ts), as the sentences the editor reads. */
 export function problemsOf(
-  d: Pick<DraftRow, 'id' | 'status' | 'title' | 'bodyText' | 'categoryId' | 'heroMediaId'>,
-  draftHeroes: ReadonlySet<string> = new Set(),
+  d: Pick<DraftRow, 'id' | 'status' | 'title' | 'categoryId' | 'heroMediaId'> & { bodyText: string },
   reviews: ReadonlyMap<string, string> = new Map(),
+  draftHeroes: ReadonlySet<string> = new Set(),
 ): string[] {
-  if (d.status === 'skipped' || d.status === 'published') return [];
-  const p: string[] = [];
-  if (!PUBLISHABLE.includes(d.status)) p.push('הטקסט עוד לא סומן כסופי');
-  else if (reviews.has(d.id)) p.push(reviews.get(d.id)!);
-  if (d.title.trim().length < 5) p.push('חסרה כותרת');
-  if (d.bodyText.trim().length < 100) p.push('גוף הכתבה קצר מדי');
-  if (!d.categoryId) p.push('לא נבחרה קטגוריה');
-  if (!d.heroMediaId) p.push('לא נבחרה תמונה ראשית');
-  else if (draftHeroes.has(d.heroMediaId)) p.push('התמונה הראשית עוד בהכנה באיכות מלאה');
-  return p;
+  return missingOf(d, reviews, draftHeroes).map((x) => x.message);
 }
 
 async function draftHeroesOf(db: Db, rows: DraftRow[]): Promise<Set<string>> {
@@ -75,6 +65,42 @@ async function draftsOf(db: Db, target: PublishTarget): Promise<DraftRow[]> {
   return db.select().from(articleDrafts).where(eq(articleDrafts.magazineId, target.magazineId)).orderBy(asc(articleDrafts.position), asc(articleDrafts.createdAt));
 }
 
+/** Each draft's latest round of image options that has any, with the visual agent's pick: to switch the main image in the preview. */
+async function latestOptions(s: Services, rows: DraftRow[]) {
+  const ids = rows.map((r) => r.id);
+  if (ids.length === 0) return new Map<string, { options: PreviewItem['imageOptions']; reason: string | null }>();
+  const batches = await s.db
+    .select({ id: imageBatches.id, draftId: imageBatches.draftId, pick: imageBatches.pick, variants: imageBatches.variants })
+    .from(imageBatches)
+    .where(and(inArray(imageBatches.draftId, ids), eq(imageBatches.purpose, 'article')))
+    .orderBy(desc(imageBatches.createdAt));
+  const options = batches.length
+    ? await s.db
+        .select()
+        .from(mediaAssets)
+        .where(and(inArray(mediaAssets.generationBatchId, batches.map((b) => b.id)), sql`${mediaAssets.derivedFromId} is null`))
+    : [];
+  const heroes = rows.some((r) => r.heroMediaId)
+    ? await s.db.select({ id: mediaAssets.id, derivedFromId: mediaAssets.derivedFromId }).from(mediaAssets).where(inArray(mediaAssets.id, rows.flatMap((r) => (r.heroMediaId ? [r.heroMediaId] : []))))
+    : [];
+  const out = new Map<string, { options: PreviewItem['imageOptions']; reason: string | null }>();
+  for (const r of rows) {
+    const batch = batches.find((b) => b.draftId === r.id && options.some((m) => m.generationBatchId === b.id));
+    if (!batch) continue;
+    const hero = heroes.find((h) => h.id === r.heroMediaId);
+    const chosen = hero ? (hero.derivedFromId ?? hero.id) : null;
+    const order = (id: string) => batch.variants.findIndex((v) => v.mediaId === id);
+    out.set(r.id, {
+      options: options
+        .filter((m) => m.generationBatchId === batch.id)
+        .sort((a, b) => order(a.id) - order(b.id))
+        .map((m) => ({ id: m.id, thumbUrl: variantUrl(s.storage, m, 'thumb'), chosen: m.id === chosen, agentPick: batch.pick?.mediaId === m.id, style: batch.variants.find((v) => v.mediaId === m.id)?.style ?? null })),
+      reason: batch.pick?.reason ?? null,
+    });
+  }
+  return out;
+}
+
 export async function preview(s: Services, staff: Staff, target: PublishTarget): Promise<PublishPreview> {
   const rows = await draftsOf(s.db, target);
   const summaries = await summariesFor(s, rows.map((r) => r.id));
@@ -83,6 +109,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     : [];
   const draftHeroes = new Set(media.filter((m) => m.kind === 'ai_preview').map((m) => m.id));
   const reviews = await reviewProblems(s.db, rows.map((r) => r.id));
+  const imageOptions = await latestOptions(s, rows);
   const packages = rows.length ? await s.db.select().from(socialPackages).where(inArray(socialPackages.draftId, rows.map((r) => r.id))) : [];
   const originalIds = rows.flatMap((r) => (r.scrapedItemId ? [r.scrapedItemId] : []));
   const originals = originalIds.length
@@ -103,16 +130,25 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     const pkg = packages.find((p) => p.draftId === r.id);
     const original = originals.find((o) => o.id === r.scrapedItemId);
     const copied = original ? similarityWarning(compareWording(r.bodyText, original.bodyHe ?? original.body ?? original.intro ?? '')) : null;
+    const missing = missingOf(r, reviews);
+    const options = imageOptions.get(r.id);
     return [
       {
         draft: summary,
         subtitle: r.subtitle,
         excerpt: r.subtitle || excerptFrom(r.bodyText),
-        heroUrl: hero ? variantUrl(s.storage, hero, 'card') : null,
+        // A quick draft has only its small rendition until the approval draws it at full quality.
+        heroUrl: hero ? variantUrl(s.storage, hero, hero.kind === 'ai_preview' ? 'thumb' : 'card') : null,
         tags: r.tagNames,
         editorName: staff.fullName,
         social: { ready: Boolean(pkg?.approvedAt), platforms: posts.filter((p) => p.draftId === r.id).map((p) => p.platform) },
-        problems: problemsOf(r, draftHeroes, reviews),
+        problems: missing.map((m) => m.message),
+        missing,
+        imageOptions: options?.options ?? [],
+        imagePickReason: options?.reason ?? null,
+        heroIsDraft: Boolean(hero && draftHeroes.has(hero.id)),
+        ticker: r.ticker,
+        deskPlan: deskPlanDto(r.deskPlan, { placement: r.placement, ticker: r.ticker, category: summary.category }),
         warnings: copied && r.status !== 'published' && r.status !== 'skipped' ? [copied] : [],
       },
     ];
@@ -121,7 +157,7 @@ export async function preview(s: Services, staff: Staff, target: PublishTarget):
     publishDate: new Date().toISOString(),
     editorName: staff.fullName,
     items,
-    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && problemsOf(r, draftHeroes, reviews).length === 0).length,
+    readyCount: rows.filter((r) => r.status !== 'skipped' && r.status !== 'published' && missingOf(r, reviews).length === 0).length,
     skippedCount: rows.filter((r) => r.status === 'skipped').length,
   };
 }
@@ -138,15 +174,17 @@ export async function startPublish(s: Services, staff: Staff, target: PublishTar
   const rows = await draftsOf(s.db, target);
   const pending = rows.filter((r) => r.status !== 'skipped' && r.status !== 'published');
   if (pending.length === 0) throw new AppError(409, 'nothing_to_publish', 'אין כתבות שממתינות לפרסום.');
-  const draftHeroes = await draftHeroesOf(s.db, pending);
   const reviews = await reviewProblems(s.db, pending.map((r) => r.id));
-  const blocked = pending.filter((r) => problemsOf(r, draftHeroes, reviews).length > 0);
-  if (blocked.length) {
-    const first = blocked[0]!;
+  // A magazine goes out with what is ready; what isn't waits in "נתקעו בפרסום" (set by the job). One article must be ready.
+  const ready = pending.filter((r) => missingOf(r, reviews).length === 0);
+  if (ready.length === 0 || ('draftId' in target && ready.length < pending.length)) {
+    const first = pending.find((r) => missingOf(r, reviews).length > 0)!;
     throw new AppError(
       422,
       'not_ready',
-      `${blocked.length} כתבות עוד לא מוכנות (למשל "${first.title.slice(0, 40)}": ${problemsOf(first, draftHeroes, reviews).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
+      pending.length === 1
+        ? `הכתבה עוד לא מוכנה: ${problemsOf(first, reviews).join(', ')}.`
+        : `אף כתבה עוד לא מוכנה (למשל "${first.title.slice(0, 40)}": ${problemsOf(first, reviews).join(', ')}). השלימו אותן או סמנו "לא לפרסם".`,
     );
   }
 
@@ -213,12 +251,14 @@ async function publishArticle(db: Db, draft: DraftRow, editorId: string): Promis
         readingMinutes: readingMinutes(text),
         disclosure: draft.disclosure.trim() || null,
         draftId: draft.id,
+        // The ticker shows the newest 12 marked: the oldest drops off by itself.
+        tickerAt: draft.ticker ? new Date() : null,
       })
       .returning({ id: articles.id, slug: articles.slug });
 
     await setArticleTags(tx, article!.id, draft.tagNames);
     if (draft.placement !== 'none') await placeOnHomepage(tx, draft.placement, article!.id);
-    await tx.update(articleDrafts).set({ status: 'published', publishedArticleId: article!.id }).where(eq(articleDrafts.id, draft.id));
+    await tx.update(articleDrafts).set({ status: 'published', publishedArticleId: article!.id, stuckAt: null }).where(eq(articleDrafts.id, draft.id));
     await recordFeedback(tx, draft, article!.id, editorId);
     await recordImageFeedback(tx, draft, article!.id, editorId);
     return { id: article!.id, slug: article!.slug, category: cat?.slug ?? '' };
@@ -308,14 +348,39 @@ export async function runPublish(s: Services, job: JobRow) {
   if (!pj) throw new PermanentJobError('publish job not found');
   await s.db.update(publishJobs).set({ status: 'running', startedAt: pj.startedAt ?? new Date() }).where(eq(publishJobs.id, publishJobId));
   const target: PublishTarget = pj.magazineId ? { magazineId: pj.magazineId } : { draftId: pj.draftId! };
-  const rows = await draftsOf(s.db, target);
   const steps: Record<string, string> = { ...pj.steps };
   const published: { draft: DraftRow; article: { id: number; slug: string; category: string } }[] = [];
   // Articles already on the site whose draft was edited: updated in place (no push, posts or learning again).
   const updated: { id: number; slug: string; categories: string[] }[] = [];
-  const draftHeroes = await draftHeroesOf(s.db, rows);
   // Checked again at publishing time: a decision may have changed since the job was queued.
+  let rows = await draftsOf(s.db, target);
   const reviews = await reviewProblems(s.db, rows.map((r) => r.id));
+  const waiting = (r: DraftRow) => r.status !== 'skipped' && r.status !== 'published';
+  const stuck = new Map<string, string>();
+  for (const r of rows.filter(waiting)) {
+    const missing = problemsOf(r, reviews);
+    if (missing.length) stuck.set(r.id, missing.join(', '));
+  }
+
+  // 0. The main images chosen as quick drafts are drawn at full quality now, all at once (paid only for what goes out).
+  const draftHeroes = await draftHeroesOf(s.db, rows.filter((r) => waiting(r) && !stuck.has(r.id)));
+  await Promise.all(
+    rows
+      .filter((r) => waiting(r) && !stuck.has(r.id) && r.heroMediaId && draftHeroes.has(r.heroMediaId))
+      .map(async (r) => {
+        try {
+          await finishHeroImage(s, r.id, r.heroMediaId!, pj.requestedBy);
+          steps[`${r.id}:image`] = 'ok';
+        } catch (e) {
+          steps[`${r.id}:image`] = `failed: ${imageErrorMessage(e instanceof Error ? e.message : String(e))}`;
+          stuck.set(r.id, 'התמונה הראשית לא נוצרה באיכות מלאה');
+        }
+      }),
+  );
+  if (draftHeroes.size) rows = await draftsOf(s.db, target);
+
+  // What isn't ready waits in "נתקעו בפרסום", by the time it was held.
+  if (stuck.size) await s.db.update(articleDrafts).set({ stuckAt: sql`coalesce(${articleDrafts.stuckAt}, now())` }).where(inArray(articleDrafts.id, [...stuck.keys()]));
 
   // 1. The site.
   for (const draft of rows) {
@@ -325,8 +390,13 @@ export async function runPublish(s: Services, job: JobRow) {
       if (a) published.push({ draft, article: { ...a, category: '' } });
       continue;
     }
-    if (problemsOf(draft, draftHeroes, reviews).length) {
-      steps[`${draft.id}:site`] = `failed: ${problemsOf(draft, draftHeroes, reviews).join(', ')}`;
+    if (stuck.has(draft.id)) {
+      steps[`${draft.id}:site`] = `held: ${stuck.get(draft.id)}`;
+      continue;
+    }
+    const late = problemsOf(draft, reviews, await draftHeroesOf(s.db, [draft]));
+    if (late.length) {
+      steps[`${draft.id}:site`] = `failed: ${late.join(', ')}`;
       continue;
     }
     if (draft.publishedArticleId) {
@@ -398,10 +468,18 @@ export async function runPublish(s: Services, job: JobRow) {
   }
 
   const siteFailures = Object.entries(steps).filter(([k, v]) => k.endsWith(':site') && v.startsWith('failed')).length;
+  // An article that failed at the last moment waits with the ones held back.
+  const failedIds = Object.entries(steps).flatMap(([k, v]) => (k.endsWith(':site') && v.startsWith('failed') ? [k.split(':')[0]!] : []));
+  if (failedIds.length) await s.db.update(articleDrafts).set({ stuckAt: sql`coalesce(${articleDrafts.stuckAt}, now())` }).where(inArray(articleDrafts.id, failedIds));
   const status = siteFailures && !published.length && !updated.length ? 'failed' : 'succeeded';
   await s.db
     .update(publishJobs)
-    .set({ status, steps, finishedAt: new Date(), error: siteFailures ? `${siteFailures} כתבות לא פורסמו` : null })
+    .set({
+      status,
+      steps,
+      finishedAt: new Date(),
+      error: siteFailures ? `${siteFailures} כתבות לא פורסמו` : stuck.size ? `${stuck.size} כתבות נתקעו ומחכות ב"נתקעו בפרסום"` : null,
+    })
     .where(eq(publishJobs.id, publishJobId));
   if (pj.magazineId) {
     await s.db

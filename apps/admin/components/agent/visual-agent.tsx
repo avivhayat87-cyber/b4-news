@@ -60,10 +60,32 @@ export function VisualAgent() {
     <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
       <Card title="הגדרות סוכן התמונות" actions={<Badge tone={d.live ? 'ok' : 'warn'}>{d.live ? `Gemini: ${d.model}` : 'מצב הדגמה'}</Badge>}>
         <p className="mb-4 text-sm text-muted">
-          הסוכן של Google כותב בעברית את התיאור לתמונה של כל כתבה ואת שתי ההנחיות לריל (תמונה וסרטון). אתם רואים ומתקנים כל תיאור לפני שמשהו נוצר, והוא לומד מהבחירות שלכם.
+          הסוכן של Google כותב בעברית שלושה תיאורים שונים לתמונה של כל כתבה, אחד לכל סגנון שלמטה, ומודל התמונות מצייר מכל אחד תמונה. אחר כך הוא מסתכל על שלוש התמונות ובוחר אחת. הוא כותב גם את שתי ההנחיות לריל (תמונה וסרטון), ולומד מהבחירות שלכם.
         </p>
         <div className="space-y-5">
-          <Field label="סגנון לתמונות כתבה" htmlFor="va-article" hint="למשל: צילום עיתונאי ריאליסטי, אור טבעי, מקומות אמיתיים בישראל">
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-sm font-bold text-ink-2">שלושת הסגנונות (תמונה אחת מכל סגנון)</legend>
+            {form.styles.map((style, i) => (
+              <input
+                key={i}
+                value={style}
+                maxLength={300}
+                disabled={!canEdit}
+                aria-label={`סגנון ${i + 1}`}
+                onChange={(e) => setForm({ ...form, styles: form.styles.map((x, j) => (j === i ? e.target.value : x)) })}
+                className={inputClass}
+              />
+            ))}
+            <p className="text-xs text-muted">כדי שהתמונות יהיו שונות זו מזו, כל סגנון צריך להיות אחר באמת: למשל צילום של המקום, תקריב של חפץ, ואיור.</p>
+          </fieldset>
+          <label className="flex items-start gap-2 text-[15px] font-semibold">
+            <input type="checkbox" checked={form.realPhotos} disabled={!canEdit} onChange={(e) => setForm({ ...form, realPhotos: e.target.checked })} className="mt-1 size-4" />
+            <span>
+              כשהכתבה על אישיות ציבורית: לחפש צילום אמיתי שלה, עם קרדיט
+              <span className="block text-xs font-normal text-muted">רק מוויקישיתוף, ורק תמונות ברישיון חופשי שמתיר שימוש מסחרי וחיתוך. הקרדיט מופיע מתחת לתמונה באתר. החיפוש לא עולה כסף.</span>
+            </span>
+          </label>
+          <Field label="סגנון כללי לתמונות כתבה" htmlFor="va-article" hint="חל על שלושת הסגנונות. למשל: אור טבעי, מקומות אמיתיים בישראל">
             <input id="va-article" value={form.articleStyle} maxLength={500} disabled={!canEdit} onChange={(e) => setForm({ ...form, articleStyle: e.target.value })} className={inputClass} />
           </Field>
           <Field label="סגנון לריל" htmlFor="va-reel" hint="למשל: תנועת מצלמה איטית, אווירה רצינית, צבעים חמים">
@@ -80,7 +102,7 @@ export function VisualAgent() {
             ללמוד לבד כל {d.learnEvery} מקרים חדשים
           </label>
           <div className="rounded-lg bg-info-soft px-4 py-3 text-sm text-info">
-            <b>כללים קבועים (לא ניתן לכבות):</b> בלי טקסט, לוגו או סימני מים בתמונה, בלי אנשים אמיתיים שאפשר לזהות, ותמונת המקור משמשת רק להשראה, אף פעם לא להעתקה.
+            <b>כללים קבועים (לא ניתן לכבות):</b> בלי טקסט, לוגו או סימני מים בתמונה, בלי אנשים אמיתיים שאפשר לזהות בתמונה מצוירת (אדם אמיתי מגיע רק כצילום אמיתי עם קרדיט), ותמונת המקור משמשת רק להשראה, אף פעם לא להעתקה. התמונה שנבחרה נוצרת באיכות מלאה רק באישור הסופי לפרסום.
           </div>
           {canEdit && (
             <div className="flex gap-2">

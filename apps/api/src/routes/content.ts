@@ -7,6 +7,7 @@ import {
   HOMEPAGE_LIMITS,
   HomeData,
   MarketQuote,
+  TICKER_SIZE,
   pageOf,
 } from '@b4/shared';
 import {
@@ -21,6 +22,7 @@ import {
   eq,
   homepageSlots,
   ilike,
+  isNotNull,
   mediaAssets,
   ne,
   notInArray,
@@ -69,10 +71,15 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       .where(eq(categories.isActive, true))
       .orderBy(asc(categories.sortOrder));
 
-    const [main, trending, latest, podcasts, ...sections] = await Promise.all([
+    const [main, trending, latest, ticker, podcasts, ...sections] = await Promise.all([
       zoneCards('main', HOMEPAGE_LIMITS.main),
       zoneCards('trending', HOMEPAGE_LIMITS.trending),
       cardsQuery(db).where(isLive).orderBy(desc(articles.publishedAt)).limit(8),
+      // The ticker: the newest articles marked for it; the oldest drops off as a new one comes.
+      cardsQuery(db)
+        .where(and(isLive, isNotNull(articles.tickerAt)))
+        .orderBy(desc(articles.tickerAt))
+        .limit(TICKER_SIZE),
       db.select().from(podcastEpisodes).orderBy(desc(podcastEpisodes.publishedAt)).limit(3),
       ...cats.map((c) =>
         cardsQuery(db)
@@ -88,6 +95,8 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       main: main.map((row) => toCard(row, config.mediaBaseUrl, 'hero')),
       trending: trending.map(card),
       latest: latest.map(card),
+      // Until any article is marked for it, the ticker runs the latest ones, as it always did.
+      breaking: (ticker.length ? ticker : latest).map(card),
       sections: cats
         .map((c, i) => ({ category: { slug: c.slug, name: c.name }, items: (sections[i] ?? []).map(card) }))
         .filter((s) => s.items.length > 0),

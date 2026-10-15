@@ -36,11 +36,23 @@ export default function MagazinePage({ params }: { params: Promise<{ id: string 
     },
   });
 
+  const replan = useMutation({
+    mutationFn: () => admin.post(`/magazines/${id}/desk-plan`),
+    onSuccess: () => {
+      toast('העורך הראשי מסדר את הכתבות שוב; מה ששיניתם בעצמכם נשאר כמו שהוא.');
+      setTimeout(() => void qc.invalidateQueries({ queryKey: ['magazine', id] }), 6000);
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+
   if (mag.isPending) return <Loading />;
   if (mag.isError) return <ErrorBox error={mag.error} onRetry={() => mag.refetch()} />;
   const m = mag.data;
   const first = m.drafts.find((d) => !['published', 'skipped'].includes(d.status)) ?? m.drafts[0];
   const writing = m.drafts.filter((d) => d.status === 'queued_ai' || d.status === 'ai_processing').length;
+  const waiting = m.drafts.filter((d) => d.status !== 'published' && d.status !== 'skipped');
+  const ready = waiting.filter((d) => d.missing.length === 0).length;
+  const toFix = waiting.find((d) => d.missing.length > 0);
 
   return (
     <>
@@ -88,13 +100,34 @@ export default function MagazinePage({ params }: { params: Promise<{ id: string 
       />
       {writing > 0 && (
         <p className="mb-4 rounded-lg bg-info-soft px-4 py-3 font-semibold text-info" role="status">
-          ה-AI כותב {writing} כתבות ומכין תמונות. אפשר כבר להתחיל לערוך את מה שמוכן.
+          ה-AI כותב {writing} כתבות ומכין תמונות. כשיסיים, העורך הראשי יסדר אותן באתר. אפשר כבר להתחיל לערוך את מה שמוכן.
         </p>
+      )}
+      {waiting.length > 0 && (
+        <div className="mb-4 rounded-xl bg-white p-4 ring-1 ring-line">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="font-bold">
+              {ready} מתוך {waiting.length} כתבות מוכנות לפרסום
+            </p>
+            <div className="h-2 min-w-32 flex-1 overflow-hidden rounded-full bg-stone" role="progressbar" aria-valuemin={0} aria-valuemax={waiting.length} aria-valuenow={ready} aria-label="כתבות מוכנות">
+              <div className="h-full rounded-full bg-ok transition-[width]" style={{ width: `${Math.round((ready / waiting.length) * 100)}%` }} />
+            </div>
+            {toFix && writing === 0 && (
+              <LinkButton href={`/drafts/${toFix.id}?fix=${id}`} variant="dark" className="h-8 px-3 text-sm">
+                להשלים מה שחסר, כתבה אחרי כתבה
+              </LinkButton>
+            )}
+            <Button size="sm" variant="ghost" busy={replan.isPending} disabled={writing > 0} onClick={() => replan.mutate()}>
+              העורך הראשי יסדר שוב
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted">ליד כל כתבה כתוב מה חסר. אם לא תשלימו הכל, באישור הסופי יעלו המוכנות, והשאר יחכו ב&quot;נתקעו בפרסום&quot;.</p>
+        </div>
       )}
       <Card title="כתבות המגזין">
         <ol className="-mx-5 -my-5 divide-y divide-line-soft">
           {m.drafts.map((d, i) => (
-            <DraftRow key={d.id} d={d} index={i} />
+            <DraftRow key={d.id} d={d} index={i} fixHref={`/drafts/${d.id}?fix=${id}`} />
           ))}
         </ol>
       </Card>

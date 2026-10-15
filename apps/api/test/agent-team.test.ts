@@ -47,7 +47,7 @@ describe('agent team', () => {
     const rewrite = res.body.agents.find((a: { id: string }) => a.id === 'rewrite');
     expect(rewrite.skills.map((x: { key: string }) => x.key)).toEqual(['rewrite.system', 'rewrite.combine', 'refine.system']);
     const chief = res.body.agents.find((a: { id: string }) => a.id === 'chief');
-    expect(chief.skills.map((x: { key: string }) => x.key)).toEqual(['agent.system', 'meeting.pitch', 'discovery.pick']);
+    expect(chief.skills.map((x: { key: string }) => x.key)).toEqual(['agent.system', 'meeting.pitch', 'discovery.pick', 'desk.plan']);
     expect(res.body.rules).toMatchObject({ key: 'newsroom.rules', kind: 'rules', updatedBy: null });
     expect(res.body.fixedRules).toHaveLength(3);
     const usage = (await editor.get('/agents/usage')).body;

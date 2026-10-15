@@ -10,7 +10,7 @@ Cookie-authenticated writes must send an allowed `Origin`.
 
 | Method | Path | Returns |
 | --- | --- | --- |
-| GET | `/public/home` | `HomeData`: 7 main, 14 trending, latest, sections, podcasts |
+| GET | `/public/home` | `HomeData`: 7 main, 14 trending, latest, `breaking` (the ticker: the newest 12 marked, or the latest until any is), sections, podcasts |
 | GET | `/public/categories` | `CategoryRef[]` |
 | GET | `/public/categories/:slug?cursor=` | `CategoryPage` (keyset pagination) |
 | GET | `/public/articles/:slug` | `ArticleFull` (body HTML, tags, editor, source, comment count) |
@@ -148,24 +148,26 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/saved` | any | `SavedEdits` (magazines + single articles) |
+| GET | `/admin/saved` | any | `SavedEdits` (magazines, single articles, and `stuck`: held back at publishing, oldest first); every `DraftSummary` has `missing`, `ticker`, `stuckAt` |
 | GET/PATCH | `/admin/magazines/:id` | any / editor | `MagazineDetail`; rename |
 | POST | `/admin/magazines/:id/archive` | editor | |
-| GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, `extraSources` of an article written from several reports, nav, active AI job) |
+| POST | `/admin/magazines/:id/desk-plan` · `/admin/drafts/:id/desk-plan` | editor | 202: the chief editor places the batch again (only what the editors left as it chose); 409 `desk_busy` |
+| GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, `extraSources` of an article written from several reports, nav, active AI job, `deskPlan`, `missing`, `ticker`, `stuckAt`) |
 | PUT | `/admin/drafts/:id/content` | editor | `AutosaveInput` → `AutosaveResult`; 409 `version_conflict` / `text_locked` / `ai_busy` |
-| PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, tags, byline, color, push, main image, disclosure |
+| PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, ticker, tags, byline, color, push, main image (a quick draft stays one until the approval; an article already on the site draws it at once), disclosure |
 | GET | `/admin/drafts/:id/similarity` | any | `SimilarityDto`: how much of the draft repeats the original word for word (the Hebrew translation of a foreign original) |
 | POST | `/admin/drafts/:id/update-article` | editor | → `{ slug }`: the edited draft of an article already on the site replaces it in place (same id and address, home page position kept) and the site is refreshed; 422 `not_ready` when something is missing |
 | GET | `/admin/articles?status=published\|unpublished&q=&category=&cursor=` | any | `PublishedArticleList` ("כתבות באתר"): `PublishedArticleDto[]` and `nextCursor` |
 | POST | `/admin/articles/:id/edit` | editor | → `{ draftId }`: opens the article in the editor (its draft reopens, or one is made from it); the site changes only on `update-article` |
 | POST | `/admin/articles/:id/unpublish` | editor | 204: off the site and the home page at once; restorable |
 | POST | `/admin/articles/:id/republish` | editor | 204: back at its address and date |
+| POST | `/admin/articles/:id/ticker` | editor | `{ on }` → 204: at the head of the breaking-news ticker, or off it (`PublishedArticleDto.onTicker`) |
 | DELETE | `/admin/articles/:id` | admin | 204: deleted for good with its comments; only an article already off the site (409 `still_published`) |
 | GET | `/admin/drafts/:id/facts` | any | `FactCheckDto`: numbers, percentages, amounts and years of the source missing from the draft, and ones the source doesn't have |
 | POST | `/admin/drafts/:id/refine` | editor | `RefineInput` → 202 `{ jobId }` |
 | GET | `/admin/drafts/:id/chat` | any | `ChatMessageDto[]` |
 | POST | `/admin/drafts/:id/retry-ai` | editor | re-run the first rewrite |
-| GET/POST | `/admin/drafts/:id/images` | any / editor | `DraftImagesDto` (batches of 3 quick drafts, each with its description and `promptBy`) · `GenerateImagesInput` → 202 `{ jobId }`; without a `prompt` the visual agent writes the description |
+| GET/POST | `/admin/drafts/:id/images` | any / editor | `DraftImagesDto` (batches of 3 quick drafts with `variants`: each option's style and description, or a real photo with its credit and license; the agent's `pick`; `heroIsDraft`) · `GenerateImagesInput` → 202 `{ jobId }`; without a `prompt` the visual agent writes three descriptions; `retryOf` draws a failed round again |
 | POST | `/admin/drafts/:id/finalize` · `/reopen` · `/skip` · `/unskip` | editor | text final (opens social) · back to editing · not for publishing |
 | GET | `/admin/drafts/:id/revisions` | any | history |
 | POST | `/admin/drafts/:id/revisions/:revisionId/restore` | editor | |
@@ -304,7 +306,7 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 | Method | Path | Role | |
 | --- | --- | --- | --- |
 | GET | `/admin/magazines/:id/preview` · `/admin/drafts/:id/preview` | any | `PublishPreview` (date, editor, tags, networks, what's missing, warnings such as wording copied from the original) |
-| POST | `/admin/magazines/:id/publish` · `/admin/drafts/:id/publish` | editor | `PublishInput` (idempotency key) → 202 `{ publishJobId }`; 422 lists what isn't ready |
+| POST | `/admin/magazines/:id/publish` · `/admin/drafts/:id/publish` | editor | `PublishInput` (idempotency key) → 202 `{ publishJobId }`; a magazine goes out with what is ready and holds the rest back (`held: …` steps); 422 when nothing is ready, or the one article isn't |
 | GET | `/admin/publish-jobs/:id` | any | `PublishJobDto` with per-step results (`<draft>:site`, `revalidate`, `<draft>:<platform>:<account>`) |
 
 ### Comment moderation

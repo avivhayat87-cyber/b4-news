@@ -50,6 +50,7 @@ import { WEB_SEARCH_USD, textCostUsd } from './ai/prices';
 import type { ImageReference, ResearchOutput, Usage } from './ai/types';
 import type { Services } from './context';
 import { addUpdateBlock, assertMagazine, categoryIdOf, loadDraft, nextPosition, requestImages } from './drafts';
+import { queueDeskPlan } from './front-page';
 import { openForEditing } from './articles';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
@@ -490,6 +491,8 @@ export async function runResearch(s: Services, job: JobRow) {
 
   await enqueue(s.db, ARCHIVE_JOB, { taskId: task.id }, { createdBy: task.createdBy, maxAttempts: 1 });
   if (s.config.ai.autoImages) await requestImages(s, task.createdBy, draftId, 'article').catch(() => undefined);
+  // The chief editor places it on the site, like any article the AI wrote.
+  await queueDeskPlan(s, draftId, task.createdBy).catch(() => undefined);
   return { draftId };
 }
 

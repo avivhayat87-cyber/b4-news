@@ -24,6 +24,7 @@ import { FocalPicker, UploadButton } from '../image-upload';
 import { FactCheck } from './fact-check';
 import { Badge, Button, ColorDot, Field, Spinner, cx, inputClass, useToast } from '../ui';
 import { HighlightedText } from './highlight';
+import { FOCUS_RING } from './readiness';
 
 // --- The original (left pane) ------------------------------------------------
 export function OriginalPane({ draft, onQueued }: { draft: DraftDetail; onQueued(): void }) {
@@ -228,8 +229,8 @@ export function AiPanel({ draft, selection, busyJob, onQueued }: { draft: DraftD
   );
 }
 
-// --- Images: 3 quick AI drafts (the chosen one is redrawn at full quality), or upload ---
-export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: MediaDto | null): void }) {
+// --- Images: 3 quick AI drafts in 3 styles (a real photo for a public figure), the agent's pick, or upload ---
+export function ImagesPanel({ draft, focus, onHero }: { draft: DraftDetail; focus?: boolean; onHero(m: MediaDto | null): void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const images = useQuery({
@@ -247,14 +248,21 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
   const [useSource, setUseSource] = useState(false);
   const sourceImage = draft.original?.imageUrl ?? null;
   const generate = useMutation({
-    // A retry passes the failed batch's own brief.
-    mutationFn: (again: string | undefined) =>
-      admin.post(`/drafts/${draft.id}/images`, { prompt: (again ?? prompt)?.trim() || undefined, useSourceImage: useSource && !!sourceImage }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['images', draft.id] }),
+    // A retry draws the failed round again from its own descriptions.
+    mutationFn: (retryOf: string | undefined) =>
+      admin.post(`/drafts/${draft.id}/images`, retryOf ? { retryOf } : { prompt: prompt?.trim() || undefined, useSourceImage: useSource && !!sourceImage }),
+    onSuccess: () => {
+      setPrompt(null);
+      void qc.invalidateQueries({ queryKey: ['images', draft.id] });
+    },
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
   const busy = !!images.data?.activeJob;
   const locked = draft.status === 'published';
+  const options = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) options.current?.scrollIntoView({ block: 'nearest' });
+  }, [focus]);
 
   return (
     <div className="space-y-5 p-5">
@@ -265,6 +273,9 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
           <FocalPicker media={draft.hero} onChange={() => void qc.invalidateQueries({ queryKey: ['draft', draft.id] })} />
         ) : (
           <p className="rounded-lg bg-warn-soft px-3 py-2 text-sm font-semibold text-warn">עוד לא נבחרה תמונה ראשית. בחרו אחת מהאפשרויות או העלו תמונה.</p>
+        )}
+        {images.data?.heroIsDraft && !upgrade && (
+          <p className="mt-2 text-xs text-muted">זו עדיין טיוטה מהירה. היא תיווצר באיכות מלאה רק באישור הסופי לפרסום, אז אפשר להחליף אותה עד אז בלי עלות.</p>
         )}
         {upgrade?.status === 'working' && (
           <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-info" role="status">
@@ -292,12 +303,14 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
 
       <div className="border-t border-line-soft pt-5">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="font-extrabold">תמונות AI לבחירה</h3>
+          <h3 className="font-extrabold">תמונות לבחירה</h3>
           <Button size="sm" variant="dark" busy={generate.isPending || busy} disabled={locked} onClick={() => generate.mutate(undefined)}>
             {images.data?.batches.some((b) => b.images.length) ? '3 טיוטות חדשות' : 'יצירת 3 טיוטות'}
           </Button>
         </div>
-        <p className="mb-3 text-xs text-muted">טיוטות מהירות ברזולוציה נמוכה. רק התמונה שתבחרו תיווצר מחדש באיכות מלאה ותעבור עיבוד סופי.</p>
+        <p className="mb-3 text-xs text-muted">
+          שלוש טיוטות מהירות, כל אחת בסגנון אחר (את הסגנונות קובעים ב&quot;הגדרות&quot; &gt; &quot;צוות הסוכנים&quot; &gt; סוכן התמונות). כשהכתבה על אישיות ציבורית, אחת מהן יכולה להיות צילום אמיתי שלה, עם קרדיט. הסוכן מסמן את הבחירה שלו; התמונה שנבחרה נוצרת באיכות מלאה רק באישור הסופי.
+        </p>
         {sourceImage && (
           <div className="mb-3 flex gap-3 rounded-lg bg-white p-3 ring-1 ring-line">
             {/* eslint-disable-next-line @next/next/no-img-element -- third-party source image */}
@@ -313,32 +326,33 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
           </div>
         )}
         <Field
-          label="תיאור לתמונה (אפשר לשנות לפני יצירה)"
+          label="תיאור משלכם (לא חובה)"
           htmlFor="img-prompt"
-          hint="סוכן התמונות של Google כותב את התיאור לפי הכתבה. בלי שינוי בתיאור, הוא יציע רעיון חדש בכל פעם; שיניתם אותו? התמונות ייווצרו לפי הנוסח שלכם, והסוכן לומד מזה."
+          hint="ריק: הסוכן כותב שלושה תיאורים חדשים, אחד לכל סגנון, ומציע רעיונות אחרים בכל פעם. כתבתם תיאור? שלוש התמונות ייווצרו לפיו, והסוכן לומד מזה."
         >
           <textarea
             id="img-prompt"
             rows={2}
-            value={prompt ?? images.data?.batches[0]?.prompt ?? ''}
+            value={prompt ?? ''}
             onChange={(e) => setPrompt(e.target.value)}
+            placeholder="למשל: מגדלי משרדים בתל אביב בשעת שקיעה, מבט מלמטה"
             className={inputClass}
             dir="auto"
           />
         </Field>
         {busy && (
           <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-info" role="status">
-            <Spinner small /> {images.data?.batches[0] && !images.data.batches[0].prompt ? 'סוכן התמונות כותב תיאור ויוצר 3 טיוטות…' : 'יוצר 3 טיוטות…'}
+            <Spinner small /> {images.data?.batches[0] && !images.data.batches[0].prompt ? 'סוכן התמונות כותב שלושה תיאורים, מצייר ובוחר…' : 'יוצר 3 טיוטות…'}
           </p>
         )}
-        <div className="mt-3 space-y-4">
+        <div ref={options} className={cx('mt-3 space-y-5', focus && FOCUS_RING)}>
           {images.data?.batches.map((b) => (
             <div key={b.id}>
               <p className="mb-1.5 text-xs text-muted">
                 {formatDateTime(b.createdAt)}
                 {b.promptBy && ` · ${PROMPT_BY[b.promptBy]}`}
               </p>
-              {b.prompt && (
+              {b.variants.length === 0 && b.prompt && (
                 <p className="mb-1.5 line-clamp-2 text-xs text-ink-2" dir="auto" title={b.prompt}>
                   {b.prompt}
                 </p>
@@ -346,28 +360,57 @@ export function ImagesPanel({ draft, onHero }: { draft: DraftDetail; onHero(m: M
               {b.status === 'failed' && b.images.length === 0 && (
                 <div className="rounded-lg bg-brand-soft px-3 py-2.5 text-sm text-brand-deep" role="alert">
                   <p className="font-semibold">{b.error}</p>
-                  <Button size="sm" className="mt-2" busy={generate.isPending} disabled={locked || busy} onClick={() => generate.mutate(b.prompt)}>
+                  <Button size="sm" className="mt-2" busy={generate.isPending} disabled={locked || busy} onClick={() => generate.mutate(b.id)}>
                     לנסות שוב
                   </Button>
                 </div>
               )}
               {b.note && <p className="mb-1.5 text-xs font-semibold text-warn">{b.note}</p>}
+              {b.pick && (
+                <p className="mb-1.5 text-xs text-info">
+                  <span className="font-bold">★ בחירת סוכן התמונות:</span> {b.pick.reason}
+                </p>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 {b.images.map((m) => {
                   const chosen = images.data?.chosenId === m.id;
+                  const v = b.variants.find((x) => x.mediaId === m.id);
+                  const agentPick = b.pick?.mediaId === m.id;
                   return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      disabled={locked}
-                      onClick={() => onHero(m)}
-                      aria-pressed={chosen}
-                      className={cx('group relative overflow-hidden rounded-lg ring-offset-2', chosen ? 'ring-4 ring-brand' : 'hover:ring-2 hover:ring-ink')}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- API-hosted image */}
-                      <img src={m.url} alt="" className="aspect-video w-full object-cover" />
-                      {chosen && <span className="absolute right-1.5 top-1.5 rounded bg-brand px-1.5 py-0.5 text-[11px] font-bold text-white">נבחרה</span>}
-                    </button>
+                    <figure key={m.id} className="min-w-0">
+                      <button
+                        type="button"
+                        disabled={locked}
+                        onClick={() => onHero(m)}
+                        aria-pressed={chosen}
+                        aria-label={v ? `${v.kind === 'photo' ? 'צילום אמיתי' : v.style}${agentPick ? ', בחירת הסוכן' : ''}` : undefined}
+                        className={cx('group relative block w-full overflow-hidden rounded-lg ring-offset-2', chosen ? 'ring-4 ring-brand' : 'hover:ring-2 hover:ring-ink')}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- API-hosted image */}
+                        <img src={m.thumbUrl || m.url} alt="" className="aspect-video w-full object-cover" />
+                        {chosen && <span className="absolute right-1.5 top-1.5 rounded bg-brand px-1.5 py-0.5 text-[11px] font-bold text-white">נבחרה</span>}
+                        {agentPick && <span className="absolute left-1.5 top-1.5 rounded bg-info px-1.5 py-0.5 text-[11px] font-bold text-white">★ הסוכן</span>}
+                        {v?.kind === 'photo' && <span className="absolute bottom-1.5 right-1.5 rounded bg-ink/80 px-1.5 py-0.5 text-[11px] font-bold text-white">צילום אמיתי</span>}
+                      </button>
+                      {v && (
+                        <figcaption className="mt-1 text-[11px] leading-snug text-muted" dir="auto">
+                          {v.kind === 'photo' ? (
+                            <>
+                              {v.credit}{' '}
+                              {v.sourceUrl && (
+                                <a href={v.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
+                                  הרישיון ↗
+                                </a>
+                              )}
+                            </>
+                          ) : (
+                            <span title={v.prompt} className="line-clamp-3">
+                              <span className="font-bold text-ink-2">{v.style.split(/[,:]/)[0]}:</span> {v.prompt}
+                            </span>
+                          )}
+                        </figcaption>
+                      )}
+                    </figure>
                   );
                 })}
               </div>
@@ -459,14 +502,27 @@ function CopyCheck({ draft, onQueued, onShowSource }: { draft: DraftDetail; onQu
 }
 
 // --- Publishing settings: placement, category, tags, byline -----------------------
-export function MetaPanel({ draft, onSaved, onShowSource }: { draft: DraftDetail; onSaved(): void; onShowSource(): void }) {
+export function MetaPanel({ draft, focus, onSaved, onShowSource }: { draft: DraftDetail; focus?: boolean; onSaved(): void; onShowSource(): void }) {
+  const qc = useQueryClient();
   const toast = useToast();
   const authors = useQuery({ queryKey: ['authors'], queryFn: () => admin.get<AuthorDto[]>('/authors'), staleTime: 5 * 60_000 });
   const [tag, setTag] = useState('');
   const locked = draft.status === 'published';
+  const category = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (focus) category.current?.focus();
+  }, [focus]);
   const save = useMutation({
     mutationFn: (patch: Record<string, unknown>) => admin.patch(`/drafts/${draft.id}`, patch),
     onSuccess: onSaved,
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  const replan = useMutation({
+    mutationFn: () => admin.post(draft.magazine ? `/magazines/${draft.magazine.id}/desk-plan` : `/drafts/${draft.id}/desk-plan`),
+    onSuccess: () => {
+      toast('העורך הראשי מסדר שוב. הבחירות שלו יופיעו כאן בעוד רגע.');
+      setTimeout(() => void qc.invalidateQueries({ queryKey: ['draft', draft.id] }), 6000);
+    },
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
   const addTag = () => {
@@ -475,9 +531,32 @@ export function MetaPanel({ draft, onSaved, onShowSource }: { draft: DraftDetail
     save.mutate({ tags: [...draft.tags, t] });
     setTag('');
   };
+  const plan = draft.deskPlan;
 
   return (
     <div className="space-y-6 p-5">
+      {plan ? (
+        <div className="rounded-lg bg-info-soft px-3 py-2.5 text-sm text-info">
+          <p>
+            <span className="font-bold">★ העורך הראשי בחר:</span> {PLACEMENT[plan.placement]}
+            {plan.ticker ? ' · בפס המבזקים' : ''}
+            {plan.category ? ` · מדור ${categoryName(plan.category)}` : ''}
+          </p>
+          <p className="mt-0.5 text-ink-2">{plan.reason}</p>
+          <p className="mt-1 text-xs">{plan.changed.length ? 'שיניתם חלק מהבחירה; הבחירה שלכם קובעת.' : 'לא שיניתם כלום, אז הבחירה מאושרת. אפשר לשנות כאן.'}</p>
+        </div>
+      ) : (
+        !locked &&
+        draft.status !== 'queued_ai' &&
+        draft.status !== 'ai_processing' && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-stone px-3 py-2.5 text-sm text-ink-2">
+            העורך הראשי עוד לא סידר את הכתבה באתר.
+            <Button size="sm" busy={replan.isPending} onClick={() => replan.mutate()}>
+              לבקש ממנו עכשיו
+            </Button>
+          </div>
+        )
+      )}
       <fieldset disabled={locked} className="space-y-6">
         <div>
           <legend className="mb-2 text-sm font-bold text-ink-2">מיקום באתר</legend>
@@ -489,17 +568,28 @@ export function MetaPanel({ draft, onSaved, onShowSource }: { draft: DraftDetail
                 role="radio"
                 aria-checked={draft.placement === p}
                 onClick={() => save.mutate({ placement: p })}
-                className={cx('rounded-lg px-3 py-2.5 text-sm font-bold ring-1', draft.placement === p ? 'bg-ink text-white ring-ink' : 'bg-white ring-line hover:bg-stone')}
+                className={cx('relative rounded-lg px-3 py-2.5 text-sm font-bold ring-1', draft.placement === p ? 'bg-ink text-white ring-ink' : 'bg-white ring-line hover:bg-stone')}
               >
                 {PLACEMENT[p]}
+                {plan?.placement === p && <span className="absolute -top-2 left-1.5 rounded bg-info px-1 text-[10px] text-white">★ העורך הראשי</span>}
               </button>
             ))}
           </div>
           <p className="mt-1.5 text-xs text-muted">ראשית: אחת מ-7 הכתבות בראש האתר. חמות: אחת מ-14 בפס החם. בכל מקרה הכתבה מופיעה גם בקטגוריה שלה.</p>
+          <label className="mt-3 flex items-center gap-3 rounded-lg bg-stone px-3 py-2.5 text-sm font-semibold">
+            <input type="checkbox" checked={draft.ticker} onChange={(e) => save.mutate({ ticker: e.target.checked })} className="size-4" />
+            בפס המבזקים בראש האתר
+            {plan?.ticker && <span className="text-xs font-normal text-info">(★ העורך הראשי)</span>}
+            <span className="mr-auto text-xs font-normal text-muted">עד 12 מבזקים; החדש דוחק את הישן</span>
+          </label>
         </div>
 
-        <Field label="קטגוריה" htmlFor="category" hint={draft.suggestedCategory ? `ה-AI הציע: ${categoryName(draft.suggestedCategory)}` : undefined}>
-          <select id="category" value={draft.category ?? ''} onChange={(e) => save.mutate({ category: e.target.value || null })} className={inputClass}>
+        <Field
+          label="קטגוריה"
+          htmlFor="category"
+          hint={plan?.category ? `העורך הראשי בחר: ${categoryName(plan.category)}` : draft.suggestedCategory ? `ה-AI הציע: ${categoryName(draft.suggestedCategory)}` : undefined}
+        >
+          <select ref={category} id="category" value={draft.category ?? ''} onChange={(e) => save.mutate({ category: e.target.value || null })} className={cx(inputClass, focus && FOCUS_RING)}>
             <option value="">בחרו קטגוריה</option>
             {CATEGORIES.map((c) => (
               <option key={c.slug} value={c.slug}>

@@ -139,7 +139,18 @@ export type LearningReportDto = z.infer<typeof LearningReportDto>;
 // The visual agent (Google Gemini): writes the prompts for article images and reels,
 // and learns from what the editors did with them
 // ---------------------------------------------------------------------------
+/** The three ways an article's three images are drawn, unless the newsroom sets its own. */
+export const DEFAULT_IMAGE_STYLES = [
+  'צילום עיתונאי ריאליסטי של המקום או הזירה של הסיפור, באור טבעי',
+  'תקריב סמלי: חפץ או פרט אחד מוחשי שמספר את הסיפור, על רקע רך ומטושטש',
+  'איור עריכתי נקי ומודרני: מעט צבעים וצורות פשוטות, טוב גם לנושא מופשט',
+] as const;
+
 export const VisualAgentSettings = z.object({
+  /** The three styles of an article's three images, one image each (the editor's own description draws all three alike). */
+  styles: z.array(z.string().trim().min(3).max(300)).length(3).default([...DEFAULT_IMAGE_STYLES]),
+  /** An article about a public figure: look for a real photo of them, in sources that allow it with a credit. */
+  realPhotos: z.boolean().default(true),
   /** How article images should look, in the newsroom's words ("צילום עיתונאי ריאליסטי, אור טבעי"). */
   articleStyle: z.string().trim().max(500).default(''),
   /** How reels should look and move (pace, mood, camera). */
@@ -167,6 +178,10 @@ export const VisualFeedbackDetail = z.discriminatedUnion('kind', [
     rounds: z.array(z.object({ by: z.enum(PROMPT_AUTHORS).nullable(), prompt: z.string(), useSource: z.boolean(), chosen: z.boolean() })),
     /** Where the published main image came from. */
     outcome: z.enum(['ai', 'upload', 'source', 'none']),
+    /** The image the agent recommended: kept by the editor, or changed (absent before it recommended). */
+    agentPick: z.enum(['kept', 'changed']).optional(),
+    /** The chosen option's style (its own description), when the options were drawn in three styles. */
+    chosenStyle: z.string().optional(),
   }),
   z.object({
     kind: z.literal('reel'),

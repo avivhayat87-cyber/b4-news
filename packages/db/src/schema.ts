@@ -79,6 +79,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'meeting',
   'ads',
   'discovery_pick',
+  'desk_plan',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -467,6 +468,33 @@ export const magazines = pgTable(
   (t) => [index('magazines_status_idx').on(t.status, t.updatedAt.desc())],
 );
 
+/** The chief editor's placement of a draft in its batch (desk.plan). */
+export type DeskPlanRecord = {
+  placement: 'main' | 'trending' | 'none';
+  ticker: boolean;
+  /** The section it chose because the draft had none (a slug); null when the draft had one. */
+  category: string | null;
+  reason: string;
+  at: string;
+};
+
+/** One image option of a batch: drawn from its own description, or a real photo with its credit. */
+export type ImageVariantRecord = {
+  kind: 'drawn' | 'photo';
+  /** The style's name from the visual agent's settings; a photo: "צילום אמיתי". */
+  style: string;
+  /** The Hebrew description it was drawn from; a photo: who is in it. */
+  prompt: string;
+  /** null when this option failed to draw. */
+  mediaId: string | null;
+  /** A photo: the credit printed under it, its license and its page. */
+  credit?: string;
+  license?: string;
+  sourceUrl?: string;
+};
+
+export type ImagePickRecord = { mediaId: string; reason: string };
+
 export const articleDrafts = pgTable(
   'article_drafts',
   {
@@ -499,6 +527,10 @@ export const articleDrafts = pgTable(
     /** Image prompt the AI wrote with the rewrite; the default brief for the image drafts. */
     imagePrompt: text(),
     placement: homepagePlacement().notNull().default('none'),
+    /** Goes on the breaking-news ticker when it is published. */
+    ticker: boolean().notNull().default(false),
+    /** The chief editor's placement (desk.plan), kept apart from what the editors chose: untouched means approved. */
+    deskPlan: jsonb().$type<DeskPlanRecord>(),
     authorId: uuid().references(() => authors.id),
     heroMediaId: uuid().references(() => mediaAssets.id),
     tagNames: text().array().notNull().default(sql`'{}'::text[]`),
@@ -512,6 +544,8 @@ export const articleDrafts = pgTable(
     lockExpiresAt: tstz(),
     textFinalizedAt: tstz(),
     skipReason: text(),
+    /** Held back when its magazine was published, because something was missing ("נתקעו בפרסום"); null once it is published. */
+    stuckAt: tstz(),
     publishedArticleId: bigint({ mode: 'number' }).references((): AnyPgColumn => articles.id),
     createdBy: uuid()
       .notNull()
@@ -776,6 +810,10 @@ export const imageBatches = pgTable(
     prompt: text().notNull(),
     /** agent | editor: who wrote the description (null: before the visual agent). */
     promptBy: text(),
+    /** One per option, in order: its own description (three styles) or a real photo with its credit. Empty before 2026-10-15. */
+    variants: jsonb().$type<ImageVariantRecord[]>().notNull().default([]),
+    /** The option the visual agent recommends, and why. */
+    pick: jsonb().$type<ImagePickRecord>(),
     aiJobId: uuid().references(() => aiJobs.id),
     createdBy: uuid().references(() => users.id),
     createdAt: createdAt(),
@@ -815,12 +853,15 @@ export const articles = pgTable(
     draftId: uuid()
       .unique()
       .references((): AnyPgColumn => articleDrafts.id),
+    /** On the breaking-news ticker since (null: not on it); the ticker shows the newest 12. */
+    tickerAt: tstz(),
     publishedAt: tstz().notNull().defaultNow(),
     updatedAt: updatedAt(),
     searchVector: tsvector().generatedAlwaysAs(sql`to_tsvector('simple', title || ' ' || subtitle || ' ' || excerpt)`),
   },
   (t) => [
     index('articles_published_idx').on(t.status, t.publishedAt.desc()),
+    index('articles_ticker_idx').on(t.tickerAt.desc()),
     index('articles_category_idx').on(t.categoryId, t.publishedAt.desc()),
     index('articles_search_idx').using('gin', t.searchVector),
   ],

@@ -73,6 +73,8 @@ export const HomeData = z.object({
   main: z.array(ArticleCard),
   trending: z.array(ArticleCard),
   latest: z.array(ArticleCard),
+  /** The breaking-news ticker: the newest articles marked for it (up to 12); the latest ones until any is marked. */
+  breaking: z.array(ArticleCard).default([]),
   sections: z.array(HomeSection),
   podcasts: z.array(Podcast),
 });

@@ -107,7 +107,9 @@ describe('images', () => {
 
     expect((await editor.post(`/drafts/${draftId}/images`, { prompt: 'A central bank at dawn', useSourceImage: true })).status).toBe(202);
     await ctx.drain();
-    const withPhoto = images.calls[1]!;
+    // One call per option: the first round took three.
+    expect(images.calls).toHaveLength(6);
+    const withPhoto = images.calls[3]!;
     expect(withPhoto.references).toHaveLength(1);
     expect(withPhoto.references[0]!.mimeType).toBe('image/jpeg');
     expect(withPhoto.references[0]!.data.subarray(0, 2).toString('hex')).toBe('ffd8'); // the sample SVG became a JPEG
@@ -118,64 +120,75 @@ describe('images', () => {
     expect(batches[0].images).toHaveLength(3);
   });
 
-  it('draws quick drafts, and redraws only the chosen one at full quality before it can be published', async () => {
+  it('draws quick drafts, and the chosen one at full quality only at the final approval', async () => {
     const drafts = new RecordingImages('draft', 'gemini-3.1-flash-lite-image', '1K');
     const finals = new RecordingImages('final', 'gemini-nano-banana-2.1', '2K');
     ctx.app.services.ai = fixedAi(new FakeText(), finals, drafts);
     await editor.post(`/drafts/${draftId}/images`, { prompt: 'A harbor at dawn' });
     await ctx.drain();
-    expect(drafts.calls).toHaveLength(1);
+    expect(drafts.calls).toHaveLength(3);
     expect(finals.calls).toHaveLength(0);
     const [batch] = (await editor.get(`/drafts/${draftId}/images`)).body.batches;
     expect(batch.images).toHaveLength(3);
     const chosen = batch.images[1];
     expect(chosen.width).toBeLessThan(1600);
 
+    // Choosing, and changing the choice, costs nothing: the draft stands in until the approval.
+    expect((await editor.patch(`/drafts/${draftId}`, { heroMediaId: batch.images[2].id })).status).toBe(204);
     expect((await editor.patch(`/drafts/${draftId}`, { heroMediaId: chosen.id })).status).toBe(204);
-    expect((await editor.patch(`/drafts/${draftId}`, { heroMediaId: chosen.id })).status).toBe(204); // a second click doesn't pay twice
-    let state = (await editor.get(`/drafts/${draftId}/images`)).body;
-    expect(state).toMatchObject({ heroId: chosen.id, chosenId: chosen.id, upgrade: { status: 'working' } });
-    const notReady = 'התמונה הראשית עוד בהכנה באיכות מלאה';
-    expect((await editor.get(`/drafts/${draftId}/preview`)).body.items[0].problems).toContain(notReady);
+    await ctx.drain();
+    expect(finals.finished).toHaveLength(0);
+    const state = (await editor.get(`/drafts/${draftId}/images`)).body;
+    expect(state).toMatchObject({ heroId: chosen.id, chosenId: chosen.id, heroIsDraft: true, upgrade: null });
+    const item = (await editor.get(`/drafts/${draftId}/preview`)).body.items[0];
+    expect(item.heroIsDraft).toBe(true);
+    expect(item.problems).not.toContain('התמונה הראשית עוד בהכנה באיכות מלאה');
+    // What the drafts cost at Google's prices: 3 at 1K, in one record.
+    const priced = await ctx.db.select({ model: aiJobs.model, costUsd: aiJobs.costUsd }).from(aiJobs).where(eq(aiJobs.type, 'article_images'));
+    expect(priced).toContainEqual({ model: 'gemini-3.1-flash-lite-image', costUsd: '0.1008' });
+    expect(priced.some((j) => j.model === 'gemini-nano-banana-2.1')).toBe(false);
+  });
 
+  it('holds the article back, and says why, when its full-quality image fails at the approval', async () => {
+    const finals = new RecordingImages('final');
+    finals.failWith = new PermanentJobError('image generation failed (429): Rate limit exceeded (limit: 0, Free Tier)');
+    ctx.app.services.ai = fixedAi(new FakeText(), finals, new RecordingImages('draft'));
+    const draft = (await editor.get(`/drafts/${draftId}`)).body;
+    if (!draft.category) await editor.patch(`/drafts/${draftId}`, { category: 'israeli-economy' });
+    expect((await editor.post(`/drafts/${draftId}/finalize`)).status).toBe(204);
+    await ctx.drain();
+    const started = await editor.post(`/drafts/${draftId}/publish`, { idempotencyKey: 'editor-tools-held' });
+    expect(started.status).toBe(202);
+    await ctx.drain();
+    expect(finals.finished).toHaveLength(1);
+    const job = (await editor.get(`/publish-jobs/${started.body.publishJobId}`)).body;
+    expect(imageErrorMessage(job.steps[`${draftId}:image`])).toContain('Billing');
+    expect(job.steps[`${draftId}:site`]).toMatch(/^held: /);
+    // It waits in "נתקעו בפרסום", still with the quick draft.
+    const after = (await editor.get(`/drafts/${draftId}`)).body;
+    expect(after.status).toBe('text_final');
+    expect(after.stuckAt).toBeTruthy();
+    expect((await editor.get('/saved')).body.stuck.map((d: { id: string }) => d.id)).toContain(draftId);
+  });
+
+  it('publishes a held-back article once its image is drawn, and it leaves the list', async () => {
+    const finals = new RecordingImages('final', 'gemini-nano-banana-2.1', '2K');
+    ctx.app.services.ai = fixedAi(new FakeText(), finals, new RecordingImages('draft'));
+    const started = await editor.post(`/drafts/${draftId}/publish`, { idempotencyKey: 'editor-tools-again' });
+    expect(started.status).toBe(202);
     await ctx.drain();
     expect(finals.finished).toHaveLength(1);
     expect(finals.finished[0]!.prompt).toContain('A harbor at dawn');
     expect(finals.finished[0]!.draft.mimeType).toBe('image/jpeg');
-    state = (await editor.get(`/drafts/${draftId}/images`)).body;
-    expect(state).toMatchObject({ chosenId: chosen.id, upgrade: null });
-    expect(state.heroId).not.toBe(chosen.id);
-    // The full-quality version is the main image, not one more option.
-    expect(state.batches[0].images.map((m: { id: string }) => m.id)).not.toContain(state.heroId);
-    expect((await editor.get(`/drafts/${draftId}`)).body.hero).toMatchObject({ id: state.heroId, width: 1600, height: 900 });
-    expect((await editor.get(`/drafts/${draftId}/preview`)).body.items[0].problems).not.toContain(notReady);
-    // What each step cost at Google's prices: 3 drafts at 1K, then the chosen one at 2K.
+    const job = (await editor.get(`/publish-jobs/${started.body.publishJobId}`)).body;
+    expect(job.steps).toMatchObject({ [`${draftId}:image`]: 'ok', [`${draftId}:site`]: 'ok' });
+    const after = (await editor.get(`/drafts/${draftId}`)).body;
+    expect(after).toMatchObject({ status: 'published', stuckAt: null });
+    // The full-quality version went out as the main image, not one more option.
+    expect(after.hero).toMatchObject({ width: 1600, height: 900 });
+    expect((await editor.get('/saved')).body.stuck.map((d: { id: string }) => d.id)).not.toContain(draftId);
     const priced = await ctx.db.select({ model: aiJobs.model, costUsd: aiJobs.costUsd }).from(aiJobs).where(eq(aiJobs.type, 'article_images'));
-    expect(priced.filter((j) => j.model.startsWith('gemini'))).toEqual(
-      expect.arrayContaining([
-        { model: 'gemini-3.1-flash-lite-image', costUsd: '0.1008' },
-        { model: 'gemini-nano-banana-2.1', costUsd: '0.0504' },
-      ]),
-    );
-
-    // Choosing it again later reuses the full-quality version.
-    await editor.patch(`/drafts/${draftId}`, { heroMediaId: null });
-    await editor.patch(`/drafts/${draftId}`, { heroMediaId: chosen.id });
-    await ctx.drain();
-    expect(finals.finished).toHaveLength(1);
-    expect((await editor.get(`/drafts/${draftId}`)).body.hero.id).toBe(state.heroId);
-  });
-
-  it('keeps the draft as the main image, and says why, when its full-quality version fails', async () => {
-    const finals = new RecordingImages('final');
-    finals.failWith = new PermanentJobError('image generation failed (429): Rate limit exceeded (limit: 0, Free Tier)');
-    ctx.app.services.ai = fixedAi(new FakeText(), finals, new RecordingImages('draft'));
-    const option = (await editor.get(`/drafts/${draftId}/images`)).body.batches[0].images[2];
-    await editor.patch(`/drafts/${draftId}`, { heroMediaId: option.id });
-    await ctx.drain();
-    const state = (await editor.get(`/drafts/${draftId}/images`)).body;
-    expect(state).toMatchObject({ heroId: option.id, chosenId: option.id, upgrade: { status: 'failed' } });
-    expect(state.upgrade.error).toContain('Billing');
+    expect(priced).toContainEqual({ model: 'gemini-nano-banana-2.1', costUsd: '0.0504' });
   });
 
   it('shows why a batch failed', async () => {

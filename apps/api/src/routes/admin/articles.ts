@@ -4,7 +4,7 @@ import { ArticleListQuery, PublishedArticleList } from '@b4/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { requireStaff } from '../../plugins/auth';
-import { deleteArticle, listArticles, openForEditing, republishArticle, unpublishArticle, updateSiteFromDraft } from '../../services/articles';
+import { deleteArticle, listArticles, openForEditing, republishArticle, setArticleTicker, unpublishArticle, updateSiteFromDraft } from '../../services/articles';
 import type { Services } from '../../services/context';
 
 const params = z.object({ id: z.coerce.number().int().positive() });
@@ -23,6 +23,12 @@ export const articleRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app,
 
   app.post('/articles/:id/republish', { schema: { params } }, async (req, reply) => {
     await republishArticle(s, requireStaff(req, 'editor'), req.params.id);
+    return reply.status(204).send();
+  });
+
+  /** The breaking-news ticker: put an article at its head, or take it off. */
+  app.post('/articles/:id/ticker', { schema: { params, body: z.object({ on: z.boolean() }) } }, async (req, reply) => {
+    await setArticleTicker(s, requireStaff(req, 'editor'), req.params.id, req.body.on);
     return reply.status(204).send();
   });
 

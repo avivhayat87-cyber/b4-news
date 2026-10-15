@@ -50,6 +50,15 @@ export default function ArticlesPage() {
     onSuccess: ({ draftId }) => router.push(`/drafts/${draftId}`),
     onError,
   });
+  // The breaking-news ticker: an article goes to its head, or off it (the site shows the newest 12).
+  const ticker = useMutation({
+    mutationFn: ({ a, on }: { a: PublishedArticleDto; on: boolean }) => admin.post(`/articles/${a.id}/ticker`, { on }),
+    onSuccess: (_r, { on }) => {
+      toast(on ? 'הכתבה בראש פס המבזקים.' : 'הכתבה ירדה מפס המבזקים.');
+      refresh();
+    },
+    onError,
+  });
   const unpublish = useMutation({
     mutationFn: (a: PublishedArticleDto) => admin.post(`/articles/${a.id}/unpublish`),
     onSuccess: () => {
@@ -138,6 +147,7 @@ export default function ArticlesPage() {
                   {a.author && <span>· {a.author}</span>}
                   {a.commentCount > 0 && <span>· {a.commentCount} תגובות</span>}
                   {a.onHomepage && <Badge tone="info">{PLACEMENT[a.onHomepage]}</Badge>}
+                  {a.onTicker && <Badge tone="warn">במבזקים</Badge>}
                   {a.status !== 'published' && <Badge tone={ARTICLE_STATUS[a.status].tone}>{ARTICLE_STATUS[a.status].label}</Badge>}
                   {a.editing && <Badge tone="warn">בעריכה, עוד לא עודכן באתר</Badge>}
                 </div>
@@ -149,6 +159,11 @@ export default function ArticlesPage() {
                       <Button size="sm" variant="dark" busy={edit.isPending && edit.variables?.id === a.id} onClick={() => edit.mutate(a)}>
                         עריכה
                       </Button>
+                      {a.status === 'published' && (
+                        <Button size="sm" busy={ticker.isPending && ticker.variables?.a.id === a.id} onClick={() => ticker.mutate({ a, on: !a.onTicker })}>
+                          {a.onTicker ? 'הורדה מהמבזקים' : 'למבזקים'}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="danger"

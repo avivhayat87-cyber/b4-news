@@ -5,6 +5,7 @@ import { FINAL_IMAGE_JOB, markRefineFailed, markRewriteFailed, runFinalImage, ru
 import { AD_AGENT_JOB, markAdTaskFailed, runAdTask } from './agent/ads';
 import { AGENT_TURN_JOB, markTurnFailed, runAgentTurn } from './agent/chat';
 import { VISUAL_LEARN_JOB, runVisualLearning } from './agent/visual';
+import { DESK_PLAN_JOB, runDeskPlan } from './front-page';
 import { BATCH_LEARNING_JOB, runBatchLearning, runDistill } from './learning';
 import { DIGEST_TICK_JOB, ensureDigestTick, runDigestTick } from './digest';
 import { DIGEST_JOB, NOTIFY_JOB, runDigest, runNotify } from './notifications';
@@ -37,6 +38,8 @@ export const handlers: Handlers<Services> = {
   [REVIEW_JOB]: { run: runReview, onFailed: markReviewFailed, maxAttempts: 1 },
   [FIX_JOB]: { run: runFix, onFailed: markFixFailed, maxAttempts: 1 },
   [FINAL_IMAGE_JOB]: { run: runFinalImage, maxAttempts: 2 },
+  // The chief editor places a batch: cheap, one attempt; the editor asks again from the CMS.
+  [DESK_PLAN_JOB]: { run: runDeskPlan, maxAttempts: 1 },
   // A research is paid for by its searches: one attempt; the editor retries from the CMS.
   [RESEARCH_JOB]: { run: runResearch, onFailed: markResearchFailed, maxAttempts: 1 },
   [ARCHIVE_JOB]: { run: runArchive, maxAttempts: 1 },

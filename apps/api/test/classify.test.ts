@@ -24,7 +24,7 @@ describe('an item without a section', () => {
   });
   afterAll(() => ctx.close());
 
-  it('reaches the editor without one: the AI only suggests, the editor decides', async () => {
+  it('gets one from the chief editor (the rewrite only suggests), and the editor may change it', async () => {
     const editor = staffClient(ctx, await signInStaff(ctx, 'editor'));
     await ctx.seedSources();
     const [source] = await ctx.db.select({ id: sources.id }).from(sources).limit(1);
@@ -46,10 +46,14 @@ describe('an item without a section', () => {
     await ctx.drain();
     const draft = (await editor.get(`/drafts/${saved.body.draftIds[0]}`)).body;
     expect(draft.status).toBe('editing');
-    expect(draft.category).toBeNull();
-    expect((await editor.post(`/drafts/${draft.id}/finalize`)).body.message).toContain('קטגוריה');
-    // The editor picks the section, and the text can be finished.
-    expect((await editor.patch(`/drafts/${draft.id}`, { category: 'israeli-economy' })).status).toBe(204);
+    // The chief editor placed it, and chose the section it had none of (the stand-in takes the first).
+    expect(draft.category).toBe('israeli-economy');
+    expect(draft.deskPlan).toMatchObject({ category: 'israeli-economy', changed: [] });
+    expect(draft.missing.map((m: { key: string }) => m.key)).not.toContain('category');
+    // The editor changes it: their choice wins, and the plan says so.
+    expect((await editor.patch(`/drafts/${draft.id}`, { category: 'global-economy' })).status).toBe(204);
+    const changed = (await editor.get(`/drafts/${draft.id}`)).body;
+    expect(changed).toMatchObject({ category: 'global-economy', deskPlan: { category: 'israeli-economy', changed: ['category'] } });
     expect((await editor.post(`/drafts/${draft.id}/finalize`)).status).toBe(204);
   });
 });

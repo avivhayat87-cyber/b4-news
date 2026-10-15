@@ -1,6 +1,6 @@
 // The newsroom process end to end: site settings -> discovery -> magazine ->
 // AI draft -> editing -> social -> preview -> publish -> learning loop.
-import { articleSharePosts, articles, eq, homepageSlots, socialPosts, styleFeedback, styleProfiles } from '@b4/db';
+import { articleSharePosts, articles, eq, homepageSlots, mediaAssets, socialPosts, styleFeedback, styleProfiles } from '@b4/db';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ORIGIN, setup, signInStaff, staffClient } from './helpers';
@@ -203,11 +203,10 @@ describe('the editorial process', () => {
     await editor.patch(`/drafts/${draftId}`, { heroMediaId: images[0].id, placement: 'main', tags: ['ריבית', 'בנק ישראל'], disclosure: 'לכותב אין החזקות בחברות הנזכרות.' });
     const same = await editor.put(`/drafts/${draftId}/social`, { version: pkg.version, headline: pkg.headline, caption: pkg.caption, imageMediaId: images[0].id });
     expect(same.status).toBe(422);
-    // The chosen draft is redrawn at full quality and takes its place as the main image.
+    // The chosen draft stays a quick draft until the final approval: changing it until then costs nothing.
     await ctx.drain();
     const chosen = (await editor.get(`/drafts/${draftId}/images`)).body;
-    expect(chosen).toMatchObject({ chosenId: images[0].id, upgrade: null });
-    expect(chosen.heroId).not.toBe(images[0].id);
+    expect(chosen).toMatchObject({ chosenId: images[0].id, heroId: images[0].id, heroIsDraft: true, upgrade: null });
     const story = pkg.batches[0].images[0].id;
     const updated = await editor.put(`/drafts/${draftId}/social`, { version: pkg.version, headline: pkg.headline, caption: 'משפט ראשון. משפט שני. משפט שלישי.', imageMediaId: story });
     expect(updated.status).toBe(200);
@@ -223,11 +222,15 @@ describe('the editorial process', () => {
 
     const preview = (await editor.get(`/magazines/${magazineId}/preview`)).body;
     expect(preview.editorName).toBe('Test editor');
-    expect(preview.items.find((i: { draft: { id: string } }) => i.draft.id === second.id).problems).toContain('הטקסט עוד לא סומן כסופי');
+    const secondItem = preview.items.find((i: { draft: { id: string } }) => i.draft.id === second.id);
+    expect(secondItem.problems).toContain('הטקסט עוד לא אושר');
+    expect(secondItem.missing.map((m: { key: string }) => m.key)).toContain('text');
+    expect(preview.readyCount).toBe(1);
+    // The first article's main image is still the quick draft: it is drawn at full quality on approval, and doesn't stop it.
+    expect(preview.items[0]).toMatchObject({ heroIsDraft: true, missing: [] });
     expect(preview.items.every((i: { warnings: string[] }) => Array.isArray(i.warnings))).toBe(true);
     const similarity = (await editor.get(`/drafts/${second.id}/similarity`)).body;
     expect(['ok', 'warn', 'high']).toContain(similarity.level);
-    expect((await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-1' })).status).toBe(422);
 
     // Finish the second article: final text + an uploaded hero image.
     const tooSmall = await upload(await png(200, 100));
@@ -238,7 +241,8 @@ describe('the editorial process', () => {
     await editor.patch(`/drafts/${second.id}`, { heroMediaId: hero.body.id, placement: 'trending' });
     expect((await editor.post(`/drafts/${second.id}/finalize`)).status).toBe(204);
     // Not while the legal review of the final text is still running.
-    expect((await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-early' })).status).toBe(422);
+    const checking = (await editor.get(`/magazines/${magazineId}/preview`)).body.items.find((i: { draft: { id: string } }) => i.draft.id === second.id);
+    expect(checking.missing.map((m: { key: string }) => m.key)).toEqual(['review']);
     await ctx.drain();
 
     const started = await editor.post(`/magazines/${magazineId}/publish`, { idempotencyKey: 'publish-test-2' });
@@ -249,13 +253,18 @@ describe('the editorial process', () => {
 
     const job = (await editor.get(`/publish-jobs/${started.body.publishJobId}`)).body;
     expect(job.status).toBe('succeeded');
+    expect(job.steps[`${draftId}:image`]).toBe('ok');
     expect(job.steps[`${draftId}:site`]).toBe('ok');
     expect(job.steps[`${second.id}:site`]).toBe('ok');
+    expect(job.steps[`${second.id}:image`]).toBeUndefined(); // an uploaded image is already full size
     expect(job.steps[`${third.id}:site`]).toBeUndefined();
 
     const [article] = await ctx.db.select().from(articles).where(eq(articles.draftId, draftId));
     expect(article!.bodyHtml).toContain('<p>');
     expect(article!.editorId).toBeTruthy();
+    // The article went out with the full-quality version of the chosen draft.
+    const [published] = await ctx.db.select({ kind: mediaAssets.kind, width: mediaAssets.width }).from(mediaAssets).where(eq(mediaAssets.id, article!.heroMediaId!));
+    expect(published).toMatchObject({ kind: 'ai_article', width: 1600 });
     const full = await ctx.app.inject({ method: 'GET', url: `/api/v1/public/articles/${article!.slug}` });
     expect(full.json().disclosure).toBe('לכותב אין החזקות בחברות הנזכרות.');
     const main = await ctx.db.select().from(homepageSlots).where(eq(homepageSlots.zone, 'main'));

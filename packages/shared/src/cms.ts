@@ -34,6 +34,11 @@ export type DraftColor = (typeof DRAFT_COLORS)[number];
 export const DRAFT_ORIGINS = ['scraped', 'manual_url', 'manual_write', 'research'] as const;
 export const PLACEMENTS = ['main', 'trending', 'none'] as const;
 export type Placement = (typeof PLACEMENTS)[number];
+/** What may still be missing before an article can be published, in the order an editor fixes it. */
+export const MISSING_KEYS = ['title', 'body', 'category', 'image', 'text', 'review'] as const;
+export type MissingKey = (typeof MISSING_KEYS)[number];
+/** The breaking-news ticker shows this many articles marked for it, newest first. */
+export const TICKER_SIZE = 12;
 export const MAGAZINE_STATUSES = ['draft', 'editing', 'ready', 'publishing', 'published', 'partially_failed', 'archived'] as const;
 export const SOCIAL_PLATFORMS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'x', 'tiktok'] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
@@ -291,6 +296,22 @@ export const ManualWriteInput = z.object({
 // ---------------------------------------------------------------------------
 // Saved edits: magazines and drafts
 // ---------------------------------------------------------------------------
+/** One thing an article still needs before it can be published. */
+export const MissingItem = z.object({ key: z.enum(MISSING_KEYS), message: z.string() });
+export type MissingItem = z.infer<typeof MissingItem>;
+
+/** The chief editor's placement of an article (desk.plan) and what the editors changed since: untouched means approved. */
+export const DeskPlanDto = z.object({
+  placement: z.enum(PLACEMENTS),
+  ticker: z.boolean(),
+  /** The section it chose because the article had none (null: it kept the article's). */
+  category: z.string().nullable(),
+  reason: z.string(),
+  at: iso,
+  changed: z.array(z.enum(['placement', 'ticker', 'category'])),
+});
+export type DeskPlanDto = z.infer<typeof DeskPlanDto>;
+
 export const DraftSummary = z.object({
   id,
   title: z.string(),
@@ -299,6 +320,12 @@ export const DraftSummary = z.object({
   colorLabel: z.enum(DRAFT_COLORS).nullable(),
   category: z.string().nullable(),
   placement: z.enum(PLACEMENTS),
+  /** Goes on the breaking-news ticker when published. */
+  ticker: z.boolean(),
+  /** What it still needs before it can be published (empty: ready, published or set aside). */
+  missing: z.array(MissingItem),
+  /** Held back when its magazine was published; it waits in "נתקעו בפרסום". */
+  stuckAt: iso.nullable(),
   sourceName: z.string().nullable(),
   thumbUrl: z.string().nullable(),
   magazine: z.object({ id, title: z.string() }).nullable(),
@@ -324,7 +351,8 @@ export type MagazineSummary = z.infer<typeof MagazineSummary>;
 export const MagazineDetail = MagazineSummary.extend({ drafts: z.array(DraftSummary) });
 export type MagazineDetail = z.infer<typeof MagazineDetail>;
 
-export const SavedEdits = z.object({ magazines: z.array(MagazineSummary), singles: z.array(DraftSummary) });
+/** stuck: articles held back when their magazine was published, oldest first, until each is published. */
+export const SavedEdits = z.object({ magazines: z.array(MagazineSummary), singles: z.array(DraftSummary), stuck: z.array(DraftSummary) });
 export type SavedEdits = z.infer<typeof SavedEdits>;
 
 export const JobRef = z.object({ id, kind: z.string(), status: z.enum(JOB_STATUSES), error: z.string().nullable() });
@@ -343,6 +371,12 @@ export const DraftDetail = z.object({
   category: z.string().nullable(),
   suggestedCategory: z.string().nullable(),
   placement: z.enum(PLACEMENTS),
+  ticker: z.boolean(),
+  /** The chief editor's choice of placement, ticker and (when it had none) section. */
+  deskPlan: DeskPlanDto.nullable(),
+  /** What it still needs before it can be published, in the order to fix it. */
+  missing: z.array(MissingItem),
+  stuckAt: iso.nullable(),
   tags: z.array(z.string()),
   authorId: z.string().nullable(),
   sendPush: z.boolean(),
@@ -390,6 +424,7 @@ export const AutosaveResult = z.object({ version: z.number().int(), savedAt: iso
 export const DraftMetaInput = z.object({
   category: CategorySlugField.nullable().optional(),
   placement: z.enum(PLACEMENTS).optional(),
+  ticker: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
   authorId: id.nullable().optional(),
   colorLabel: z.enum(DRAFT_COLORS).nullable().optional(),
@@ -424,6 +459,20 @@ export const ImageBatchDto = z.object({
   promptBy: z.enum(PROMPT_AUTHORS).nullable(),
   createdAt: iso,
   images: z.array(MediaDto),
+  /** Each option's own description (three styles) or real photo, in order; empty for older batches. */
+  variants: z.array(
+    z.object({
+      kind: z.enum(['drawn', 'photo']),
+      style: z.string(),
+      prompt: z.string(),
+      mediaId: id.nullable(),
+      credit: z.string().nullable(),
+      license: z.string().nullable(),
+      sourceUrl: z.string().nullable(),
+    }),
+  ),
+  /** The option the visual agent recommends, and why. */
+  pick: z.object({ mediaId: id, reason: z.string() }).nullable(),
   /** working: the AI is still drawing; failed: nothing came back (error says why, for the editor). */
   status: z.enum(['working', 'done', 'failed']),
   error: z.string().nullable(),
@@ -432,7 +481,10 @@ export const ImageBatchDto = z.object({
 });
 export type ImageBatchDto = z.infer<typeof ImageBatchDto>;
 
-/** The article's image options: quick drafts to choose from; the chosen one is redrawn at full quality. */
+/**
+ * The article's image options: quick drafts to choose from. The chosen one is redrawn at full quality
+ * at the final approval (an article already on the site: at once), so changing the choice costs nothing.
+ */
 export const DraftImagesDto = z.object({
   batches: z.array(ImageBatchDto),
   /** Drafts being drawn. */
@@ -440,7 +492,9 @@ export const DraftImagesDto = z.object({
   heroId: id.nullable(),
   /** The option shown as chosen: the main image, or the draft it was redrawn from. */
   chosenId: id.nullable(),
-  /** The chosen draft while its full-quality version is being made (or that failed); null once it is done. */
+  /** The main image is still a quick draft: it is drawn at full quality at the final approval. */
+  heroIsDraft: z.boolean(),
+  /** The chosen draft while its full-quality version is being made (or that failed); null otherwise. */
   upgrade: z.object({ status: z.enum(['working', 'failed']), error: z.string().nullable() }).nullable(),
 });
 export type DraftImagesDto = z.infer<typeof DraftImagesDto>;
@@ -449,6 +503,8 @@ export const GenerateImagesInput = z.object({
   prompt: z.string().trim().max(1000).optional(),
   /** Let the generator look at the original's photo (as inspiration, never copied). */
   useSourceImage: z.boolean().optional(),
+  /** Draw a round that failed again, from its own descriptions. */
+  retryOf: id.optional(),
 });
 
 export const SkipInput = z.object({ reason: z.string().trim().max(300).optional() });
@@ -556,6 +612,16 @@ export const PreviewItem = z.object({
   social: z.object({ ready: z.boolean(), platforms: z.array(z.enum(SOCIAL_PLATFORMS)) }),
   /** Why it can't be published yet (empty = ready). */
   problems: z.array(z.string()),
+  /** The same, by what to fix (the CMS takes the editor straight to it). */
+  missing: z.array(MissingItem),
+  /** The latest image options, to switch the main image here (a quick draft is drawn at full quality on approval). */
+  imageOptions: z.array(z.object({ id, thumbUrl: z.string(), chosen: z.boolean(), agentPick: z.boolean(), style: z.string().nullable() })),
+  /** Why the visual agent recommended its image (null: it didn't pick one). */
+  imagePickReason: z.string().nullable(),
+  /** The main image is still a quick draft (drawn at full quality on approval). */
+  heroIsDraft: z.boolean(),
+  ticker: z.boolean(),
+  deskPlan: DeskPlanDto.nullable(),
   /** Worth a look before publishing, but not blocking (e.g. wording close to the original). */
   warnings: z.array(z.string()),
 });
@@ -607,6 +673,8 @@ export const PublishedArticleDto = z.object({
   author: z.string().nullable(),
   commentCount: z.number().int(),
   onHomepage: z.enum(['main', 'trending']).nullable(),
+  /** Among the newest articles marked for the breaking-news ticker, which the site shows. */
+  onTicker: z.boolean(),
   /** The draft that edits this article (null until it is first opened for editing). */
   draftId: id.nullable(),
   /** Changes are being made in the editor and are not on the site yet. */

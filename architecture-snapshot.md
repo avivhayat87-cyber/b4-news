@@ -89,6 +89,11 @@ The **CMS menu was merged** on 2026-10-15 with the owner's approval (15 items we
 screens keep their own folders and addresses (links in emails keep working) and become tabs of one
 menu item; the menu item lights up on each of them and sums their red counts.
 
+`services/front-page.ts` and `services/public-photos.ts` were added on 2026-10-15 with the
+owner's approval: the chief editor places every written batch on the site, and a public figure's
+photo comes only from a source whose license allows it; both are their own concerns, apart from the
+drafts and the image prompts.
+
 ### 2.1 `apps/api/`: the backend
 
 ```
@@ -120,8 +125,13 @@ src/
                         (banners set from words in the brand fonts)
     scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source, desk (a run as the CMS
                         reads it: same-story groups), picks (the chief editor's recommendations after a run)
-    drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
+    drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, what a draft still
+                        needs before publishing (missingOf), reading models
+    front-page.ts     The chief editor places a batch on the site (desk.plan): main / hot / section only,
+                        the breaking-news ticker, a section where there is none
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
+    public-photos.ts  A real photo of a public figure, only from a source whose license allows it (Wikimedia
+                        Commons, free licenses), with its credit
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
     research.ts       The research reporter: a link, screenshots or an idea → a research file → an article from it; proof of the sources
     official-sources.ts   The official-sources registry: bodies, their domains and verified accounts; the weekly check
@@ -213,10 +223,10 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*` (incl. `desk.ts`: same-story groups; `picks.ts`: the chief editor's picks), `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` (one menu item, tabs), `components/run-board.tsx` | | `sources`, `scrape_runs` (`picks`), `scrape_run_items` (`separated`), `scraped_items` |
-| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `official_sources`, `image_batches`, `media_assets` |
+| **Newsroom editing** | `services/drafts.ts`, `front-page.ts` (the chief editor's placement of a batch), `image-brief.ts`, `public-photos.ts` (a public figure's real photo, with its credit), `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `official_sources`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | the learning agent in `settings/` (`components/agent/learning-panel.tsx`; `learning/` leads there) | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
-| **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
+| **Publishing** | `services/publish.ts` (the final approval: full-quality images, then the site; what isn't ready is held back), `articles.ts` (published articles: edit in place, remove, restore, delete, the ticker), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר"), "נתקעו בפרסום" in `saved/`, `components/editor/readiness.tsx` (what is missing, and fixing it step by step) | `app/api/revalidate`, the ticker in `components/hero.tsx` | `articles` (`ticker_at`), `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, `digest.ts` (the personal issue at the reader's hour, a self-rescheduling job), push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages (incl. preferences), "העיתון שלי" in account, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Advertising** (פרסום) | `services/ads/*` (campaigns, serving and counting, leads and the advertiser's page, banners), `services/agent/ads.ts` (the ads agent), `routes/admin/ads.ts`, `routes/ads.ts` (public: the ads, views, clicks, leads, inquiries, `/public/partners/:key`), `lib/images.ts` (`ingestAdImage`) | `ads/` (admins only), `components/ads/`, the "סוכן הפרסום" card in `settings/` | `components/ad-slot.tsx` (with the `?adspots=1` preview), `google-ad.tsx` (an AdSense unit; a stand-in in development), `app/ads.txt`, `HouseBillboard` and `HousePromo` in `ui.tsx`, `advertise/` (+ `advertise-form.tsx`, `advertise-visuals.tsx`), `partner/[key]`; app `components/ad-card.tsx`, `lib/ads.ts` | `advertisers`, `ad_campaigns`, `ad_creatives`, `ad_stats`, `ad_leads`, `ad_agent_tasks` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
@@ -316,6 +326,22 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   sections, and a person still chooses what to save. Articles about the same story are grouped for
   free; a group is written as ONE article from all its reports (`rewrite.combine`) only when the
   editor chooses it. Decided by the owner on 2026-10-15.
+- **The agents choose, a person reviews: untouched is approved.** When the AI has written a
+  batch, the chief editor (`services/front-page.ts`, the fast model, one call per batch, skill
+  `desk.plan`) places it: one main story at most, hot ones, the breaking-news ticker (the newest 12
+  marked), and a section where discovery left none. The visual agent draws an article's three
+  options in three different styles (one description each, in the same call) and picks one. What
+  an agent chose is kept apart from what the editors chose, shown with its reason, and an editor's
+  change always wins and is learned from. A chosen image stays a quick draft until the final
+  approval, which draws it at full quality, so changing a choice costs nothing. The approval
+  publishes what is ready and holds the rest back in "נתקעו בפרסום", where the editor is walked
+  through what is missing. Decided by the owner on 2026-10-15.
+- **A real person appears only in a real photo, with its credit, from a source that allows it.**
+  Drawn images never show identifiable real people. For a public figure, `services/public-photos.ts`
+  takes a photo only under a free license that allows commercial use and cropping (Wikimedia
+  Commons, its license read per file), keeps where it came from, never edits it with AI, and prints
+  the credit under it. A photo from any other site is never taken, credit or not. Decided by the
+  owner on 2026-10-15.
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video

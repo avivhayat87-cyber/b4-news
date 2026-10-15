@@ -1,23 +1,26 @@
 'use client';
 // The split-screen editor: the canvas on the right (Hebrew reading start), the
-// read-only original and the tools on the left. Everything autosaves.
-import type { DraftDetail, DraftReviewDto, MediaDto, ResearchTaskDto } from '@b4/shared';
+// read-only original and the tools on the left. Everything autosaves. Above them, what the
+// article still needs before it is published; with ?fix=stuck (or a magazine's id) the editor is
+// walked through it, article after article, moving to the next missing step by itself.
+import type { DraftDetail, DraftReviewDto, MediaDto, MissingKey, ResearchTaskDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { use, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, use, useEffect, useRef, useState } from 'react';
 import { Canvas } from '@/components/editor/canvas';
 import { AiPanel, ImagesPanel, MetaPanel, OriginalPane } from '@/components/editor/panels';
+import { type EditorTab, FOCUS_RING, FixBanner, MISSING_TAB, ReadinessBar, useFixQueue } from '@/components/editor/readiness';
 import { SocialPanel } from '@/components/editor/social-panel';
 import { DossierPanel } from '@/components/research/dossier-panel';
 import { ReviewPanel } from '@/components/review/review-panel';
 import { type SaveState, useAutosave } from '@/components/editor/use-autosave';
 import { Badge, Button, ColorDot, ErrorBox, Loading, Spinner, cx, useToast } from '@/components/ui';
-import { SITE_URL, admin, errorMessage } from '@/lib/api';
+import { SITE_URL, admin, errorMessage, idempotencyKey } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { DRAFT_STATUS, formatTime } from '@/lib/labels';
 
-type Tab = 'research' | 'original' | 'ai' | 'images' | 'meta' | 'review' | 'social';
+type Tab = EditorTab;
 
 const SAVE_LABEL: Record<SaveState, string> = {
   saved: 'נשמר',
@@ -30,7 +33,11 @@ const SAVE_LABEL: Record<SaveState, string> = {
 
 export default function DraftPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return <Editor key={id} id={id} />;
+  return (
+    <Suspense fallback={<Loading />}>
+      <Editor key={id} id={id} />
+    </Suspense>
+  );
 }
 
 function Editor({ id }: { id: string }) {
@@ -38,15 +45,53 @@ function Editor({ id }: { id: string }) {
   const qc = useQueryClient();
   const toast = useToast();
   const canEdit = useCan('editor');
+  const fixMode = useSearchParams().get('fix');
   const [chosenTab, setTab] = useState<Tab | null>(null);
   const [selection, setSelection] = useState('');
+  // The step the editor clicked in the bar (in fixing mode: always the first missing one).
+  const [clicked, setClicked] = useState<MissingKey | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const finalizeRef = useRef<HTMLSpanElement>(null);
 
   const draftQ = useQuery({
     queryKey: ['draft', id],
     queryFn: () => admin.get<DraftDetail>(`/drafts/${id}`),
-    refetchInterval: (q) => (q.state.data && (q.state.data.activeJob || ['queued_ai', 'ai_processing'].includes(q.state.data.status)) ? 2000 : false),
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (d && (d.activeJob || ['queued_ai', 'ai_processing'].includes(d.status))) return 2000;
+      // While fixing, the legal review and the chief editor finish by themselves: their result moves the page on.
+      return fixMode && d?.missing.some((m) => m.key === 'review') ? 3000 : false;
+    },
   });
   const draft = draftQ.data;
+  const queue = useFixQueue(fixMode, id);
+  const focus: MissingKey | null = fixMode ? (draft?.missing[0]?.key ?? null) : clicked && draft?.missing.some((m) => m.key === clicked) ? clicked : null;
+  // Fixing: each time the step to do changes, its place opens by itself.
+  useEffect(() => {
+    if (!fixMode || !focus) return;
+    const tab = MISSING_TAB[focus];
+    if (tab) setTab(tab);
+    if (focus === 'title') titleRef.current?.focus();
+    if (focus === 'text') finalizeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [fixMode, focus]);
+  const goTo = (key: MissingKey) => {
+    setClicked(key);
+    const tab = MISSING_TAB[key];
+    if (tab) setTab(tab);
+    if (key === 'title') titleRef.current?.focus();
+    if (key === 'text') finalizeRef.current?.querySelector('button')?.focus();
+  };
+  const fixHref = (draftId: string) => `/drafts/${draftId}?fix=${encodeURIComponent(fixMode ?? '')}`;
+  const publishNow = useMutation({
+    mutationFn: () => admin.post(`/drafts/${id}/publish`, { idempotencyKey: idempotencyKey() }),
+    onSuccess: () => {
+      toast('הכתבה עולה לאתר.');
+      void qc.invalidateQueries({ queryKey: ['saved'] });
+      if (queue?.nextId) router.push(fixHref(queue.nextId));
+      else router.push(queue?.backHref ?? '/saved');
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
   // A research behind the article: it wrote it, or proposes an update to it.
   const researchQ = useQuery({ queryKey: ['draft-research', id], queryFn: () => admin.get<ResearchTaskDto | null>(`/drafts/${id}/research`) });
   const hasResearch = draft?.origin === 'research' || Boolean(researchQ.data);
@@ -69,19 +114,29 @@ function Editor({ id }: { id: string }) {
   const refetch = () => void qc.invalidateQueries({ queryKey: ['draft', id] });
   const onError = (e: unknown) => toast(errorMessage(e), 'danger');
   const action = useMutation({
-    mutationFn: async (path: 'finalize' | 'reopen' | 'skip' | 'unskip') => {
-      if (path === 'finalize' && !(await autosave.flush(true))) throw new Error('השמירה נכשלה. נסו שוב לפני סיום הטקסט.');
-      return admin.post(`/drafts/${id}/${path}`, path === 'skip' ? {} : undefined);
+    // "approve": the text is final, then on to the next article (in fixing mode the page moves to the next step instead);
+    // "finalize": the same, staying for the social networks.
+    mutationFn: async (path: 'approve' | 'finalize' | 'reopen' | 'skip' | 'unskip') => {
+      if ((path === 'approve' || path === 'finalize') && !(await autosave.flush(true))) throw new Error('השמירה נכשלה. נסו שוב לפני אישור הטקסט.');
+      return admin.post(`/drafts/${id}/${path === 'approve' ? 'finalize' : path}`, path === 'skip' ? {} : undefined);
     },
     onSuccess: (_r, path) => {
       refetch();
       void qc.invalidateQueries({ queryKey: ['saved'] });
+      if (path === 'approve') {
+        toast('הטקסט אושר. הבדיקה המשפטית ותוכנית ההפצה מוכנות בעוד רגע.');
+        if (!fixMode) void saveAndNext();
+      }
       if (path === 'finalize') {
-        toast('הטקסט סומן כסופי. אפשר לעבור לרשתות החברתיות.');
+        toast('הטקסט אושר. אפשר לעבור לרשתות החברתיות.');
         setTab('social');
       }
     },
-    onError,
+    onError: (e) => {
+      onError(e);
+      // A missing section stops the approval: open its place.
+      if (/קטגוריה/.test(errorMessage(e))) goTo('category');
+    },
   });
   // A draft of an article that is already on the site: the site changes only on "שמירה ועדכון באתר".
   const liveEdit = !!draft?.publishedArticle && draft.status !== 'published';
@@ -104,7 +159,7 @@ function Editor({ id }: { id: string }) {
   });
   const setHero = useMutation({
     mutationFn: (m: MediaDto | null) => admin.patch(`/drafts/${id}`, { heroMediaId: m?.id ?? null }),
-    // Choosing an AI draft starts its full-quality version, which the images panel follows.
+    // A quick draft stays one until the final approval (an article already on the site: drawn now, and the panel follows it).
     onSuccess: () => {
       refetch();
       void qc.invalidateQueries({ queryKey: ['images', id] });
@@ -173,6 +228,9 @@ function Editor({ id }: { id: string }) {
         </div>
       </header>
 
+      {queue && <FixBanner draft={draft} queue={queue} onNext={() => queue.nextId && router.push(fixHref(queue.nextId))} onPublish={() => publishNow.mutate()} publishing={publishNow.isPending} />}
+      {!liveEdit && <ReadinessBar draft={draft} focus={focus} onGo={goTo} />}
+
       {stopped && reviewQ.data && (
         <div className="flex flex-wrap items-center gap-3 bg-brand px-5 py-2.5 text-sm font-bold text-white" role="alert">
           {reviewQ.data.state === 'failed'
@@ -212,6 +270,7 @@ function Editor({ id }: { id: string }) {
         <section className="flex min-h-0 flex-col border-l border-line bg-white" aria-label="הקנבס: עריכת הכתבה">
           <div className="space-y-2 border-b border-line-soft px-6 pb-3 pt-5">
             <textarea
+              ref={titleRef}
               value={autosave.content.title}
               onChange={(e) => autosave.update({ title: e.target.value.replace(/\n/g, ' ') })}
               readOnly={!editable}
@@ -219,7 +278,7 @@ function Editor({ id }: { id: string }) {
               maxLength={200}
               placeholder="כותרת"
               aria-label="כותרת"
-              className="block w-full resize-none bg-transparent font-display text-[26px] font-extrabold leading-tight outline-none placeholder:text-muted/60"
+              className={cx('block w-full resize-none bg-transparent font-display text-[26px] font-extrabold leading-tight outline-none placeholder:text-muted/60', focus === 'title' && FOCUS_RING)}
             />
             <textarea
               value={autosave.content.subtitle}
@@ -265,10 +324,10 @@ function Editor({ id }: { id: string }) {
             {tab === 'research' && <DossierPanel draftId={id} />}
             {tab === 'original' && <OriginalPane draft={draft} onQueued={refetch} />}
             {tab === 'ai' && <AiPanel draft={draft} selection={selection} busyJob={draft.activeJob} onQueued={refetch} />}
-            {tab === 'images' && <ImagesPanel draft={draft} onHero={(m) => setHero.mutate(m)} />}
-            {tab === 'meta' && <MetaPanel draft={draft} onSaved={refetch} onShowSource={() => setTab('original')} />}
+            {tab === 'images' && <ImagesPanel draft={draft} focus={focus === 'image'} onHero={(m) => setHero.mutate(m)} />}
+            {tab === 'meta' && <MetaPanel draft={draft} focus={focus === 'category'} onSaved={refetch} onShowSource={() => setTab('original')} />}
             {tab === 'review' && (
-              <div className="p-5">
+              <div className={cx('p-5', focus === 'review' && 'bg-brand-soft/40')}>
                 <ReviewPanel draftId={id} final={final} />
               </div>
             )}
@@ -298,26 +357,37 @@ function Editor({ id }: { id: string }) {
               לא לפרסם
             </Button>
           )}
-          {draft.status === 'text_final' ? (
+          {draft.status === 'text_final' && (
             <Button busy={action.isPending && action.variables === 'reopen'} onClick={() => action.mutate('reopen')}>
               פתיחת הטקסט לעריכה
             </Button>
-          ) : (
-            editable && (
-              <Button variant="dark" busy={action.isPending && action.variables === 'finalize'} onClick={() => action.mutate('finalize')}>
-                סיום טקסט
-              </Button>
-            )
           )}
           <span className="mr-auto" />
-          {!draft.magazine && (
+          {!draft.magazine && !fixMode && (
             <Button onClick={() => router.push(`/drafts/${id}/preview`)} disabled={draft.status === 'skipped'}>
               תצוגה מקדימה ופרסום
             </Button>
           )}
-          <Button variant="primary" onClick={saveAndNext}>
-            {draft.nav?.nextId ? 'שמור והמשך לכתבה הבאה' : draft.magazine ? 'שמור ולתצוגה המקדימה' : 'שמור'}
-          </Button>
+          {/* One step: the text approved and on to the next article. Saving without approving stays possible. */}
+          {editable && (
+            <Button variant="ghost" onClick={fixMode ? () => void autosave.flush(true) : saveAndNext}>
+              {fixMode ? 'שמירה' : draft.nav?.nextId ? 'שמירה בלי אישור והמשך' : 'שמירה בלי אישור'}
+            </Button>
+          )}
+          {editable ? (
+            <span ref={finalizeRef} className={cx('inline-flex', focus === 'text' && FOCUS_RING)}>
+              <Button variant="primary" busy={action.isPending && action.variables === 'approve'} onClick={() => action.mutate('approve')}>
+                {fixMode ? 'אישור הטקסט' : draft.nav?.nextId ? 'אישור הטקסט והמשך לכתבה הבאה' : draft.magazine ? 'אישור הטקסט ולתצוגה המקדימה' : 'אישור הטקסט'}
+              </Button>
+            </span>
+          ) : (
+            !fixMode &&
+            draft.status !== 'skipped' && (
+              <Button variant="primary" onClick={saveAndNext}>
+                {draft.nav?.nextId ? 'לכתבה הבאה' : draft.magazine ? 'לתצוגה המקדימה' : 'לתצוגה המקדימה ולפרסום'}
+              </Button>
+            )
+          )}
         </footer>
       )}
     </div>

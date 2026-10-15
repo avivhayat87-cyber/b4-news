@@ -3,10 +3,10 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AccountsOutput, AccountsRequest, DiscoveryPickOutput, DiscoveryPickRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchUpdateOutput, ResearchUpdateRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
+import type { AccountsOutput, AccountsRequest, DeskPlanOutput, DeskPlanRequest, DiscoveryPickOutput, DiscoveryPickRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchUpdateOutput, ResearchUpdateRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
-import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
+import type { ImagePickOutput, ImagePickRequest, ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
 import type { AdBriefOutput, AdBriefRequest, AdReportOutput, AdReportRequest, AdReviewOutput, AdReviewRequest } from './types';
 
 const usage = () => ({ model: 'fake', inputTokens: null, outputTokens: null, latencyMs: 1 });
@@ -204,6 +204,28 @@ export class FakeText implements TextAI {
     };
   }
 
+  /**
+   * The batch by the sites that reported it and the discovery score: the first is the main story,
+   * the next two hot, a story reported by three sites or more on the ticker, and the first section
+   * for an article without one; so the desk works without an AI key.
+   */
+  async deskPlan(req: DeskPlanRequest): Promise<AiResult<DeskPlanOutput>> {
+    const ranked = [...req.articles].sort((a, b) => b.sites - a.sites || (b.score ?? 0) - (a.score ?? 0));
+    return {
+      data: {
+        items: ranked.map((a, i) => ({
+          id: a.id,
+          placement: i === 0 ? 'main' : i <= 2 ? 'trending' : 'none',
+          ticker: a.sites >= 3,
+          section: a.section ? null : (req.sections[0]?.slug ?? null),
+          rank: i + 1,
+          reason: i === 0 ? '(דוגמה) הסיפור החשוב בקבוצה' : '(דוגמה) לפי מספר האתרים שדיווחו',
+        })),
+      },
+      usage: usage(),
+    };
+  }
+
   /** Finds the risky sentences by a few words, so the review flow works without an AI key. */
   async review(req: ReviewRequest): Promise<AiResult<ReviewOutput>> {
     const RULES: [ReviewOutput['issues'][number]['flag'], RegExp, string][] = [
@@ -319,10 +341,21 @@ export class FakeVisual implements VisualAI {
 
   async imagePrompt(req: ImagePromptRequest): Promise<AiResult<ImagePromptOutput>> {
     const idea = req.tried.length ? ` (רעיון ${req.tried.length + 1})` : '';
+    // A sample public figure, so the real-photo path can be tried without a key.
+    const text = `${req.article.title} ${req.article.body}`;
     return {
-      data: { prompt: `צילום עיתונאי לכתבה "${req.article.title}": מקום וחפצים שקשורים לנושא, אור טבעי, בלי טקסט ובלי אנשים מזוהים.${idea}` },
+      data: {
+        prompts: req.styles.map((style) => `${style}, לכתבה "${req.article.title}": מקום וחפצים שקשורים לנושא, בלי טקסט ובלי אנשים מזוהים.${idea}`),
+        public_figure: text.includes('אמיר ירון') ? { name_he: 'אמיר ירון', name_en: 'Amir Yaron' } : null,
+      },
       usage: usage(),
     };
+  }
+
+  /** Takes a real photo when there is one, otherwise the first option. */
+  async pickImage(req: ImagePickRequest): Promise<AiResult<ImagePickOutput>> {
+    const photo = req.options.findIndex((o) => o.label.startsWith('צילום אמיתי'));
+    return { data: { choice: photo >= 0 ? photo + 1 : 1, reason: '(ספק לדוגמה) האפשרות הברורה ביותר לכתבה.' }, usage: usage() };
   }
 
   async reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>> {

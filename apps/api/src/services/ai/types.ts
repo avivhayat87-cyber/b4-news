@@ -205,6 +205,36 @@ export type DiscoveryPickRequest = {
   today: string;
 };
 
+/** The chief editor's placement of a batch: per article where it goes on the site, the ticker, a section when it has none, and why. */
+export const DeskPlanOutput = z.object({
+  items: upTo(
+    z.object({
+      id: clip(20),
+      placement: z.enum(['main', 'trending', 'none']),
+      ticker: z.boolean(),
+      section: z.string().nullable(),
+      rank: z.number().int(),
+      reason: clip(300),
+    }),
+    60,
+  ),
+});
+export type DeskPlanOutput = z.infer<typeof DeskPlanOutput>;
+
+export type DeskPlanRequest = {
+  /** prompt_templates "desk.plan" */
+  systemPrompt: string;
+  today: string;
+  /** The batch: id, headline, subtitle, opening, section (Hebrew name, or null), how many sites reported it, the discovery score. */
+  articles: { id: string; title: string; subtitle: string; opening: string; section: string | null; sites: number; score: number | null }[];
+  /** What the site shows now: the main stories (the first is the lead), the hot ones and the ticker, each with how long ago. */
+  homepage: { main: string[]; trending: string[]; ticker: string[] };
+  /** The sections an article without one may get (slug and Hebrew name). */
+  sections: { slug: string; name: string }[];
+  /** Recent places where the editors changed the chief editor's choice. */
+  corrections: string[];
+};
+
 /** The article written from the file (no image prompt: the visual agent writes those). Trimmed, never refused: the research is already paid for. */
 export const ResearchWriteOutput = z.object({
   title: z.string().min(1).transform((s) => s.slice(0, 200)),
@@ -396,6 +426,8 @@ export interface TextAI {
   meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>>;
   /** The chief editor's picks after a discovery run (the fast model). */
   discoveryPick(req: DiscoveryPickRequest): Promise<AiResult<DiscoveryPickOutput>>;
+  /** The chief editor places a batch on the site (the fast model, one call per batch). */
+  deskPlan(req: DeskPlanRequest): Promise<AiResult<DeskPlanOutput>>;
   /** The official-sources registry: a body's accounts its site doesn't link (two searches at most). */
   findAccounts(req: AccountsRequest): Promise<AiResult<AccountsOutput> & { searches: number; toolErrors: string[] }>;
   review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;
@@ -450,8 +482,15 @@ export interface VideoAI {
 // The visual agent (Google Gemini): writes the prompts for article images and reels,
 // in Hebrew for the editor, and learns from what the editors did with them.
 // ---------------------------------------------------------------------------
-/** The description of an article's main image, in Hebrew. */
-export const ImagePromptOutput = z.object({ prompt: z.string().min(5).max(1500) });
+/**
+ * The descriptions of an article's image options, in Hebrew, one per style (each is drawn once), and
+ * the public figure the story is about, if there is one (a real photo of them may be looked for).
+ */
+export const ImagePromptOutput = z.object({
+  prompts: z.array(z.string().min(5).max(1500)).min(1).max(3),
+  /** Empty names (or null) when the story isn't about one public figure. */
+  public_figure: z.object({ name_he: clip(120), name_en: clip(120) }).nullable(),
+});
 export type ImagePromptOutput = z.infer<typeof ImagePromptOutput>;
 
 export type ImagePromptRequest = {
@@ -459,11 +498,26 @@ export type ImagePromptRequest = {
   systemPrompt: string;
   /** The newsroom's settings and the rules the agent learned. */
   guidance: string;
+  /** The three styles: one description each, in this order. */
+  styles: string[];
   article: ArticleText & { section: string };
   /** The original report's photo, when the editor asked for it as inspiration (looked at, never copied). */
   images: ImageReference[];
   /** Descriptions already drawn for this article: the editor asked for something else. */
   tried: string[];
+};
+
+/** The option the visual agent recommends for the article (1-based), and why, in Hebrew. */
+export const ImagePickOutput = z.object({ choice: z.number().int().min(1).max(6), reason: clip(400) });
+export type ImagePickOutput = z.infer<typeof ImagePickOutput>;
+
+export type ImagePickRequest = {
+  /** prompt_templates "visual.pick" */
+  systemPrompt: string;
+  guidance: string;
+  article: ArticleText & { section: string };
+  /** The options in order, each with what it is (a style, or a real photo and its credit). */
+  options: { label: string; image: ImageReference }[];
 };
 
 export type ReelPromptsRequest = {
@@ -494,6 +548,8 @@ export interface VisualAI {
   /** False for the development stand-in. */
   readonly live: boolean;
   imagePrompt(req: ImagePromptRequest): Promise<AiResult<ImagePromptOutput>>;
+  /** Looks at the drawn options (small JPEGs) and recommends one for the article. */
+  pickImage(req: ImagePickRequest): Promise<AiResult<ImagePickOutput>>;
   reelPrompts(req: ReelPromptsRequest): Promise<AiResult<ReelPromptsOutput>>;
   learn(req: VisualLearnRequest): Promise<AiResult<LearnBatchOutput>>;
 }

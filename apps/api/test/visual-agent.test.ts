@@ -2,6 +2,7 @@
 // editor didn't, with the newsroom's settings and its learned rules; it records what the
 // editor chose at publish; and it learns from those cases, looking at the pictures, in one
 // call that makes a new active version of its rules. No call reaches Google.
+import { DEFAULT_IMAGE_STYLES } from '@b4/shared';
 import { aiJobs, eq, visualFeedback } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fixedAi } from '../src/services/ai';
@@ -55,30 +56,54 @@ beforeAll(async () => {
 afterAll(() => ctx.close());
 
 describe('the visual agent', () => {
-  it('describes the first drafts in Hebrew as soon as the article is written, and a new idea when asked again', async () => {
-    // The AI's first version comes with three image drafts, from the agent's description.
+  it('describes three different drafts in Hebrew as soon as the article is written, one per style, and picks one', async () => {
+    // The AI's first version comes with three image drafts, each from its own description in its own style.
     const [first] = await batches();
     expect(first).toMatchObject({ status: 'done', promptBy: 'agent' });
     expect(first.prompt).toMatch(/[א-ת]/);
     expect(first.images).toHaveLength(3);
+    expect(first.variants.map((v: { style: string }) => v.style)).toEqual([...DEFAULT_IMAGE_STYLES]);
+    expect(new Set(first.variants.map((v: { prompt: string }) => v.prompt)).size).toBe(3);
+    // The agent recommended one, and it became the main image (still a quick draft).
+    expect(first.pick).toMatchObject({ mediaId: first.images[0].id });
+    expect(first.pick.reason).toMatch(/[א-ת]/);
+    expect((await editor.get(`/drafts/${draftId}/images`)).body).toMatchObject({ heroId: first.images[0].id, heroIsDraft: true });
     const jobs = await ctx.db.select({ type: aiJobs.type, promptKey: aiJobs.promptKey }).from(aiJobs);
     expect(jobs).toContainEqual({ type: 'visual_prompt', promptKey: 'visual.image' });
+    expect(jobs).toContainEqual({ type: 'visual_prompt', promptKey: 'visual.pick' });
     expect(jobs.some((j) => j.type === 'translate')).toBe(true); // the image model gets it in English
 
     // "3 new drafts" without touching the description: the agent knows what was tried.
     expect((await editor.post(`/drafts/${draftId}/images`, {})).status).toBe(202);
     await ctx.drain();
     expect(visual.prompts[0]!.tried).toEqual([first.prompt]);
+    expect(visual.prompts[0]!.styles).toEqual([...DEFAULT_IMAGE_STYLES]);
     const [second] = await batches();
     expect(second).toMatchObject({ status: 'done', promptBy: 'agent' });
     expect(second.prompt).not.toBe(first.prompt);
-    expect(drafts.calls[0]).toContain(second.prompt); // the stand-in "translation" keeps the words
+    // Each image is drawn from its own description (the stand-in "translation" keeps the words).
+    expect(drafts.calls).toHaveLength(3);
+    second.variants.forEach((v: { prompt: string }, i: number) => expect(drafts.calls[i]).toContain(v.prompt));
+    // The agent's new pick replaces its own earlier one as the main image.
+    expect((await editor.get(`/drafts/${draftId}/images`)).body.heroId).toBe(second.pick.mediaId);
 
-    // The editor's own description is used as it is.
+    // The editor's own description is used as it is, for all three.
     await editor.post(`/drafts/${draftId}/images`, { prompt: 'נמל בשחר, מנופים ומכולות' });
     await ctx.drain();
     expect(visual.prompts).toHaveLength(1);
-    expect((await batches())[0]).toMatchObject({ promptBy: 'editor', prompt: 'נמל בשחר, מנופים ומכולות' });
+    const [own] = await batches();
+    expect(own).toMatchObject({ promptBy: 'editor', prompt: 'נמל בשחר, מנופים ומכולות' });
+    expect(own.variants.every((v: { prompt: string }) => v.prompt === 'נמל בשחר, מנופים ומכולות')).toBe(true);
+  });
+
+  it('never replaces the image the editor chose with its own pick', async () => {
+    const [round] = await batches();
+    await editor.patch(`/drafts/${draftId}`, { heroMediaId: round.images[2].id });
+    await editor.post(`/drafts/${draftId}/images`, {});
+    await ctx.drain();
+    const state = (await editor.get(`/drafts/${draftId}/images`)).body;
+    expect(state.batches[0].pick).not.toBeNull();
+    expect(state.heroId).toBe(round.images[2].id);
   });
 
   it('writes by the newsroom settings and by the rules it learned', async () => {
@@ -97,19 +122,20 @@ describe('the visual agent', () => {
     const [round] = await batches();
     const chosen = round.images[1];
     await editor.patch(`/drafts/${draftId}`, { heroMediaId: chosen.id, category: 'israeli-economy' });
-    await ctx.drain(); // the full-quality version
+    await ctx.drain();
     expect((await editor.post(`/drafts/${draftId}/finalize`)).status).toBe(204);
     await ctx.drain(); // the legal review of the final text
     expect((await editor.post(`/drafts/${draftId}/publish`, { idempotencyKey: 'visual-agent-1' })).status).toBe(202);
-    await ctx.drain();
+    await ctx.drain(); // the full-quality version of the chosen draft, then the site
 
     const [f] = await ctx.db.select().from(visualFeedback).where(eq(visualFeedback.kind, 'article_image'));
     expect(f).toMatchObject({ status: 'pending', chosenMediaId: chosen.id });
     expect(f!.rejectedMediaIds).toHaveLength(2);
-    expect(f!.detail).toMatchObject({ kind: 'article_image', outcome: 'ai' });
+    // The agent recommended the first; the editor chose the second style.
+    expect(f!.detail).toMatchObject({ kind: 'article_image', outcome: 'ai', agentPick: 'changed', chosenStyle: DEFAULT_IMAGE_STYLES[1] });
     const rounds = (f!.detail as { rounds: { by: string | null; chosen: boolean }[] }).rounds;
-    expect(rounds.map((r) => r.by)).toEqual(['agent', 'agent', 'editor', 'agent']);
-    expect(rounds.map((r) => r.chosen)).toEqual([false, false, false, true]);
+    expect(rounds.map((r) => r.by)).toEqual(['agent', 'agent', 'editor', 'agent', 'agent']);
+    expect(rounds.map((r) => r.chosen)).toEqual([false, false, false, false, true]);
 
     let overview = (await editor.get('/agent/visual')).body;
     expect(overview).toMatchObject({ pending: 1, learned: 0, live: false, learning: false });
@@ -120,6 +146,7 @@ describe('the visual agent', () => {
     const lesson = visual.lessons[0]!;
     expect(lesson.cases).toHaveLength(1);
     expect(lesson.cases[0]!.text).toContain('the editor chose an image from this round');
+    expect(lesson.cases[0]!.text).toContain('the editor chose another one');
     expect(lesson.cases[0]!.images.map((i) => i.label)).toEqual(['the image the editor chose', 'an option the editor passed over', 'an option the editor passed over']);
     expect(lesson.cases[0]!.images[0]!.image.mimeType).toBe('image/jpeg');
     expect(lesson.currentRules).toBe('1. רק מקומות אמיתיים');

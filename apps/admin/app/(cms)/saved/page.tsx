@@ -33,6 +33,25 @@ export default function SavedPage() {
         }
       />
 
+      {saved.data.stuck.length > 0 && (
+        <Card
+          title={`נתקעו בפרסום (${saved.data.stuck.length})`}
+          className="mb-6 ring-2 ring-brand/30"
+          actions={
+            <LinkButton href={`/drafts/${saved.data.stuck[0]!.id}?fix=stuck`} variant="primary" className="h-8 px-3 text-sm">
+              לתקן אחת אחרי השנייה
+            </LinkButton>
+          }
+        >
+          <p className="-mt-1 mb-3 text-sm text-ink-2">כתבות שלא עלו עם המגזין שלהן כי חסר בהן משהו, מהישנה לחדשה. כשמשלימים, מפרסמים אותן מכאן, והן יוצאות מהרשימה.</p>
+          <ul className="-mx-5 -mb-5 divide-y divide-line-soft border-t border-line-soft">
+            {saved.data.stuck.map((d) => (
+              <DraftRow key={d.id} d={d} fixHref={`/drafts/${d.id}?fix=stuck`} />
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card
         title="מגזינים"
         actions={

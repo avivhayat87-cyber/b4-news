@@ -7,10 +7,11 @@ import { TickerMotion } from './ticker-motion';
 import { CategoryTag, PublishedTime, wrap } from './ui';
 
 /**
- * The 7 main articles, opened by the breaking-news ticker: one big image that
- * rotates through the lead story and stories 4-7, and stories 2-3 fixed beside it.
+ * The 7 main articles, opened by the breaking-news ticker (the articles the newsroom marked for it,
+ * newest first): one big image that rotates through the lead story and stories 4-7, and stories 2-3
+ * fixed beside it.
  */
-export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: ArticleCard[] }) {
+export function Hero({ articles, breaking }: { articles: ArticleCard[]; breaking: ArticleCard[] }) {
   const [lead, ...rest] = articles;
   if (!lead) return null;
   const fixed = rest.slice(0, 2);
@@ -18,7 +19,7 @@ export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: Ar
 
   return (
     <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-3 md:pt-5`}>
-      <BreakingTicker items={latest} />
+      <BreakingTicker items={breaking} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-6">
         <HeroCarousel articles={rotating} />

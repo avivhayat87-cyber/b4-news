@@ -1,7 +1,7 @@
 // Published articles in the CMS ("כתבות באתר"): the list; changing an article that is on the
 // site (through its draft, then updated in place); removing it from the site and putting it
 // back; and, for admins, deleting a removed article for good.
-import { type ArticleListQuery, type PublishedArticleList, docToText, sanitizeDoc, textToDoc } from '@b4/shared';
+import { type ArticleListQuery, type PublishedArticleList, TICKER_SIZE, docToText, sanitizeDoc, textToDoc } from '@b4/shared';
 import {
   and,
   articleDrafts,
@@ -75,6 +75,8 @@ export async function listArticles(s: Services, query: z.infer<typeof ArticleLis
       draftStatus: articleDrafts.status,
       commentCount: sql<number>`(select count(*)::int from ${comments} where ${comments.articleId} = ${articles.id} and ${comments.status} = 'visible')`,
       zone: sql<'main' | 'trending' | null>`(select ${homepageSlots.zone} from ${homepageSlots} where ${homepageSlots.articleId} = ${articles.id} limit 1)`,
+      // On the ticker: marked, and among the newest marked the site shows.
+      onTicker: sql<boolean>`${articles.id} in (select t.id from ${articles} t where t.ticker_at is not null and t.status = 'published' order by t.ticker_at desc limit ${TICKER_SIZE})`,
     })
     .from(articles)
     .innerJoin(categories, eq(articles.categoryId, categories.id))
@@ -104,11 +106,20 @@ export async function listArticles(s: Services, query: z.infer<typeof ArticleLis
     author: r.author,
     commentCount: Number(r.commentCount ?? 0),
     onHomepage: r.zone,
+    onTicker: Boolean(r.onTicker),
     draftId: r.draftId,
     editing: Boolean(r.draftStatus && r.draftStatus !== 'published'),
   }));
   const last = items.at(-1);
   return { items, nextCursor: rows.length > PAGE_SIZE && last ? encodeCursor(last) : null };
+}
+
+/** An article on the breaking-news ticker (now, at its head) or off it, from "כתבות באתר". */
+export async function setArticleTicker(s: Services, staff: Staff, articleId: number, on: boolean): Promise<void> {
+  const a = await articleOf(s, articleId);
+  await s.db.update(articles).set({ tickerAt: on ? new Date() : null }).where(eq(articles.id, articleId));
+  await audit(s.db, { userId: staff.id, entity: 'article', entityId: String(articleId), action: on ? 'ticker_on' : 'ticker_off' });
+  if (a.status === 'published') await refreshSite(s, ['home']);
 }
 
 /**
@@ -168,7 +179,7 @@ export async function updateSiteFromDraft(s: Services, staff: Staff, draftId: st
   if (draft.status === 'queued_ai' || draft.status === 'ai_processing') throw draftErrors.aiBusy();
   if (draft.status === 'skipped') throw new AppError(409, 'skipped', 'הכתבה סומנה "לא לפרסם".');
   const [hero] = draft.heroMediaId ? await s.db.select({ kind: mediaAssets.kind }).from(mediaAssets).where(eq(mediaAssets.id, draft.heroMediaId)).limit(1) : [];
-  const problems = problemsOf({ ...draft, status: 'text_final' }, new Set(hero?.kind === 'ai_preview' && draft.heroMediaId ? [draft.heroMediaId] : []));
+  const problems = problemsOf({ ...draft, status: 'text_final' }, new Map(), new Set(hero?.kind === 'ai_preview' && draft.heroMediaId ? [draft.heroMediaId] : []));
   if (problems.length) throw new AppError(422, 'not_ready', `אי אפשר לעדכן עדיין: ${problems.join(', ')}`);
 
   const updated = await s.db.transaction((tx) => updateArticleFromDraft(tx, draft, staff.id));

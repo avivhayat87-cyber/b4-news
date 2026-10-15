@@ -38,6 +38,7 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   legal_review: 'reviewer',
   research: 'reporter',
   meeting: 'chief',
+  desk_plan: 'chief',
   discovery_pick: 'chief',
   ads: 'ads',
 };

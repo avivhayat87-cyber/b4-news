@@ -83,9 +83,23 @@ async function sectionName(db: Db, categoryId: number | null): Promise<string> {
 // --- Writing prompts --------------------------------------------------------------------------------
 type DraftForImage = { id: string; title: string; subtitle: string; bodyText: string; categoryId: number | null };
 
-/** The description of an article's main image, in Hebrew (the editor sees it; the image model gets it in English). */
-export async function writeImagePrompt(s: Services, draft: DraftForImage, opts: { requestedBy: string | null; images: ImageReference[]; tried: string[] }): Promise<string> {
-  const [template, guidance, section, visual] = await Promise.all([activePrompt(s.db, 'visual.image'), guidanceFor(s.db, 'image'), sectionName(s.db, draft.categoryId), s.ai.visual()]);
+/**
+ * The descriptions of an article's image options, in Hebrew, one per style of the newsroom's
+ * settings (the editor sees them; the image model gets them in English), and the public figure the
+ * story is about, if any. One call, whatever the number of styles.
+ */
+export async function writeImagePrompts(
+  s: Services,
+  draft: DraftForImage,
+  opts: { requestedBy: string | null; images: ImageReference[]; tried: string[] },
+): Promise<{ options: { style: string; prompt: string }[]; publicFigure: { he: string; en: string } | null }> {
+  const [template, guidance, section, visual, settings] = await Promise.all([
+    activePrompt(s.db, 'visual.image'),
+    guidanceFor(s.db, 'image'),
+    sectionName(s.db, draft.categoryId),
+    s.ai.visual(),
+    getVisualSettings(s.db),
+  ]);
   const { result } = await tracked(
     s.db,
     { type: 'visual_prompt', provider: visual.provider, model: visual.model, draftId: draft.id, requestedBy: opts.requestedBy, promptKey: 'visual.image', promptVersion: template.version },
@@ -93,12 +107,46 @@ export async function writeImagePrompt(s: Services, draft: DraftForImage, opts: 
       visual.imagePrompt({
         systemPrompt: template.body,
         guidance,
+        styles: settings.styles,
         article: { title: draft.title, subtitle: draft.subtitle, body: draft.bodyText, section },
         images: opts.images,
         tried: opts.tried,
       }),
   );
-  return result.data.prompt.trim().slice(0, 1000);
+  // A model that returned fewer descriptions than styles: the missing styles are drawn from the first one.
+  const prompts = result.data.prompts.map((p) => p.trim().slice(0, 1000)).filter(Boolean);
+  const options = settings.styles.map((style, i) => ({ style, prompt: prompts[i] ?? prompts[0]! }));
+  const figure = result.data.public_figure;
+  return { options, publicFigure: settings.realPhotos && figure?.name_en.trim() ? { he: figure.name_he.trim(), en: figure.name_en.trim() } : null };
+}
+
+/** The option the agent recommends for the article's main image (it looks at them), and why; null when it can't say. */
+export async function pickArticleImage(
+  s: Services,
+  draft: DraftForImage,
+  opts: { requestedBy: string | null; options: { label: string; image: ImageReference }[] },
+): Promise<{ index: number; reason: string } | null> {
+  if (opts.options.length === 0) return null;
+  if (opts.options.length === 1) return { index: 0, reason: 'האפשרות היחידה שנוצרה.' };
+  const [template, guidance, section, visual] = await Promise.all([activePrompt(s.db, 'visual.pick'), guidanceFor(s.db, 'image'), sectionName(s.db, draft.categoryId), s.ai.visual()]);
+  const { result } = await tracked(
+    s.db,
+    { type: 'visual_prompt', provider: visual.provider, model: visual.model, draftId: draft.id, requestedBy: opts.requestedBy, promptKey: 'visual.pick', promptVersion: template.version },
+    () => visual.pickImage({ systemPrompt: template.body, guidance, article: { title: draft.title, subtitle: draft.subtitle, body: draft.bodyText, section }, options: opts.options }),
+  );
+  const index = result.data.choice - 1;
+  if (index < 0 || index >= opts.options.length) return null;
+  return { index, reason: result.data.reason.trim() || 'מתאימה לכתבה.' };
+}
+
+/** A small JPEG of an image the agent looks at (an option it picks from, or a case it learns from). */
+export async function lookAt(data: Buffer): Promise<ImageReference | null> {
+  try {
+    const out = await sharp(data).rotate().resize({ width: 512, height: 512, fit: 'inside' }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
+    return { data: out, mimeType: 'image/jpeg' };
+  } catch {
+    return null;
+  }
 }
 
 /** A reel's picture and video prompts, in Hebrew, from the article and its pictures. */
@@ -153,6 +201,9 @@ export async function recordImageFeedback(db: Db, draft: DraftForImage & { heroM
   const round = picked?.batchId ?? ids.at(-1);
   const passedOver = options.filter((o) => o.batchId === round && o.id !== pickedId).slice(0, MAX_PASSED_OVER).map((o) => o.id);
   const usedSource = (batchId: string) => batchJobs.some((j) => j.payload.batchId === batchId && j.payload.useSourceImage === true);
+  // The agent's latest recommendation, and whether the editor kept it.
+  const lastPick = batches.findLast((b) => b.pick)?.pick ?? null;
+  const chosenStyle = batches.find((b) => b.id === picked?.batchId)?.variants.find((v) => v.mediaId === pickedId)?.style;
 
   const detail: VisualFeedbackDetail = {
     kind: 'article_image',
@@ -160,6 +211,8 @@ export async function recordImageFeedback(db: Db, draft: DraftForImage & { heroM
     section: await sectionName(db, draft.categoryId),
     rounds: batches.map((b) => ({ by: (b.promptBy as PromptAuthor | null) ?? null, prompt: b.prompt.slice(0, 600), useSource: usedSource(b.id), chosen: b.id === picked?.batchId })),
     outcome,
+    ...(lastPick ? { agentPick: lastPick.mediaId === pickedId ? ('kept' as const) : ('changed' as const) } : {}),
+    ...(chosenStyle ? { chosenStyle } : {}),
   };
   await db
     .insert(visualFeedback)
@@ -243,7 +296,11 @@ function caseText(d: VisualFeedbackDetail): string {
           `Round ${i + 1}, description by ${r.by === 'agent' ? 'you' : r.by === 'editor' ? 'the editor' : 'the writer AI (English)'}${r.useSource ? ', inspired by the source photo' : ''}: ${quote(r.prompt)}${r.chosen ? ' → the editor chose an image from this round' : ''}`,
       ),
       `Outcome: ${outcome}.`,
-    ].join('\n');
+      d.chosenStyle ? `The chosen image's style: ${d.chosenStyle}.` : '',
+      d.agentPick ? `You recommended one of the images; the editor ${d.agentPick === 'kept' ? 'kept your choice' : 'chose another one'}.` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
   return [
     `Reel. Section: ${d.section}. Title: ${d.title}`,
@@ -261,8 +318,7 @@ async function thumbnail(s: Services, mediaId: string): Promise<ImageReference |
   const [m] = await s.db.select({ key: mediaAssets.storageKey }).from(mediaAssets).where(eq(mediaAssets.id, mediaId)).limit(1);
   if (!m) return null;
   try {
-    const data = await sharp(await s.storage.get(m.key)).rotate().resize({ width: 512, height: 512, fit: 'inside' }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
-    return { data, mimeType: 'image/jpeg' };
+    return await lookAt(await s.storage.get(m.key));
   } catch {
     return null;
   }

@@ -502,7 +502,8 @@ export const TOOLS: AgentTool[] = [
   {
     name: 'publish',
     label: (i) => (i.magazineId ? 'פרסום המגזין באתר' : 'פרסום הכתבה באתר'),
-    description: 'Publishes to the site a single draft (draftId) or every ready article of a magazine (magazineId). Articles must be final, with a section and a main image. Approved social packages go out after the site.',
+    description:
+      'Publishes to the site a single draft (draftId) or every ready article of a magazine (magazineId). Articles must be final, with a section and a main image; a magazine\'s articles that are not ready are held back in "נתקעו בפרסום" for the editors. Main images chosen as quick drafts are drawn at full quality first. The distribution plans go out after the site.',
     schema: object({ draftId: { type: 'string', format: 'uuid' }, magazineId: { type: 'string', format: 'uuid' } }),
     input: z.object({ draftId: z.string().uuid().optional(), magazineId: z.string().uuid().optional() }).refine((v) => Boolean(v.draftId) !== Boolean(v.magazineId), 'צריך כתבה אחת או מגזין אחד'),
     write: true,

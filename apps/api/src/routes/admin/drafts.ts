@@ -29,6 +29,7 @@ import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
 import type { Services } from '../../services/context';
 import * as drafts from '../../services/drafts';
+import { requestDeskPlan } from '../../services/front-page';
 import { preview, publishJobDto, startPublish } from '../../services/publish';
 import * as social from '../../services/social';
 
@@ -113,9 +114,23 @@ export const draftRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
     { schema: { params, body: GenerateImagesInput, response: { 202: jobId } }, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const staff = requireStaff(req, 'editor');
-      return reply.status(202).send({ jobId: await drafts.requestImages(s, staff.id, req.params.id, 'article', req.body.prompt, { useSourceImage: req.body.useSourceImage }) });
+      return reply
+        .status(202)
+        .send({ jobId: await drafts.requestImages(s, staff.id, req.params.id, 'article', req.body.prompt, { useSourceImage: req.body.useSourceImage, retryOf: req.body.retryOf }) });
     },
   );
+
+  // "Ask the chief editor again": the batch placed anew, only where the editors left its choice as it was.
+  for (const [path, targetOf] of [
+    ['magazines', (id: string) => ({ magazineId: id })],
+    ['drafts', (id: string) => ({ draftId: id })],
+  ] as const) {
+    app.post(`/${path}/:id/desk-plan`, { schema: { params }, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+      const staff = requireStaff(req, 'editor');
+      await requestDeskPlan(s, staff, targetOf(req.params.id));
+      return reply.status(202).send();
+    });
+  }
 
   for (const [path, action] of [
     ['finalize', drafts.finalizeText],
