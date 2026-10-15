@@ -27,7 +27,6 @@ import {
   VisualAgentOverview,
   VisualAgentSettings,
 } from '@b4/shared';
-import { fileURLToPath } from 'node:url';
 import { and, desc, eq, isNull, staffApiTokens } from '@b4/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -47,8 +46,6 @@ import type { Services } from '../../services/context';
 import { learningReportsList } from '../../services/learning';
 
 const idParam = z.object({ id: z.string().uuid() });
-/** The stdio MCP server the Claude app starts (plain JS, no dependencies). */
-const MCP_SCRIPT = fileURLToPath(new URL('../../../mcp/b4-news-mcp.mjs', import.meta.url));
 const tokenDto = (t: typeof staffApiTokens.$inferSelect) => ({
   id: t.id,
   name: t.name,
@@ -200,9 +197,11 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
   /** What to paste into the Claude app's config (the token is added by the CMS after it is created). */
   app.get('/agent/mcp-config', { schema: { response: { 200: McpConfigDto } } }, async (req) => {
     requireStaff(req);
+    // "node" from the PATH and a script path that outlives releases (config.ts), so neither a
+    // Node update nor a release breaks the config once it is pasted into the app.
     return {
-      command: process.execPath,
-      args: [MCP_SCRIPT],
+      command: 'node',
+      args: [s.config.mcpScript],
       env: { B4_API_URL: `${s.config.publicApiUrl}/api/v1` },
     };
   });
