@@ -10,6 +10,7 @@ import { admin, errorMessage } from '@/lib/api';
 import { AGENT, SKILL, USAGE_PERIOD, modelName } from '@/lib/labels';
 import { Badge, Card, ErrorBox, LinkButton, Loading, cx, inputClass } from '../ui';
 import { EditorAgent } from './editor-agent';
+import { MeetingAgent } from './meeting-agent';
 import { ResearcherAgent } from './researcher-agent';
 import { ReviewerAgent } from './reviewer-agent';
 import { SkillEditor } from './skill-editor';
@@ -86,9 +87,14 @@ function Settings({ id }: { id: AgentId }) {
   if (id === 'visual') return <VisualAgent />;
   if (id === 'chief')
     return (
-      <div className="space-y-3">
-        <p className="text-[15px] text-ink-2">את העורך הראשי מפעילים בצ&apos;אט. מה שהוא יודע ואיך הוא עונה נקבע בסקיל שלו, ומה שהוא יכול לעשות נקבע בכלים של המערכת.</p>
-        <LinkButton href="/agent">לצ&apos;אט עם העורך הראשי</LinkButton>
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <p className="text-[15px] text-ink-2">את העורך הראשי מפעילים בצ&apos;אט. מה שהוא יודע ואיך הוא עונה נקבע בסקיל שלו, ומה שהוא יכול לעשות נקבע בכלים של המערכת.</p>
+          <LinkButton href="/agent">לצ&apos;אט עם העורך הראשי</LinkButton>
+        </div>
+        <div className="border-t border-line-soft pt-5">
+          <MeetingAgent />
+        </div>
       </div>
     );
   if (id === 'learning')

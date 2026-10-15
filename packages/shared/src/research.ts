@@ -269,10 +269,23 @@ export const MeetingDto = z.object({
   pitches: z.array(PitchDto),
   costUsd: z.number(),
   error: z.string().nullable(),
+  /** The morning meeting held by itself (createdBy is then empty). */
+  auto: z.boolean(),
   createdBy: z.string(),
   createdAt: iso,
 });
 export type MeetingDto = z.infer<typeof MeetingDto>;
+
+/** The morning meeting: held by itself every day at this hour (Israel), and the admins get its pitches by email. */
+export const MeetingSettings = z.object({
+  morning: z.boolean().default(true),
+  hour: z.number().int().min(5).max(12).default(8),
+  /** A standing direction for the morning meeting (empty: whatever is hot). */
+  focus: z.string().trim().max(300).default(''),
+  /** No meeting on Saturdays. */
+  skipSaturday: z.boolean().default(true),
+});
+export type MeetingSettings = z.infer<typeof MeetingSettings>;
 
 /** focus: an optional direction ("נדל"ן ומשכנתאות", "מה מעניין צרכנים השבוע"). */
 export const StartMeetingInput = z.object({ focus: z.string().trim().max(300).default('') });

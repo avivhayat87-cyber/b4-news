@@ -639,9 +639,10 @@ export const editorialMeetings = pgTable(
     pitches: jsonb().$type<PitchRecord[]>().notNull().default([]),
     costUsd: numeric({ precision: 10, scale: 4 }).notNull().default('0'),
     lastError: text(),
-    createdBy: uuid()
-      .notNull()
-      .references(() => users.id),
+    /** null: the morning meeting, held by itself. */
+    createdBy: uuid().references(() => users.id),
+    /** When its pitches were emailed (the morning meeting). */
+    notifiedAt: tstz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

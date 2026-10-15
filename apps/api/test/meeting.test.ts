@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages } from '../src/services/ai/fake';
 import type { MeetingOutput, MeetingRequest } from '../src/services/ai/types';
-import { groupTopics } from '../src/services/editorial-meeting';
+import { MeetingSettings } from '@b4/shared';
+import { groupTopics, holdMorningMeeting, isMorningDue } from '../src/services/editorial-meeting';
 import { setup, signInStaff, staffClient } from './helpers';
 
 const DISCOVERED = [
@@ -115,5 +116,35 @@ describe('editorial meeting', () => {
     const list = (await editor.get('/meetings')).body;
     expect(list).toHaveLength(2);
     expect(new Date(list[0].createdAt) >= new Date(list[1].createdAt)).toBe(true);
+  });
+
+  it('holds the morning meeting at its hour in Israel, once a day, and not on Saturday', () => {
+    const settings = MeetingSettings.parse({});
+    const thursday0830 = new Date('2026-10-15T05:30:00Z');
+    expect(isMorningDue(settings, null, thursday0830)).toBe(true);
+    expect(isMorningDue(settings, new Date('2026-10-14T06:00:00Z'), thursday0830)).toBe(true);
+    // Someone already held one today, by hand or by itself.
+    expect(isMorningDue(settings, new Date('2026-10-15T04:00:00Z'), thursday0830)).toBe(false);
+    expect(isMorningDue(settings, null, new Date('2026-10-15T06:30:00Z'))).toBe(false);
+    expect(isMorningDue(settings, null, new Date('2026-10-17T05:30:00Z'))).toBe(false);
+    expect(isMorningDue({ ...settings, skipSaturday: false }, null, new Date('2026-10-17T05:30:00Z'))).toBe(true);
+    expect(isMorningDue({ ...settings, morning: false }, null, thursday0830)).toBe(false);
+  });
+
+  it('holds the morning meeting by itself and emails its pitches to the admins', async () => {
+    const admin = staffClient(ctx, await signInStaff(ctx, 'admin'));
+    expect((await editor.put('/agent/meeting-settings', { morning: true, hour: 7, focus: 'צרכנות', skipSaturday: true })).status).toBe(403);
+    expect((await admin.put('/agent/meeting-settings', { morning: true, hour: 7, focus: 'צרכנות', skipSaturday: true })).status).toBe(200);
+
+    expect(await holdMorningMeeting(ctx.app.services)).toBe(true);
+    // A second one while it runs is skipped quietly, not an error.
+    expect(await holdMorningMeeting(ctx.app.services)).toBe(false);
+    await ctx.drain();
+    const [held] = (await editor.get('/meetings')).body;
+    expect(held).toMatchObject({ status: 'ready', auto: true, createdBy: '', focus: 'צרכנות' });
+    const mail = ctx.mailer.lastTo('admin@newsroom.test');
+    expect(mail?.subject).toBe(`ישיבת הבוקר: ${held.pitches.length} הצעות לכתבות`);
+    expect(mail?.text).toContain(held.pitches[0].title);
+    expect(mail?.text).toContain('/manual?tab=meeting');
   });
 });

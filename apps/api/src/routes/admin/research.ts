@@ -5,6 +5,7 @@
 import {
   ApprovePitchInput,
   MeetingDto,
+  MeetingSettings,
   ResearchOverviewDto,
   ResearcherSettings,
   ResearchTaskDto,
@@ -97,6 +98,16 @@ export const researchRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       return result;
     },
   );
+
+  // The morning meeting: held by itself every day, and it emails the admins (an admin's call).
+  app.get('/agent/meeting-settings', { schema: { response: { 200: MeetingSettings } } }, async () => meeting.getMeetingSettings(s.db));
+
+  app.put('/agent/meeting-settings', { schema: { body: MeetingSettings, response: { 200: MeetingSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const saved = await meeting.saveMeetingSettings(s.db, staff.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'meeting-settings', action: 'update', details: saved });
+    return saved;
+  });
 
   app.post('/meetings/:id/pitches/:pitchId/reject', { schema: { params: pitchParams, response: { 200: MeetingDto } } }, async (req) => {
     const staff = requireStaff(req, 'editor');

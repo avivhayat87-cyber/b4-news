@@ -2,7 +2,7 @@
 // "העלאה ידנית" > "ישיבת מערכת": the chief editor reads what discovery found in the last hours
 // (grouped into topics for free) and proposes original stories in one short AI call. Each pitch
 // waits for a person: approved, it goes to the research reporter at the chosen depth.
-import { MEETING_HOURS, RESEARCH_DEPTHS, type MeetingDto, type PitchDto, type ResearchDepth, type ResearchOverviewDto } from '@b4/shared';
+import { MEETING_HOURS, RESEARCH_DEPTHS, type MeetingDto, type MeetingSettings, type PitchDto, type ResearchDepth, type ResearchOverviewDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
@@ -188,7 +188,7 @@ function Meeting({ m, budgetLeft, open }: { m: MeetingDto; budgetLeft: number; o
       <span className="font-bold">{formatDateTime(m.createdAt)}</span>
       {m.focus && <span className="text-sm text-ink-2">· {m.focus}</span>}
       <span className="text-xs text-muted">
-        · {m.createdBy}
+        · {m.auto ? 'ישיבת בוקר אוטומטית' : m.createdBy}
         {m.status === 'ready' && ` · נקראו ${m.itemsRead} כתבות ב-${m.topics} נושאים · $${m.costUsd.toFixed(2)}`}
       </span>
     </span>
@@ -213,6 +213,7 @@ export function MeetingTab() {
     refetchInterval: (q) => (q.state.data?.some((m) => WORKING.includes(m.status) || m.pitches.some((p) => p.research && RESEARCHING.includes(p.research.status))) ? 4000 : false),
   });
   const overview = useQuery({ queryKey: ['research'], queryFn: () => admin.get<ResearchOverviewDto>('/research') });
+  const morning = useQuery({ queryKey: ['agent', 'meeting-settings'], queryFn: () => admin.get<MeetingSettings>('/agent/meeting-settings') });
   const start = useMutation({
     mutationFn: () => admin.post<MeetingDto>('/meetings', { focus: focus.trim() }),
     onSuccess: () => {
@@ -245,6 +246,11 @@ export function MeetingTab() {
             <Button type="submit" variant="primary" busy={start.isPending} disabled={busy || budgetLeft <= 0}>
               לכנס ישיבה
             </Button>
+            {morning.data && (
+              <Link href="/settings" className="text-sm text-info underline">
+                {morning.data.morning ? `ישיבת בוקר אוטומטית: כל יום ב-${String(morning.data.hour).padStart(2, '0')}:00${morning.data.skipSaturday ? ' (בלי שבת)' : ''}` : 'ישיבת הבוקר האוטומטית כבויה'}
+              </Link>
+            )}
             {overview.data && (
               <span className={cx('text-sm', budgetLeft <= 0 ? 'font-bold text-danger' : 'text-muted')}>
                 {budgetLeft <= 0 ? 'התקציב החודשי לתחקירים נגמר.' : `תחקירים וישיבות החודש: $${overview.data.spentUsd.toFixed(2)} מתוך $${overview.data.budgetUsd}`}
