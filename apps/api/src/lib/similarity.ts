@@ -62,29 +62,50 @@ export function compareWording(draft: string, original: string, opts: { fullPass
 /** Short words that say nothing about the subject. */
 const STOP_WORDS = new Set(['של', 'על', 'את', 'עם', 'גם', 'כי', 'אם', 'לא', 'הוא', 'היא', 'הם', 'זה', 'זו', 'אך', 'או', 'כך', 'יותר', 'אחרי', 'לפני', 'בין', 'כל', 'עד', 'מה', 'יש', 'אין', 'היום', 'אחד', 'אחת', 'the', 'and', 'for', 'with']);
 
-/** A word's forms to match on: as written, and without one Hebrew prefix letter (ו, ה, ב, ל, מ, ש, כ). */
-function subjectWords(text: string): Set<string> {
-  const out = new Set<string>();
+/** Each subject word once, with its forms to match on: as written, and without one Hebrew prefix letter (ו, ה, ב, ל, מ, ש, כ). */
+function subjectWords(text: string): string[][] {
+  const out = new Map<string, string[]>();
   for (const t of tokens(text)) {
-    if (t.norm.length < 3 || STOP_WORDS.has(t.norm)) continue;
-    out.add(t.norm);
-    if (t.norm.length > 3 && /^[והבלמשכ]/.test(t.norm)) out.add(t.norm.slice(1));
+    if (t.norm.length < 3 || STOP_WORDS.has(t.norm) || out.has(t.norm)) continue;
+    out.set(t.norm, t.norm.length > 3 && /^[והבלמשכ]/.test(t.norm) ? [t.norm, t.norm.slice(1)] : [t.norm]);
   }
-  return out;
+  return [...out.values()];
 }
 
 /**
  * How much two short texts (headlines, summaries) are about the same thing: the share of the
- * shorter one's subject words found in the other, and how many were shared. Free and rough: a
- * hint for "we may already have this story", never a decision.
+ * shorter one's subject words found in the other, and how many were shared. A word counts once,
+ * whichever of its forms matched (a one-word headline is never "two words in common"). Free and
+ * rough: a hint for "we may already have this story", never a decision.
  */
 export function topicOverlap(a: string, b: string): { score: number; shared: number } {
   const x = subjectWords(a);
   const y = subjectWords(b);
-  if (x.size === 0 || y.size === 0) return { score: 0, shared: 0 };
-  let shared = 0;
-  for (const w of x) if (y.has(w)) shared++;
-  return { score: shared / Math.min(x.size, y.size), shared };
+  if (x.length === 0 || y.length === 0) return { score: 0, shared: 0 };
+  const [fewer, more] = x.length <= y.length ? [x, y] : [y, x];
+  const other = new Set(more.flat());
+  const shared = fewer.filter((forms) => forms.some((f) => other.has(f))).length;
+  return { score: shared / fewer.length, shared };
+}
+
+/** Two headlines about the same thing: enough shared subject words. */
+export function sameTopic(a: string, b: string): boolean {
+  const { score, shared } = topicOverlap(a, b);
+  return shared >= 2 && score >= 0.5;
+}
+
+/**
+ * Headlines about the same thing, together, newest first: each item joins the first group whose
+ * opening headline is about the same thing, else opens one. Items marked alone never group.
+ */
+export function groupByTopic<T>(items: T[], opts: { title: (t: T) => string; at: (t: T) => number; alone?: (t: T) => boolean }): T[][] {
+  const groups: T[][] = [];
+  for (const item of [...items].sort((a, b) => opts.at(b) - opts.at(a))) {
+    const home = opts.alone?.(item) ? undefined : groups.find((g) => !opts.alone?.(g[0]!) && sameTopic(opts.title(item), opts.title(g[0]!)));
+    if (home) home.push(item);
+    else groups.push([item]);
+  }
+  return groups;
 }
 
 export function similarityWarning(result: SimilarityDto): string | null {

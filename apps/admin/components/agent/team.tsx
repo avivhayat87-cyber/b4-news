@@ -5,12 +5,14 @@
 // editing by an admin), and its settings and what it learned.
 import { AGENT_IDS, type AgentCardDto, type AgentId, type AgentTeamDto, type AgentUsageDto, type AgentUsageReportDto, USAGE_PERIODS, type UsagePeriod } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
 import { AGENT, SKILL, USAGE_PERIOD, modelName } from '@/lib/labels';
 import { Badge, Card, ErrorBox, LinkButton, Loading, cx, inputClass } from '../ui';
 import { EditorAgent } from './editor-agent';
+import { LearningPanel } from './learning-panel';
 import { MeetingAgent } from './meeting-agent';
+import { PicksAgent } from './picks-agent';
 import { ResearcherAgent } from './researcher-agent';
 import { ReviewerAgent } from './reviewer-agent';
 import { SkillEditor } from './skill-editor';
@@ -93,6 +95,9 @@ function Settings({ id }: { id: AgentId }) {
           <LinkButton href="/agent">לצ&apos;אט עם העורך הראשי</LinkButton>
         </div>
         <div className="border-t border-line-soft pt-5">
+          <PicksAgent />
+        </div>
+        <div className="border-t border-line-soft pt-5">
           <MeetingAgent />
         </div>
       </div>
@@ -106,18 +111,12 @@ function Settings({ id }: { id: AgentId }) {
         <LinkButton href="/ads">לדף הפרסום</LinkButton>
       </div>
     );
-  if (id === 'learning')
-    return (
-      <div className="space-y-3">
-        <p className="text-[15px] text-ink-2">הכללים שהלמידה כתבה לעורך השכתוב, והדוח אחרי כל פרסום.</p>
-        <LinkButton href="/learning">הכללים שנלמדו</LinkButton>
-      </div>
-    );
+  if (id === 'learning') return <LearningPanel />;
   return <p className="text-[15px] text-muted">אין לו הגדרות נוספות: מה שהוא עושה נקבע בסקיל שלו.</p>;
 }
 
-function AgentPanel({ agent, usage: u, when }: { agent: AgentCardDto; usage: AgentUsageDto | undefined; when: string }) {
-  const [tab, setTab] = useState<'role' | 'skills' | 'settings'>('role');
+function AgentPanel({ agent, usage: u, when, startTab = 'role' }: { agent: AgentCardDto; usage: AgentUsageDto | undefined; when: string; startTab?: 'role' | 'skills' | 'settings' }) {
+  const [tab, setTab] = useState<'role' | 'skills' | 'settings'>(startTab);
   const label = AGENT[agent.id];
   return (
     <Card title={label.name}>
@@ -188,9 +187,14 @@ function RulesPanel({ fixedRules }: { fixedRules: string[] }) {
   );
 }
 
-export function AgentTeam() {
+/** focus: an agent to open at its settings ("/settings?tab=agents&agent=learning": what the AI learned). */
+export function AgentTeam({ focus }: { focus?: string | null }) {
   const team = useQuery({ queryKey: ['agents'], queryFn: () => admin.get<AgentTeamDto>('/agents') });
-  const [picked, setPicked] = useState<Pick>('chief');
+  const focused = AGENT_IDS.find((id) => id === focus);
+  const [picked, setPicked] = useState<Pick>(focused ?? 'chief');
+  useEffect(() => {
+    if (focused) setPicked(focused);
+  }, [focused]);
   const [period, setPeriod] = useState<UsagePeriod>('month');
   const [range, setRange] = useState<Range>(() => {
     const today = israelToday();
@@ -253,7 +257,11 @@ export function AgentTeam() {
         <p className="mt-4 text-xs text-muted">לוחצים על סוכן כדי לראות מה הוא עושה, את הסקיל שלו ואת ההגדרות שלו. העלויות הן הערכה לפי מחירי המחירון, והימים לפי שעון ישראל.</p>
       </Card>
 
-      {picked === 'rules' ? <RulesPanel fixedRules={fixedRules} /> : <AgentPanel key={picked} agent={byId.get(picked)!} usage={usageOf(picked)} when={when} />}
+      {picked === 'rules' ? (
+        <RulesPanel fixedRules={fixedRules} />
+      ) : (
+        <AgentPanel key={picked} agent={byId.get(picked)!} usage={usageOf(picked)} when={when} startTab={picked === focused ? 'settings' : 'role'} />
+      )}
     </div>
   );
 }

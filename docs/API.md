@@ -128,9 +128,12 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | POST | `/admin/discovery/runs` | editor | `{ region }` (`local` default · `international`) → 202 `{ runId, created }`; returns the running one if a run of that region is in progress |
 | GET | `/admin/discovery/runs?region=&limit=` | any | `RunDto[]` of one region (date, counts, per-source results) |
 | GET | `/admin/discovery/runs/latest?region=` | any | `RunDetail \| null`; foreign items carry `language`, and `titleHe` / `introHe` once translated |
-| GET | `/admin/discovery/runs/:id` | any | `RunDetail` (items with source, image, title, first paragraph, section) |
-| POST | `/admin/discovery/items/:id/pull` | editor | add an item from an older run to the latest run |
-| POST | `/admin/discovery/save` | editor | `SaveSelectionInput` (`magazine` or `single` + color) → `SaveSelectionResult`; queues the AI |
+| GET | `/admin/discovery/runs/:id` | any | `RunDetail`: items with source, image, title, first paragraph, section; `storyId` (the same story on several sites: one id per group, its lead first), `separated`, and the chief editor's `pick` (`{ score 1-100, reason }` or null); `picks` (`none` · `pending` · `ready` · `failed`, count, a Hebrew error) |
+| POST | `/admin/discovery/runs/:id/picks` | editor | the chief editor's picks for this run, again (or for a run from before them) → 202 `RunDetail`; one at a time; 409 while the run scans |
+| POST | `/admin/discovery/runs/:id/items/:itemId/separate` | editor | `{ separated }`: the article stands alone in this run (false: it may group again) → `RunDetail` |
+| POST | `/admin/discovery/items/:id/pull` | editor | add an item from an older run to the latest run (any run can be saved from, so the CMS no longer offers it) |
+| POST | `/admin/discovery/save` | editor | `SaveSelectionInput` (`magazine` or `single` + color; `stories`: same-story groups among `itemIds`, each written as ONE article from all its reports, up to 8) → `SaveSelectionResult`; queues the AI. Works from any run, the latest or an older one |
+| GET / PUT | `/admin/agent/pick-settings` | any / admin | `DiscoveryPickSettings` (`on`, `count` 5–60, the `leisure` sections); a change is audited |
 
 ### Manual entry and media
 
@@ -148,7 +151,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | GET | `/admin/saved` | any | `SavedEdits` (magazines + single articles) |
 | GET/PATCH | `/admin/magazines/:id` | any / editor | `MagazineDetail`; rename |
 | POST | `/admin/magazines/:id/archive` | editor | |
-| GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, nav, active AI job) |
+| GET | `/admin/drafts/:id` | any | `DraftDetail` (canvas, original, `extraSources` of an article written from several reports, nav, active AI job) |
 | PUT | `/admin/drafts/:id/content` | editor | `AutosaveInput` → `AutosaveResult`; 409 `version_conflict` / `text_locked` / `ai_busy` |
 | PATCH | `/admin/drafts/:id` | editor | `DraftMetaInput`: section, placement, tags, byline, color, push, main image, disclosure |
 | GET | `/admin/drafts/:id/similarity` | any | `SimilarityDto`: how much of the draft repeats the original word for word (the Hebrew translation of a foreign original) |

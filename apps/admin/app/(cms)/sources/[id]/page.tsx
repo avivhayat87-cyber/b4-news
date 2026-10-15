@@ -4,6 +4,7 @@
 import { CATEGORIES, SCRAPE_METHODS, type ConfigureSourceInput, type ScrapeMethod, type SourceDto, type SourceTestResult } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { use, useEffect, useState } from 'react';
+import { SectionTabs } from '@/components/section-tabs';
 import { Badge, Button, Card, ErrorBox, Field, Loading, PageHeader, cx, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
@@ -175,6 +176,7 @@ export default function SourcePage({ params }: { params: Promise<{ id: string }>
 
   return (
     <>
+      <SectionTabs section="discovery" />
       <PageHeader
         title={source.name}
         subtitle={

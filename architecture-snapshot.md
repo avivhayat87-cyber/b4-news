@@ -85,6 +85,10 @@ The **advertising** domain (our own ad server, leads, the advertiser's page and 
 was added on 2026-10-15 with the owner's approval: selling ad space directly is a revenue line
 the newsroom controls, and Google fills only what we leave empty, later.
 
+The **CMS menu was merged** on 2026-10-15 with the owner's approval (15 items were too many): related
+screens keep their own folders and addresses (links in emails keep working) and become tabs of one
+menu item; the menu item lights up on each of them and sums their red counts.
+
 ### 2.1 `apps/api/`: the backend
 
 ```
@@ -114,7 +118,8 @@ src/
                         the archive), serve.ts (choosing a place's ad, the signed token, views and clicks),
                         leads.ts (leads, "advertise with us" inquiries, the advertiser's page), banner.ts
                         (banners set from words in the brand fonts)
-    scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source
+    scraper/          Discovery: parse, collect, robots, autodetect, setup, run, test-source, desk (a run as the CMS
+                        reads it: same-story groups), picks (the chief editor's recommendations after a run)
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
@@ -164,7 +169,11 @@ public/brand/     Logo files
 app/(cms)/        One folder per CMS screen, behind the sign-in shell ((cms)/layout.tsx):
                     page.tsx (dashboard) · discovery/ (Israeli sites, international/, runs/) · sources/
                     saved/ · magazines/[id] (+ preview) · drafts/[id] (+ preview) · review/ · manual/
-                    social/ · ads/ (+ new, [id]; admins only) · comments/ · takedowns/ · learning/ · agent/ · settings/
+                    social/ · ads/ (+ new, [id]; admins only) · comments/ · takedowns/ · learning/ (leads to settings) ·
+                    agent/ · settings/
+                  Related screens share one menu item and show as tabs on top (components/section-tabs.tsx):
+                    "איתור כתבות" = discovery/ + sources/; "מנויים וגולשים" = audience/ + comments/ + takedowns/;
+                    "למידת ה-AI" is the learning agent in settings/ ("צוות הסוכנים")
 app/login/        Sign-in
 components/       Shared screens and the shell; feature folders: editor/, settings/, social/, agent/, review/, research/, ads/
                     primitives in ui.tsx (Button, Card, Field, Badge, Loading, ErrorBox, Empty,
@@ -203,15 +212,15 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
-| **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
+| **Discovery and sources** (איתור כתבות) | `services/scraper/*` (incl. `desk.ts`: same-story groups; `picks.ts`: the chief editor's picks), `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` (one menu item, tabs), `components/run-board.tsx` | | `sources`, `scrape_runs` (`picks`), `scrape_run_items` (`separated`), `scraped_items` |
 | **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `official_sources`, `image_batches`, `media_assets` |
-| **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
+| **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | the learning agent in `settings/` (`components/agent/learning-panel.tsx`; `learning/` leads there) | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, `digest.ts` (the personal issue at the reader's hour, a self-rescheduling job), push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages (incl. preferences), "העיתון שלי" in account, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Advertising** (פרסום) | `services/ads/*` (campaigns, serving and counting, leads and the advertiser's page, banners), `services/agent/ads.ts` (the ads agent), `routes/admin/ads.ts`, `routes/ads.ts` (public: the ads, views, clicks, leads, inquiries, `/public/partners/:key`), `lib/images.ts` (`ingestAdImage`) | `ads/` (admins only), `components/ads/`, the "סוכן הפרסום" card in `settings/` | `components/ad-slot.tsx` (with the `?adspots=1` preview), `google-ad.tsx` (an AdSense unit; a stand-in in development), `app/ads.txt`, `HouseBillboard` and `HousePromo` in `ui.tsx`, `advertise/` (+ `advertise-form.tsx`, `advertise-visuals.tsx`), `partner/[key]`; app `components/ad-card.tsx`, `lib/ads.ts` | `advertisers`, `ad_campaigns`, `ad_creatives`, `ad_stats`, `ad_leads`, `ad_agent_tasks` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
-| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `lib/expo-push.ts` | `comments/`, `takedowns/`, `audience/` ("מנויים וגולשים") | comments, the bell, account (notification settings), `my/` (the feed), report; app comments, account and the "הפיד שלי" tab | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
+| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `lib/expo-push.ts` | `audience/` ("מנויים וגולשים"), `comments/`, `takedowns/` (one menu item, tabs) | comments, the bell, account (notification settings), `my/` (the feed), report; app comments, account and the "הפיד שלי" tab | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
 | **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop), `services/data-move.ts`, `services/two-factor.ts` + `lib/totp.ts` (staff two-step sign-in), `routes/staff-auth.ts`, `routes/admin/security.ts`, `scripts/*`, `deploy/cloud/*` | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
 
@@ -301,6 +310,12 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   pitches stories from what discovery found (topics grouped for free, one AI call without
   search); a person approves each pitch before it is researched, and a pitch that grew from no
   discovered topic is dropped. Decided by the owner on 2026-10-14.
+- **The chief editor's picks only recommend.** After every discovery run (Israeli and international)
+  the chief editor (`services/scraper/picks.ts`, the fast model) recommends stories with a score and
+  a reason; the code, not the skill, keeps at least one per section and few from the leisure
+  sections, and a person still chooses what to save. Articles about the same story are grouped for
+  free; a group is written as ONE article from all its reports (`rewrite.combine`) only when the
+  editor chooses it. Decided by the owner on 2026-10-15.
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video
@@ -441,6 +456,9 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   `fetch` directly.
 - **UI comes from `components/ui.tsx`.** A feature with several components gets a folder under
   `components/` (`editor/`, `settings/`, `social/`, `agent/`).
+- **The menu stays short.** A new screen that belongs with existing ones becomes a tab of their
+  menu item (`SECTIONS` in `components/section-tabs.tsx`, `also` in `shell.tsx`), at its own
+  address, rather than a new menu item.
 
 ### 5.8 The app (`apps/mobile`)
 

@@ -3,6 +3,7 @@ import { CATEGORIES, type SourceDto, type SourceRegion } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
+import { SectionTabs } from '@/components/section-tabs';
 import { Badge, Button, Card, Empty, ErrorBox, Field, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
@@ -158,6 +159,7 @@ export default function SourcesPage() {
 
   return (
     <>
+      <SectionTabs section="discovery" />
       <PageHeader title="הגדרות אתרים" subtitle="מוסיפים שם וקישור; המפתח בונה את הטריגר, בודק ומאשר, ומאז האתר נכלל בכל איתור." />
       <div className="mb-5 inline-flex rounded-xl bg-white p-1 ring-1 ring-line" role="tablist" aria-label="סוג האתרים">
         {(

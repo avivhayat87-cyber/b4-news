@@ -12,6 +12,7 @@ import { MEETING_JOB, MORNING_TICK_JOB, ensureMorningTick, markMeetingFailed, ru
 import { REGISTRY_JOB, REGISTRY_TICK_JOB, ensureRegistryTick, runRegistryTick, runRegistryUpdate } from './official-sources';
 import { FIX_JOB, REVIEW_JOB, markFixFailed, markReviewFailed, runFix, runReview } from './legal-review';
 import { markPublishFailed, runPublish } from './publish';
+import { PICK_JOB, markPicksFailed, runPicks } from './scraper/picks';
 import { failRun, runDiscovery } from './scraper/run';
 import { runSourceSetup } from './scraper/setup';
 import { runSocialGenerate } from './social';
@@ -27,6 +28,8 @@ export const handlers: Handlers<Services> = {
     onFailed: (s, job, error) => failRun(s, String(job.payload.runId), error.message),
     maxAttempts: 1,
   },
+  // The chief editor's picks: cheap, so a second attempt; then the editor asks again from the run.
+  [PICK_JOB]: { run: runPicks, onFailed: markPicksFailed, maxAttempts: 2 },
   'draft.rewrite': { run: runRewrite, onFailed: (s, job) => markRewriteFailed(s, job) },
   'draft.refine': { run: runRefine, onFailed: markRefineFailed, maxAttempts: 2 },
   'draft.images': { run: runImages, maxAttempts: 2 },

@@ -8,9 +8,11 @@ import type { ReactNode } from 'react';
 import { admin, api, SITE_URL } from '@/lib/api';
 import { useStaff } from '@/lib/auth';
 import { ROLE } from '@/lib/labels';
+import { sectionPaths } from './section-tabs';
 import { cx } from './ui';
 
-type NavItem = { href: string; label: string; icon: ReactNode; badge?: number };
+/** also: the pages a merged item stands for (its tabs), so the item lights up on each of them. */
+type NavItem = { href: string; label: string; icon: ReactNode; badge?: number; also?: string[] };
 
 const I = {
   home: <path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z" />,
@@ -24,13 +26,6 @@ const I = {
   upload: <path d="M12 16V4m0 0-5 5m5-5 5 5M4 20h16" />,
   saved: <path d="M6 3h12v18l-6-4-6 4z" />,
   articles: <path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8" />,
-  sites: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
-    </>
-  ),
-  comments: <path d="M4 5h16v11H8l-4 4z" />,
   audience: (
     <>
       <circle cx="9" cy="8" r="3.5" />
@@ -45,12 +40,6 @@ const I = {
       <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
     </>
   ),
-  takedown: (
-    <>
-      <path d="M5 21V4h11l-1.5 4L16 12H5" />
-    </>
-  ),
-  learn: <path d="M12 3 2 8l10 5 10-5zM6 10.5V16c3 2 9 2 12 0v-5.5" />,
   ads: <path d="M4 10v4h3l6 4V6L7 10zM16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11" />,
   review: <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6zM9 12l2 2 4-4" />,
   settings: (
@@ -86,8 +75,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const nav: NavItem[] = [
     { href: '/', label: 'לוח בקרה', icon: I.home },
     { href: '/agent', label: 'סוכן AI', icon: I.agent },
-    // One item for all of discovery: the Israeli/abroad tabs and the past runs are inside it.
-    { href: '/discovery', label: 'איתור כתבות', icon: I.radar },
+    // Merged items: the pages stay at their addresses and become tabs inside (section-tabs.tsx).
+    { href: '/discovery', label: 'איתור כתבות', icon: I.radar, badge: dash.data?.sources.waitingForDeveloper || undefined, also: sectionPaths('discovery') },
     { href: '/manual', label: 'העלאה ידנית', icon: I.upload },
     { href: '/saved', label: 'עריכות שמורות', icon: I.saved, badge: dash.data ? dash.data.drafts.working + dash.data.drafts.ready : undefined },
     { href: '/review', label: 'בדיקה משפטית', icon: I.review, badge: dash.data?.review.waiting || undefined },
@@ -95,15 +84,19 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/social', label: 'רשתות חברתיות', icon: I.social },
     // Advertising holds leads (personal data): admins only.
     ...(staff.role === 'admin' ? [{ href: '/ads', label: 'פרסום', icon: I.ads, badge: dash.data ? dash.data.ads.newInquiries + dash.data.ads.newLeads || undefined : undefined }] : []),
-    { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },
-    { href: '/audience', label: 'מנויים וגולשים', icon: I.audience },
-    { href: '/comments', label: 'תגובות גולשים', icon: I.comments, badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported || undefined : undefined },
-    { href: '/takedowns', label: 'בקשות הסרה', icon: I.takedown, badge: dash.data?.takedowns.open || undefined },
-    { href: '/learning', label: 'למידת ה-AI', icon: I.learn },
-    { href: '/settings', label: 'הגדרות', icon: I.settings },
+    {
+      href: '/audience',
+      label: 'מנויים וגולשים',
+      icon: I.audience,
+      badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported + dash.data.takedowns.open || undefined : undefined,
+      also: sectionPaths('audience'),
+    },
+    // "למידת ה-AI" is in "צוות הסוכנים" > "הלמידה".
+    { href: '/settings', label: 'הגדרות', icon: I.settings, also: ['/learning'] },
   ];
 
-  const active = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
+  const under = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const active = (n: NavItem) => (n.href === '/' ? pathname === '/' : [n.href, ...(n.also ?? [])].some(under));
 
   async function logout() {
     await api.post('/auth/staff/logout').catch(() => undefined);
@@ -124,10 +117,10 @@ export function Shell({ children }: { children: ReactNode }) {
               <Link
                 key={n.href}
                 href={n.href}
-                aria-current={active(n.href) ? 'page' : undefined}
+                aria-current={active(n) ? 'page' : undefined}
                 className={cx(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 font-semibold transition-colors',
-                  active(n.href) ? 'bg-brand-soft text-brand-deep' : 'text-ink-2 hover:bg-stone hover:text-ink',
+                  active(n) ? 'bg-brand-soft text-brand-deep' : 'text-ink-2 hover:bg-stone hover:text-ink',
                 )}
               >
                 <Icon>{n.icon}</Icon>

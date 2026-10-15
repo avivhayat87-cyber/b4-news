@@ -101,13 +101,25 @@ async function queueRewrite(db: Db, draftId: string, staffId: string | null) {
 // ---------------------------------------------------------------------------
 // Creating drafts
 // ---------------------------------------------------------------------------
-export async function createDraftsFromItems(s: Services, staff: Staff, input: z.infer<typeof SaveSelectionInput>) {
+/**
+ * A selection becomes drafts: one per item, except a same-story group (stories), which becomes one
+ * draft written from all its sources, at the place of its first item.
+ */
+export async function createDraftsFromItems(s: Services, staff: Staff, input: Omit<SaveSelectionInput, 'stories'> & { stories?: string[][] }) {
   const items = await s.db
     .select({ id: scrapedItems.id, title: scrapedItems.title, categoryId: scrapedItems.categoryId, status: scrapedItems.status })
     .from(scrapedItems)
     .where(inArray(scrapedItems.id, input.itemIds));
-  const usable = input.itemIds.map((id) => items.find((i) => i.id === id)).filter((i) => i && i.status !== 'in_draft') as typeof items;
+  const usable = [...new Set(input.itemIds)].map((id) => items.find((i) => i.id === id)).filter((i) => i && i.status !== 'in_draft') as typeof items;
   if (usable.length === 0) throw new AppError(409, 'nothing_to_save', 'הכתבות שנבחרו כבר נמצאות בעריכה.');
+  // Each usable item in at most one story; a story left with one item is a single article.
+  const storyOf = new Map<string, string[]>();
+  for (const story of input.stories ?? []) {
+    const members = [...new Set(story)].filter((id) => usable.some((i) => i.id === id) && !storyOf.has(id));
+    if (members.length < 2) continue;
+    for (const id of members) storyOf.set(id, members);
+  }
+  const drafts = usable.filter((i) => (storyOf.get(i.id)?.[0] ?? i.id) === i.id);
 
   let magazineId: string | null = null;
   if (input.mode === 'magazine') {
@@ -125,7 +137,7 @@ export async function createDraftsFromItems(s: Services, staff: Staff, input: z.
   }
 
   const draftIds: string[] = [];
-  for (const [position, item] of usable.entries()) {
+  for (const [position, item] of drafts.entries()) {
     const [draft] = await s.db
       .insert(articleDrafts)
       .values({
@@ -133,6 +145,7 @@ export async function createDraftsFromItems(s: Services, staff: Staff, input: z.
         position,
         origin: 'scraped',
         scrapedItemId: item.id,
+        extraItemIds: storyOf.get(item.id)?.slice(1) ?? [],
         status: 'queued_ai',
         colorLabel: input.mode === 'single' ? (input.colorLabel ?? 'blue') : null,
         title: item.title,
@@ -278,15 +291,25 @@ export async function runRewrite(s: Services, job: JobRow) {
       s.log.warn({ draftId, err: e instanceof Error ? e.message : e }, 'translating the original failed'),
     );
   }
-  const prompt = await writerPrompt(s.db, 'rewrite.system');
+  // A story from several sites: the other originals, in the order the editor's group had them.
+  const extraRows = draft.extraItemIds.length
+    ? await s.db
+        .select({ id: scrapedItems.id, title: scrapedItems.title, intro: scrapedItems.intro, body: scrapedItems.bodyText, url: scrapedItems.url, sourceName: sources.name, language: scrapedItems.language })
+        .from(scrapedItems)
+        .leftJoin(sources, eq(scrapedItems.sourceId, sources.id))
+        .where(inArray(scrapedItems.id, draft.extraItemIds))
+    : [];
+  const extras = draft.extraItemIds.map((id) => extraRows.find((r) => r.id === id)).filter((r) => r !== undefined);
+  const promptKey = extras.length ? 'rewrite.combine' : 'rewrite.system';
+  const prompt = await writerPrompt(s.db, promptKey);
   // Learned house style, then the editor agent's settings (divergence, length, voice; facts always kept).
   const systemPrompt = prompt.body.replace('{{style_rules}}', `${await activeStyleRules(s.db)}\n${await editorGuidelinesFor(s.db)}`);
-  const sourceName = item.sourceName ?? new URL(item.url).hostname.replace(/^www\./, '');
+  const asSource = (r: NonNullable<typeof item>) => ({ title: r.title, intro: r.intro, body: r.body ?? r.intro ?? '', sourceName: r.sourceName ?? new URL(r.url).hostname.replace(/^www\./, ''), url: r.url, language: r.language });
   const textAi = await s.ai.text();
   const { result, aiJobId } = await tracked(
     s.db,
-    { type: 'rewrite', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey: 'rewrite.system', promptVersion: prompt.version },
-    () => textAi.rewrite({ systemPrompt, source: { title: item.title, intro: item.intro, body: item.body ?? item.intro ?? '', sourceName, url: item.url, language: item.language } }),
+    { type: 'rewrite', provider: textAi.provider, draftId, requestedBy: job.createdBy, promptKey, promptVersion: prompt.version },
+    () => textAi.rewrite({ systemPrompt, source: asSource(item), ...(extras.length ? { extraSources: extras.map(asSource) } : {}) }),
   );
   const out = result.data;
   const doc = sanitizeDoc(textToDoc(out.paragraphs));
@@ -374,8 +397,11 @@ export async function runRefine(s: Services, job: JobRow) {
   if (!msg) throw new PermanentJobError('message not found');
   let original: string | undefined;
   if (draft.scrapedItemId) {
-    const [item] = await s.db.select({ title: scrapedItems.title, body: scrapedItems.bodyText }).from(scrapedItems).where(eq(scrapedItems.id, draft.scrapedItemId)).limit(1);
-    if (item) original = `${item.title}\n\n${item.body ?? ''}`.slice(0, 20_000);
+    // A story from several sites: every report, the main one first.
+    const ids = [draft.scrapedItemId, ...draft.extraItemIds];
+    const items = await s.db.select({ id: scrapedItems.id, title: scrapedItems.title, body: scrapedItems.bodyText }).from(scrapedItems).where(inArray(scrapedItems.id, ids));
+    const reports = ids.map((id) => items.find((i) => i.id === id)).filter((i) => i !== undefined);
+    if (reports.length) original = reports.map((item) => `${item.title}\n\n${item.body ?? ''}`.slice(0, 20_000)).join('\n\n---\n\n').slice(0, 40_000);
   }
   const textAi = await s.ai.text();
   const prompt = await writerPrompt(s.db, 'refine.system');
@@ -663,12 +689,13 @@ export async function updateMeta(
   if (finishPreview) await requestFinalImage(s, staff.id, draftId, finishPreview);
 }
 
-/** The original's wording to compare with (manual drafts have none). */
+/** The originals' wording to compare with (manual drafts have none; a story from several sites has them all). */
 async function originalWording(s: Services, draft: DraftRow): Promise<string | null> {
   if (!draft.scrapedItemId) return null;
-  const [item] = await s.db.select({ body: scrapedItems.bodyText, intro: scrapedItems.intro, bodyHe: scrapedItems.bodyHe }).from(scrapedItems).where(eq(scrapedItems.id, draft.scrapedItemId)).limit(1);
+  const ids = [draft.scrapedItemId, ...draft.extraItemIds];
+  const items = await s.db.select({ body: scrapedItems.bodyText, intro: scrapedItems.intro, bodyHe: scrapedItems.bodyHe }).from(scrapedItems).where(inArray(scrapedItems.id, ids));
   // A translated original is compared in Hebrew: copying the translation is copying.
-  return item?.bodyHe ?? item?.body ?? item?.intro ?? '';
+  return items.map((item) => item.bodyHe ?? item.body ?? item.intro ?? '').join('\n\n');
 }
 
 /** Word-for-word overlap with the original (manual drafts have none to compare with). */
@@ -965,6 +992,17 @@ export async function draftDetail(s: Services, id: string): Promise<DraftDetail>
     .where(eq(articleDrafts.id, id))
     .limit(1);
   const [hero] = d.heroMediaId ? await s.db.select().from(mediaAssets).where(eq(mediaAssets.id, d.heroMediaId)).limit(1) : [];
+  const extraRows = d.extraItemIds.length
+    ? await s.db
+        .select({ id: scrapedItems.id, title: scrapedItems.title, titleHe: scrapedItems.titleHe, url: scrapedItems.url, sourceName: sources.name, publishedAt: scrapedItems.publishedAt, language: scrapedItems.language })
+        .from(scrapedItems)
+        .leftJoin(sources, eq(scrapedItems.sourceId, sources.id))
+        .where(inArray(scrapedItems.id, d.extraItemIds))
+    : [];
+  const extraSources = d.extraItemIds
+    .map((x) => extraRows.find((r) => r.id === x))
+    .filter((r) => r !== undefined)
+    .map((r) => ({ title: r.titleHe ?? r.title, url: r.url, sourceName: r.sourceName ?? hostOf(r.url) ?? '', publishedAt: r.publishedAt?.toISOString() ?? null, language: r.language }));
 
   let nav: DraftDetail['nav'] = null;
   if (d.magazineId) {
@@ -1008,6 +1046,7 @@ export async function draftDetail(s: Services, id: string): Promise<DraftDetail>
             translation: ctx.itemLanguage && ctx.itemBodyHe ? { title: ctx.itemTitleHe ?? ctx.itemTitle, intro: ctx.itemIntroHe, bodyText: ctx.itemBodyHe } : null,
           }
         : null,
+    extraSources,
     hasAiBaseline: Boolean(d.aiBaselineText),
     textFinalizedAt: d.textFinalizedAt?.toISOString() ?? null,
     skipReason: d.skipReason,

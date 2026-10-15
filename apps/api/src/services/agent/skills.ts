@@ -8,9 +8,9 @@ import { AppError, errors } from '../../errors';
 
 /** Each agent's skills (prompt_templates keys), in the order the CMS shows them. */
 export const AGENT_SKILLS: Record<AgentId, string[]> = {
-  chief: ['agent.system', 'meeting.pitch'],
+  chief: ['agent.system', 'meeting.pitch', 'discovery.pick'],
   reporter: ['research.system', 'research.write', 'research.update', 'research.accounts'],
-  rewrite: ['rewrite.system', 'refine.system'],
+  rewrite: ['rewrite.system', 'rewrite.combine', 'refine.system'],
   reviewer: ['review.system', 'review.fix'],
   social: ['social.plan', 'social.kit', 'social.caption'],
   visual: ['visual.image', 'reel.prompts', 'visual.learn', 'reel.image', 'reel.video'],
@@ -25,6 +25,7 @@ const TEMPLATE_KEYS = ['reel.image', 'reel.video'];
 /** Markers the code fills in: a new version must keep them, or the code has nowhere to put its part. */
 const PLACEHOLDERS: Record<string, string[]> = {
   'rewrite.system': ['{{style_rules}}'],
+  'rewrite.combine': ['{{style_rules}}'],
   'reel.image': ['{{prompt}}'],
   'reel.video': ['{{prompt}}', '{{motion}}', '{{instruction}}'],
 };

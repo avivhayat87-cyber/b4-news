@@ -86,6 +86,21 @@ export function OriginalPane({ draft, onQueued }: { draft: DraftDetail; onQueued
           לכתבה המקורית באתר ↗
         </a>
       </div>
+      {draft.extraSources.length > 0 && (
+        <div className="mb-4 rounded-lg bg-stone px-3 py-2.5 text-sm">
+          <p className="font-bold">הכתבה נכתבה מ-{draft.extraSources.length + 1} דיווחים על אותו סיפור. כאן מוצג הראשי, ועוד:</p>
+          <ul className="mt-1.5 space-y-1">
+            {draft.extraSources.map((x) => (
+              <li key={x.url} className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 font-bold text-ink-2">{x.sourceName}</span>
+                <a href={x.url} target="_blank" rel="noopener noreferrer nofollow" dir="auto" className="min-w-0 truncate text-info hover:underline">
+                  {x.title} ↗
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {o.imageUrl && (
         <figure className="mb-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- third-party source image */}

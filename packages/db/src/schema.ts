@@ -78,6 +78,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'research',
   'meeting',
   'ads',
+  'discovery_pick',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -297,6 +298,14 @@ export const sources = pgTable(
   ],
 );
 
+/** The chief editor's picks of a run: the stories it recommends, how important (1-100) and why (see RunDetail). */
+export type RunPicksRecord = {
+  status: 'pending' | 'ready' | 'failed';
+  items: { itemId: string; score: number; reason: string }[];
+  error: string | null;
+  at: string | null;
+};
+
 export const scrapeRuns = pgTable(
   'scrape_runs',
   {
@@ -310,6 +319,8 @@ export const scrapeRuns = pgTable(
     finishedAt: tstz(),
     itemsFound: integer().notNull().default(0),
     itemsNew: integer().notNull().default(0),
+    /** null: no picks for this run (turned off, nothing found, or before picks existed). */
+    picks: jsonb().$type<RunPicksRecord>(),
     createdAt: createdAt(),
   },
   (t) => [index('scrape_runs_created_idx').on(t.createdAt.desc())],
@@ -382,6 +393,8 @@ export const scrapeRunItems = pgTable(
       .notNull()
       .references(() => scrapedItems.id, { onDelete: 'cascade' }),
     origin: runItemOrigin().notNull().default('found'),
+    /** The editor took it out of its same-story group: it stands alone. */
+    separated: boolean().notNull().default(false),
     addedAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.runId, t.itemId] }), index('scrape_run_items_item_idx').on(t.itemId)],
@@ -464,6 +477,8 @@ export const articleDrafts = pgTable(
     origin: draftOrigin().notNull(),
     /** The read-only original shown in the editor's left pane */
     scrapedItemId: uuid().references(() => scrapedItems.id),
+    /** A story from several sites, written as one article: the other originals (scraped_items ids). */
+    extraItemIds: uuid().array().notNull().default(sql`'{}'::uuid[]`),
     status: draftStatus().notNull().default('queued_ai'),
     /** Color label the editor gives a saved article */
     colorLabel: draftColor(),

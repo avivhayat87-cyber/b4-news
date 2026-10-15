@@ -2,6 +2,7 @@
 // Reader comments: held by the filter or reported by readers come first.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { SectionTabs } from '@/components/section-tabs';
 import { Badge, Button, Empty, ErrorBox, Loading, PageHeader, cx, useToast } from '@/components/ui';
 import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
@@ -63,6 +64,7 @@ export default function CommentsPage() {
 
   return (
     <>
+      <SectionTabs section="audience" />
       <PageHeader title="תגובות גולשים" subtitle="תגובות מתפרסמות מיד אחרי סינון אוטומטי. כאן בודקים את מה שהסינון עיכב ואת מה שגולשים דיווחו." />
       <div className="mb-5 inline-flex rounded-lg bg-white p-1 ring-1 ring-line" role="tablist">
         {FILTERS.map((f) => (

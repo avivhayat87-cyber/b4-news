@@ -35,7 +35,7 @@ export function EditorAgent() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
-      <Card title="הגדרות סוכן העריכה" actions={<LinkButton href="/learning">הכללים שנלמדו</LinkButton>}>
+      <Card title="הגדרות סוכן העריכה" actions={<LinkButton href="/settings?tab=agents&agent=learning">הכללים שנלמדו</LinkButton>}>
         <div className="space-y-5">
           <fieldset>
             <legend className="mb-2 text-sm font-bold text-ink-2">כמה להתרחק מהמקור</legend>

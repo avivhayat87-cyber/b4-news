@@ -1,7 +1,8 @@
 // A discovery run ("איתור כתבות"): every active source of one region (Israeli or
 // international), only what was published since that source's last successful
 // run (delta fetch), never an article twice. Foreign articles are marked with
-// their language and get Hebrew headlines right after the run.
+// their language and get Hebrew headlines right after the run; then the chief
+// editor picks what to take first (picks.ts).
 import type { SelectorConfig, SourceRegion } from '@b4/shared';
 import {
   and,
@@ -23,6 +24,7 @@ import { classifyHeadline, outsideEconomy } from '../classify';
 import type { Services } from '../context';
 import { detectLanguage, queueHeadlineTranslation } from '../translate';
 import { type SourceSpec, canonicalUrl, categoryFor, completeItem, contentHash, listItems, sha256 } from './collect';
+import { queuePicks } from './picks';
 import { RobotsCache } from './robots';
 
 const BREAK_AFTER_FAILURES = 5;
@@ -192,6 +194,10 @@ export async function runDiscovery(s: Services, runId: string): Promise<{ found:
   await db.update(scrapeRuns).set({ status, finishedAt: new Date(), itemsFound: totalFound, itemsNew: totalNew }).where(eq(scrapeRuns.id, runId));
   // Foreign articles get Hebrew headlines in the background; the results show them as they arrive.
   await queueHeadlineTranslation(s, foreign, run?.triggeredBy ?? null);
+  // Then the chief editor recommends what to take first (a failure there never fails the run).
+  if (totalNew > 0) {
+    await queuePicks(s, runId, run?.triggeredBy ?? null).catch((e: unknown) => s.log.warn({ runId, err: e instanceof Error ? e.message : e }, 'queueing the picks failed'));
+  }
   return { found: totalFound, inserted: totalNew };
 }
 

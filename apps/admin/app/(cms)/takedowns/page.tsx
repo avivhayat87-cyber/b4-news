@@ -4,6 +4,7 @@
 import { TAKEDOWN_KIND_LABELS, TAKEDOWN_RESPONSE_HOURS, TAKEDOWN_STATUS_LABELS, type TakedownDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { SectionTabs } from '@/components/section-tabs';
 import { Badge, Button, Empty, ErrorBox, Loading, PageHeader, cx, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
@@ -28,6 +29,7 @@ export default function TakedownsPage() {
 
   return (
     <>
+      <SectionTabs section="audience" />
       <PageHeader
         title="בקשות הסרה"
         subtitle={`פניות של קוראים ושל מי שנפגע מתוכן באתר. היעד: תשובה בתוך ${TAKEDOWN_RESPONSE_HOURS} שעות. כל החלטה נשמרת ביומן, והפונה מקבל עדכון במייל.`}

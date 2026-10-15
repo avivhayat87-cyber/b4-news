@@ -137,7 +137,7 @@ export const TOOLS: AgentTool[] = [
   {
     name: 'latest_discovery',
     label: (i) => `תוצאות האיתור האחרון ${regionName(i.region ?? 'local')}`,
-    description: 'The articles found by the latest discovery run of a region (Israeli or international), newest first. Foreign articles include the Hebrew headline. Use the item ids to save articles for editing.',
+    description: 'The articles found by the latest discovery run of a region (Israeli or international), newest first. Foreign articles include the Hebrew headline. The stories the chief editor recommended after the run carry its pick (score 1-100 and why). Use the item ids to save articles for editing.',
     schema: object({ region, query: { type: 'string', description: 'Optional text to filter headlines' }, limit: { type: 'integer', minimum: 1, maximum: 80 } }),
     input: z.object({ region: z.enum(SOURCE_REGIONS).default('local'), query: z.string().max(100).optional(), limit: z.number().int().min(1).max(80).default(40) }),
     write: false,
@@ -154,12 +154,13 @@ export const TOOLS: AgentTool[] = [
         .where(eq(scrapeRunItems.runId, run.id))
         .orderBy(desc(scrapedItems.publishedAt));
       const q = input.query?.toLowerCase();
+      const picked = new Map((run.picks?.status === 'ready' ? run.picks.items : []).map((p) => [p.itemId, { score: p.score, reason: p.reason }]));
       return {
         run: { status: run.status, startedAt: il(run.createdAt), newItems: run.itemsNew },
         items: items
           .filter((i) => !q || `${i.title} ${i.titleHe ?? ''}`.toLowerCase().includes(q))
           .slice(0, input.limit)
-          .map((i) => ({ id: i.id, title: i.titleHe ?? i.title, original: i.titleHe ? i.title : undefined, source: i.source, section: i.section, status: i.status, publishedAt: il(i.publishedAt) })),
+          .map((i) => ({ id: i.id, title: i.titleHe ?? i.title, original: i.titleHe ? i.title : undefined, source: i.source, section: i.section, status: i.status, publishedAt: il(i.publishedAt), pick: picked.get(i.id) })),
       };
     },
   },

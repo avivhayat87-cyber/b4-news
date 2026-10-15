@@ -7,7 +7,7 @@ import { MEETING_HOURS, type ApprovePitchInput, type MeetingDto, type PitchDto, 
 import { type Db, type PitchRecord, and, appSettings, articles, categories, desc, editorialMeetings, eq, gte, inArray, jobs, scrapeRuns, scrapedItems, sources, sql, users } from '@b4/db';
 import { AppError, errors } from '../errors';
 import { enqueue, type JobRow } from '../lib/jobs';
-import { topicOverlap } from '../lib/similarity';
+import { groupByTopic } from '../lib/similarity';
 import { activePrompt, tracked } from './ai';
 import { textCostUsd } from './ai/prices';
 import type { Services } from './context';
@@ -37,16 +37,7 @@ export type Topic = { id: string; items: MeetingItem[]; sites: number; category:
  * shares enough of its subject words, else opens one. Topics covered by more sites come first.
  */
 export function groupTopics(items: MeetingItem[]): Topic[] {
-  const groups: MeetingItem[][] = [];
-  for (const item of [...items].sort((a, b) => b.at.getTime() - a.at.getTime())) {
-    const home = groups.find((g) => {
-      const { score, shared } = topicOverlap(item.title, g[0]!.title);
-      return shared >= 2 && score >= 0.5;
-    });
-    if (home) home.push(item);
-    else groups.push([item]);
-  }
-  return groups
+  return groupByTopic(items, { title: (i) => i.title, at: (i) => i.at.getTime() })
     .map((g) => ({ items: g, sites: new Set(g.map((i) => i.source)).size, category: mostCommon(g.map((i) => i.category)) }))
     .sort((a, b) => b.sites - a.sites || b.items.length - a.items.length || b.items[0]!.at.getTime() - a.items[0]!.at.getTime())
     .map((t, i) => ({ id: `t${i + 1}`, ...t }));

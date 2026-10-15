@@ -2,7 +2,8 @@
 // Settings: connections (AI, email, social), the agent team and their skills, site details, team, my password.
 import { STAFF_ROLES, type StaffRole, type StaffUserDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { AgentTeam } from '@/components/agent/team';
 import { Connections } from '@/components/settings/connections';
 import { SiteDetails } from '@/components/settings/site-details';
@@ -191,8 +192,9 @@ function StaffCard() {
 
 type Tab = 'connections' | 'agents' | 'site' | 'team' | 'password';
 
-export default function SettingsPage() {
+function Settings() {
   const isAdmin = useCan();
+  const params = useSearchParams();
   const tabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'connections', label: 'חיבורים', show: isAdmin },
     { id: 'agents', label: 'צוות הסוכנים', show: true },
@@ -202,12 +204,12 @@ export default function SettingsPage() {
   ];
   const visible = tabs.filter((t) => t.show);
   const [tab, setTab] = useState<Tab>(visible[0]!.id);
-  // "/settings?tab=agents" (from the agent page) opens that tab.
+  // "/settings?tab=agents" (from the agent page) opens that tab; "&agent=learning" opens that agent's settings.
+  const wanted = params.get('tab');
   useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get('tab');
     if (visible.some((t) => t.id === wanted)) setTab(wanted as Tab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- when the address asks for a tab
+  }, [wanted]);
 
   return (
     <>
@@ -227,7 +229,7 @@ export default function SettingsPage() {
         ))}
       </div>
       {tab === 'connections' && isAdmin && <Connections />}
-      {tab === 'agents' && <AgentTeam />}
+      {tab === 'agents' && <AgentTeam focus={params.get('agent')} />}
       {tab === 'site' && <SiteDetails canEdit={isAdmin} />}
       {tab === 'team' && isAdmin && <StaffCard />}
       {tab === 'password' && (
@@ -237,5 +239,13 @@ export default function SettingsPage() {
         </div>
       )}
     </>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <Settings />
+    </Suspense>
   );
 }

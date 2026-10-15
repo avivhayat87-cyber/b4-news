@@ -3,7 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AccountsOutput, AccountsRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchUpdateOutput, ResearchUpdateRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
+import type { AccountsOutput, AccountsRequest, DiscoveryPickOutput, DiscoveryPickRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchUpdateOutput, ResearchUpdateRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
@@ -22,6 +22,10 @@ export class FakeText implements TextAI {
     const paragraphs = blocks(s.body);
     if (paragraphs.length === 0 && s.intro) paragraphs.push(s.intro);
     if (paragraphs[0]) paragraphs[0] = `לפי דיווח שפורסם ב${s.sourceName}, ${paragraphs[0]}`;
+    // Several reports of one story: what the others add (a paragraph never twice), and who else reported.
+    const extras = req.extraSources ?? [];
+    for (const x of extras) for (const p of blocks(x.body)) if (!paragraphs.some((q) => q.endsWith(p))) paragraphs.push(p);
+    if (extras.length) paragraphs.push(`על הדיווח כתבו גם: ${extras.map((x) => x.sourceName).join(', ')}.`);
     const title = s.title.includes(':') ? s.title.split(':').reverse().map((p) => p.trim()).join(': ') : s.title;
     return {
       data: {
@@ -187,6 +191,15 @@ export class FakeText implements TextAI {
           depth: 'quick',
         })),
       },
+      usage: usage(),
+    };
+  }
+
+  /** The stories most sites covered, in order, so the picks work without an AI key. */
+  async discoveryPick(req: DiscoveryPickRequest): Promise<AiResult<DiscoveryPickOutput>> {
+    const ranked = [...req.stories].sort((a, b) => b.sites - a.sites).slice(0, req.count);
+    return {
+      data: { picks: ranked.map((t, i) => ({ id: t.id, score: Math.max(10, 90 - i * 3), reason: t.sites > 1 ? `(דוגמה) מסוקר ב-${t.sites} אתרים` : '(דוגמה) סיפור חדש' })) },
       usage: usage(),
     };
   }

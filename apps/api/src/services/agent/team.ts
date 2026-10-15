@@ -38,6 +38,7 @@ const JOB_AGENT: Record<AiJobType, AgentId> = {
   legal_review: 'reviewer',
   research: 'reporter',
   meeting: 'chief',
+  discovery_pick: 'chief',
   ads: 'ads',
 };
 
@@ -148,8 +149,8 @@ export async function agentTeam(s: Services): Promise<AgentTeamDto> {
   ]);
   const [text, visual, chief] = await Promise.all([s.ai.text().catch(() => null), s.ai.visual().catch(() => null), agentEngine(s).catch(() => null)]);
   const model: Record<AgentId, { provider: string; model: string; live: boolean }> = {
-    // The chat on its own model; the editorial meeting on the main one.
-    chief: { provider: 'anthropic', model: [AGENT_MODEL, claude.model].filter(Boolean).join(' / '), live: Boolean(chief?.live) },
+    // The chat on its own model; the editorial meeting on the main one; the picks after a run on the fast one.
+    chief: { provider: 'anthropic', model: [...new Set([AGENT_MODEL, claude.model, claude.modelFast].filter(Boolean))].join(' / '), live: Boolean(chief?.live) },
     // A deep research runs on the strongest model.
     reporter: { provider: 'anthropic', model: [claude.model, 'claude-opus-5-5'].filter(Boolean).join(' / '), live: Boolean(text?.live) },
     rewrite: { provider: 'anthropic', model: claude.model ?? '', live: Boolean(text?.live) },

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { PROMPT_AUTHORS } from './agent';
 import { STAFF_ROLES } from './auth';
-import { CATEGORY_SLUGS } from './categories';
+import { CATEGORY_SLUGS, type CategorySlug } from './categories';
 
 const id = z.string().uuid();
 const iso = z.string();
@@ -188,18 +188,57 @@ export const RunItemDto = z.object({
   language: z.string().nullable(),
   titleHe: z.string().nullable(),
   introHe: z.string().nullable(),
+  /** Same story on several sites: the items with one storyId are a group, its first item leads (null: alone). */
+  storyId: z.string().nullable(),
+  /** The editor took it out of its group. */
+  separated: z.boolean(),
+  /**
+   * The chief editor recommends it: score 1-100 (how important), reason in a few Hebrew words.
+   * Other agents read the score too (where an article goes on the home page). null: not recommended.
+   */
+  pick: z.object({ score: z.number().int(), reason: z.string() }).nullable(),
 });
 export type RunItemDto = z.infer<typeof RunItemDto>;
 
-export const RunDetail = z.object({ run: RunDto, isLatest: z.boolean(), items: z.array(RunItemDto) });
+export const RUN_PICK_STATUSES = ['none', 'pending', 'ready', 'failed'] as const;
+
+export const RunDetail = z.object({
+  run: RunDto,
+  isLatest: z.boolean(),
+  /** The chief editor's picks: none (off, or a run from before), pending (still reading), ready, failed. */
+  picks: z.object({ status: z.enum(RUN_PICK_STATUSES), count: z.number().int(), error: z.string().nullable() }),
+  items: z.array(RunItemDto),
+});
 export type RunDetail = z.infer<typeof RunDetail>;
+
+/** Sections the chief editor recommends less of (it still recommends one from each). */
+export const LEISURE_SECTIONS = ['entertainment', 'tourism', 'automotive', 'health'] as const satisfies readonly CategorySlug[];
+
+/** The chief editor's picks after every run ("צוות הסוכנים" > the chief editor). */
+export const DiscoveryPickSettings = z.object({
+  on: z.boolean().default(true),
+  /** How many stories it recommends per run (at least one per section that has articles, even beyond it). */
+  count: z.number().int().min(5).max(60).default(20),
+  leisure: z.array(CategorySlugField).max(13).default([...LEISURE_SECTIONS]),
+});
+export type DiscoveryPickSettings = z.infer<typeof DiscoveryPickSettings>;
+
+export const MAX_STORY_SOURCES = 8;
 
 export const SaveSelectionInput = z.object({
   itemIds: z.array(id).min(1, 'לא נבחרו כתבות').max(60, 'אפשר לבחור עד 60 כתבות בבת אחת'),
+  /**
+   * Same-story groups among itemIds: each becomes ONE article written from all its sources (the
+   * first is the main original), placed where its first item is in itemIds.
+   */
+  stories: z.array(z.array(id).min(2).max(MAX_STORY_SOURCES)).max(30).default([]),
   mode: z.enum(['magazine', 'single']).default('magazine'),
   title: z.string().trim().min(1).max(120).optional(),
   colorLabel: z.enum(DRAFT_COLORS).optional(),
 });
+export type SaveSelectionInput = z.infer<typeof SaveSelectionInput>;
+
+export const SeparateItemInput = z.object({ separated: z.boolean() });
 export const SaveSelectionResult = z.object({ magazineId: id.nullable(), draftIds: z.array(id) });
 
 // ---------------------------------------------------------------------------
@@ -324,6 +363,8 @@ export const DraftDetail = z.object({
       translation: z.object({ title: z.string(), intro: z.string().nullable(), bodyText: z.string().nullable() }).nullable(),
     })
     .nullable(),
+  /** A story from several sites, written as one article: the other originals it was written from. */
+  extraSources: z.array(z.object({ title: z.string(), url: z.string(), sourceName: z.string(), publishedAt: iso.nullable(), language: z.string().nullable() })),
   hasAiBaseline: z.boolean(),
   textFinalizedAt: iso.nullable(),
   skipReason: z.string().nullable(),

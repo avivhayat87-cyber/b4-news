@@ -47,7 +47,8 @@ services/
   connection-tests.ts  the "test connection" calls (Anthropic, Gemini, SMTP, the Meta app, Telegram, Facebook/Instagram incl. the token's expiry)
   social-accounts.ts   the accounts posts go to; a pasted personal Meta token → long-lived (the app's secret) → the page's own token from me/accounts, which never expires
   scraper/        parse (RSS/Atom, sitemap, HTML, article incl. JSON-LD), collect (delta, canonical URLs, sitemap indexes),
-                  robots (robots.txt), autodetect + setup (feed discovery from a link), run, test-source
+                  robots (robots.txt), autodetect + setup (feed discovery from a link), run, test-source,
+                  desk (a run as the CMS reads it: same-story groups, "separate"), picks (the chief editor's recommendations)
   drafts.ts       selections → drafts, AI rewrite/refine/images, autosave, finalize/skip, reading models
   research.ts     the research reporter: a link or screenshots → a research file → an article written from it; proof of every source
   social.ts       the social package (headline, 2 sentences, story image, targets, approval)
@@ -69,10 +70,10 @@ Rules of thumb: routes validate input (zod), check the role, call one service fu
 
 ```
 sources ──(discovery.run job)──▶ scrape_runs ─┬─ scrape_run_sources   (per source: since, new watermark, counts, error)
-                                              └─ scrape_run_items ──▶ scraped_items (+ scraped_item_payloads)
-                                                     found | pulled        url_hash unique, content_hash
+          (then discovery.pick: picks jsonb)  └─ scrape_run_items ──▶ scraped_items (+ scraped_item_payloads)
+                                                     found | pulled, separated   url_hash unique, content_hash
 scraped_items ──(save selection)──▶ magazines ─▶ article_drafts ─┬─ draft_revisions   (ai_initial, ai_refine, autosave, checkpoint)
-                                                                 ├─ ai_chat_messages
+  (a same-story group: one draft, the others in extra_item_ids)  ├─ ai_chat_messages
                                                                  ├─ image_batches ─▶ media_assets (4 per click; renditions)
                                                                  ├─ draft_reviews (the legal review: risks and decisions; publishing waits for it)
                                                                  ├─ social_plans (the distribution plan; becomes article_shares on publish)
@@ -183,9 +184,17 @@ Our own ad server, `services/ads/*`. The places are fixed in code (`AD_SLOTS`): 
 
 Each active source has a watermark (newest `published_at` seen by its last successful run). A run lists the source (feed, sitemap or listing page), keeps items newer than the watermark, drops URLs already known (`url_hash` of the canonical URL: lower-case host, no `www`, no tracking parameters, no fragment) and bodies already known (`content_hash`), opens the remaining article pages (only where robots.txt allows) with the developer's selectors or automatic detection (schema.org JSON-LD first, then the largest text block); a page that can't be opened falls back to the feed's headline and summary, assigns a section (URL rules → source default → keyword classifier; the AI refines it later), and stores the run's items. The watermark moves only when the source succeeds; five failures in a row mark the source `broken`.
 
+### The discovery desk: stories and the chief editor's picks (CMS > איתור כתבות)
+
+A run's articles are read through `services/scraper/desk.ts`. Articles about the same story on several sites are grouped for free when the run is read (`groupByTopic` in `lib/similarity.ts`, the same rule as the editorial meeting's topics: enough shared subject words; a foreign article by its Hebrew headline once it has one): the group's id is its lead, the fullest report, which is also the main original when the group is written as one article. "הפרדה" sets `scrape_run_items.separated`: the article stands alone in that run, and "החזרה לקבוצה" lets it group again. Any run can be saved from, the latest or an older one; "move to the latest run" (`pull`) remains in the API.
+
+**The chief editor's picks** (`services/scraper/picks.ts`, skill `discovery.pick`, owner's decision 2026-10-15): when a run found new articles, a `discovery.pick` job (two attempts) sends the run's stories (the 200 most covered, three headlines each, with their sections and how many sites) and what we published in the last two days to the fast model, which returns the stories to take first, each with a score (1-100) and a Hebrew reason. The code then keeps the owner's rules whatever the model answered (`settlePicks`): only stories the run has, each once; the most covered story of every section that had no pick; the leisure sections (`agent.picks` in `app_settings`, by default entertainment, tourism, automotive and health) at most a fifth of the count but one each; and no more than the count (20 by default; a section's only story stays even beyond it). The result is `scrape_runs.picks` (`pending` → `ready` | `failed`), shown as a star with the reason and a "מומלצים" filter; an editor can ask again for a run (`POST /admin/discovery/runs/:id/picks`). Only an admin changes the settings (in the chief editor's card), and turning them off stops the job after a run. Tracked in `ai_jobs` as `discovery_pick` (the chief editor's card). The chief editor's chat tool `latest_discovery` returns the picks too. The score is the one other agents read (`RunItemDto.pick.score`).
+
+**A group written as one article**: saving marks the chosen reports of a group (`SaveSelectionInput.stories`, up to 8 per story; a group left with one report is a single article). It becomes one draft whose original is the lead and whose `extra_item_ids` are the others; the rewrite job sends all the reports to the main model with the skill `rewrite.combine` (each fact once, a detail only one report has where it belongs, disagreements attributed to each outlet, the outlets credited), and the editor shows the other reports under the original (`DraftDetail.extraSources`). The copy check and the editor's comments compare against all of them.
+
 ### AI
 
-- **Rewrite** (`rewrite.system` skill, editable in the CMS): "an external reporter" rewrite with the same facts, structured JSON output (title, subtitle, paragraphs, section, tags, image prompt). The active house-style rules are injected into the prompt.
+- **Rewrite** (`rewrite.system` skill, editable in the CMS): "an external reporter" rewrite with the same facts, structured JSON output (title, subtitle, paragraphs, section, tags, image prompt). The active house-style rules are injected into the prompt. A same-story group chosen in discovery is written by `rewrite.combine` from all its reports (see "The discovery desk").
 - **Refine** (`refine.system` skill): the editor's comment, optionally on a selected passage, applied to the current text; the reply goes to the chat.
 - **Images**: 3 quick landscape drafts per click for the article (the chosen one is redrawn at full quality); 2 portrait options for stories (the first is preselected). Unless the editor wrote their own description, the visual agent writes it in Hebrew in the job (knowing the descriptions already tried); a Hebrew description reaches the image model in English (`toEnglish`). `image_batches.prompt_by` says who wrote it. Every image goes through `lib/images.ts`.
 - **Where images and reels are made**: with the Gemini API key from the CMS (`gemini-images.ts`, `gemini-video.ts`), or, on the cloud server (`VERTEX_PROJECT`), through Vertex AI (`vertex-images.ts`, `vertex-video.ts`): the same Google models, billed to the Google Cloud account and authorized by the server's own identity (`lib/google-auth.ts`, no key). The model names come from the CMS either way. The visual agent always uses the key.

@@ -79,10 +79,15 @@ export type EnglishOutput = z.infer<typeof EnglishOutput>;
 
 export type ArticleText = { title: string; subtitle: string; body: string };
 
+export type RewriteSource = { title: string; intro: string | null; body: string; sourceName: string; url: string; language?: string | null };
+
 export type RewriteRequest = {
+  /** prompt_templates "rewrite.system", or "rewrite.combine" when there are extraSources */
   systemPrompt: string;
   /** language: ISO 639-1 of a foreign original (null = Hebrew). */
-  source: { title: string; intro: string | null; body: string; sourceName: string; url: string; language?: string | null };
+  source: RewriteSource;
+  /** The same story from other sites: one article is written from all of them (source is the main one). */
+  extraSources?: RewriteSource[];
 };
 
 export type RefineRequest = {
@@ -176,6 +181,26 @@ export type MeetingRequest = {
   /** The topics, as the model reads them: id, how many sites, the headlines with their sites and sections. */
   topics: { id: string; sites: number; category: string | null; headlines: { title: string; source: string; at: string }[] }[];
   /** What we published lately, so the meeting doesn't propose it again. */
+  published: string[];
+  today: string;
+};
+
+/** The chief editor's picks after a discovery run: the stories to take first, each with a score (1-100) and a short reason. */
+export const DiscoveryPickOutput = z.object({
+  picks: upTo(z.object({ id: clip(20), score: z.number(), reason: clip(300) }), 80),
+});
+export type DiscoveryPickOutput = z.infer<typeof DiscoveryPickOutput>;
+
+export type DiscoveryPickRequest = {
+  /** prompt_templates "discovery.pick" */
+  systemPrompt: string;
+  /** How many stories to recommend. */
+  count: number;
+  /** The leisure sections (Hebrew names): fewer of those. */
+  leisure: string[];
+  /** The run's stories: id, how many sites, the section (Hebrew name), the headlines with their sites. */
+  stories: { id: string; sites: number; section: string | null; headlines: { title: string; source: string }[] }[];
+  /** What we published lately, so it isn't recommended again without something new. */
   published: string[];
   today: string;
 };
@@ -369,6 +394,8 @@ export interface TextAI {
   researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>>;
   researchUpdate(req: ResearchUpdateRequest): Promise<AiResult<ResearchUpdateOutput>>;
   meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>>;
+  /** The chief editor's picks after a discovery run (the fast model). */
+  discoveryPick(req: DiscoveryPickRequest): Promise<AiResult<DiscoveryPickOutput>>;
   /** The official-sources registry: a body's accounts its site doesn't link (two searches at most). */
   findAccounts(req: AccountsRequest): Promise<AiResult<AccountsOutput> & { searches: number; toolErrors: string[] }>;
   review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;

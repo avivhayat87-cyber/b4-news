@@ -5,6 +5,7 @@
 import type { AdminReaderComment, AdminReaderDto, AudienceOverview, ReaderList, SubscriberDto, SubscriberList } from '@b4/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';
+import { SectionTabs } from '@/components/section-tabs';
 import { Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, cx, inputClass, useToast } from '@/components/ui';
 import { SITE_URL, admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
@@ -66,6 +67,7 @@ export default function AudiencePage() {
 
   return (
     <>
+      <SectionTabs section="audience" />
       <PageHeader
         title="מנויים וגולשים"
         subtitle="מי שנרשם לאתר כדי להגיב, ומי שנרשם לניוזלטר. גולשים מתחברים עם קוד חד-פעמי שנשלח למייל, בלי סיסמה, ומאשרים את תנאי השימוש."
