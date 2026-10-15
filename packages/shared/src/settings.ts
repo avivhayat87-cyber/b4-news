@@ -261,6 +261,8 @@ export const PublicSite = z.object({
     /** Third-party advertising cookies are in use, so the banner also asks about them. */
     adsCookies: z.boolean(),
   }),
+  /** Google AdSense's publisher id while Google ads are on (for ads.txt), else null. */
+  ads: z.object({ googleClient: z.string().nullable() }).default({ googleClient: null }),
 });
 export type PublicSite = z.infer<typeof PublicSite>;
 

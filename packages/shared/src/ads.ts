@@ -52,6 +52,10 @@ export const AD_SLOT_FORMATS: Record<AdSlot, readonly AdFormat[]> = {
 
 export const APP_AD_SLOTS: readonly AdSlot[] = ['app_feed', 'app_article'];
 
+/** The site's places: the only ones Google may fill (the app's would need AdMob, a later step). */
+export const WEB_AD_SLOTS = ['home_top', 'category_top', 'sidebar', 'article_side', 'article_end'] as const satisfies readonly AdSlot[];
+export type WebAdSlot = (typeof WEB_AD_SLOTS)[number];
+
 /**
  * The sizes a format is shown at, in CSS pixels (images are kept at twice that, for sharp
  * screens). A billboard has its own picture for phones; the others use one picture everywhere.
@@ -116,6 +120,32 @@ export const AdImageKey = z.string().regex(/^\d{4}\/\d{2}\/[0-9a-f-]{36}\/ad-[a-
 // The CMS (admins only: leads are personal data)
 // ---------------------------------------------------------------------------
 
+const adUnit = z.union([z.literal(''), z.string().trim().regex(/^\d{6,12}$/, 'מספר יחידת המודעה הוא ספרות בלבד (מתוך data-ad-slot)')]).default('');
+
+/**
+ * Google AdSense, filling the places we allow it, only where no campaign of ours runs, and only
+ * for readers who agreed to advertising cookies. Never Google's automatic placement ("Auto ads").
+ */
+export const AdsenseSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+    /** The publisher id, "ca-pub-" and 16 digits ("pub-…" is completed). Public: it is in every page's code anyway. */
+    client: z
+      .preprocess(
+        (v) => (typeof v === 'string' && /^pub-\d+$/.test(v.trim()) ? `ca-${v.trim()}` : v),
+        z.union([z.literal(''), z.string().trim().regex(/^ca-pub-\d{16}$/, 'מספר המפרסם נראה כך: ca-pub- ואחריו 16 ספרות')]),
+      )
+      .default(''),
+    /** The places Google may fill. */
+    slots: z.array(z.enum(WEB_AD_SLOTS)).default(['sidebar', 'article_side', 'article_end']),
+    /** Each place's ad unit ("data-ad-slot" in AdSense); a place without one is never filled. */
+    units: z
+      .object({ home_top: adUnit, category_top: adUnit, sidebar: adUnit, article_side: adUnit, article_end: adUnit })
+      .default({}),
+  })
+  .refine((g) => !g.enabled || g.client !== '', { message: 'כדי להפעיל את Google צריך את מספר המפרסם מ-AdSense', path: ['client'] });
+export type AdsenseSettings = z.infer<typeof AdsenseSettings>;
+
 /** The switches over all ads. */
 export const AdSettings = z.object({
   /** Off: no ad appears anywhere (the places stay empty or show our own promo). */
@@ -124,8 +154,12 @@ export const AdSettings = z.object({
   housePromo: z.boolean().default(true),
   /** In the app's feed: one ad after this many stories. */
   appFeedEvery: z.number().int().min(4).max(30).default(8),
+  google: AdsenseSettings.default({}),
 });
 export type AdSettings = z.infer<typeof AdSettings>;
+
+/** Whether Google may show ads at all (switched on, with a publisher id, and ads on). */
+export const googleLive = (s: AdSettings) => s.enabled && s.google.enabled && s.google.client !== '';
 
 export const AdvertiserInput = z.object({
   name: text(120).min(2, 'שם המפרסם קצר מדי'),
@@ -398,8 +432,17 @@ export const PublicAd = z.object({
 });
 export type PublicAd = z.infer<typeof PublicAd>;
 
-/** One place's answer: an ad, or nothing (the site then shows its own promo, or leaves it empty). */
-export const PublicAdSlot = z.object({ ad: PublicAd.nullable(), housePromo: z.boolean(), appFeedEvery: z.number().int() });
+/**
+ * One place's answer: an ad, or nothing (the site then shows its own promo, or leaves it empty).
+ * google: no campaign here and Google may fill the place: the unit to ask Google for, shown only to
+ * a reader who agreed to advertising cookies in this terms version (others get our promo).
+ */
+export const PublicAdSlot = z.object({
+  ad: PublicAd.nullable(),
+  housePromo: z.boolean(),
+  appFeedEvery: z.number().int(),
+  google: z.object({ client: z.string(), unit: z.string(), consentVersion: z.string() }).nullable(),
+});
 export type PublicAdSlot = z.infer<typeof PublicAdSlot>;
 
 /** view: the ad was seen; open: a lead ad's form was opened (its click). */

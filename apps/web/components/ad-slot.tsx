@@ -4,9 +4,11 @@
 // short lead form in place when the ad asks for one. How often this reader saw each campaign
 // today is counted here in the browser (no cookie, nothing sent about the reader), and two places
 // on one page never show the same campaign. An outage leaves the place empty, never the page.
-import { AD_LABEL, AD_LEAD_FIELD_LABELS, AD_SIZES, AD_SLOT_FORMATS, AD_SLOT_NAMES, adSize, type AdLeadField, type AdSlot as Slot, type PublicAd } from '@b4/shared';
+import { AD_LABEL, AD_LEAD_FIELD_LABELS, AD_SIZES, AD_SLOT_FORMATS, AD_SLOT_NAMES, adSize, type AdLeadField, type AdSlot as Slot, type PublicAd, type PublicAdSlot } from '@b4/shared';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiFailure, adsApi } from '@/lib/client-api';
+import { CONSENT_CHANGED_EVENT, adsConsented } from './consent-banner';
+import { GoogleAd } from './google-ad';
 import { HouseBillboard, HousePromo, NEW_WINDOW } from './ui';
 import { useAdView } from './use-ad-view';
 
@@ -198,10 +200,21 @@ export function AdSlot({
   minWidth?: number;
   className?: string;
 }) {
-  const [state, setState] = useState<{ ad: PublicAd | null; promo: boolean; preview?: boolean } | null>(null);
+  const [state, setState] = useState<{ ad: PublicAd | null; promo: boolean; preview?: boolean; google?: PublicAdSlot['google'] } | null>(null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [open, setOpen] = useState(false);
+  const [consented, setConsented] = useState(false);
   const box = useRef<HTMLElement>(null);
+
+  // Google only for a reader who agreed to advertising cookies, rechecked the moment they answer the banner.
+  const google = state?.google ?? null;
+  useEffect(() => {
+    if (!google) return;
+    const check = () => setConsented(adsConsented(google.consentVersion));
+    check();
+    window.addEventListener(CONSENT_CHANGED_EVENT, check);
+    return () => window.removeEventListener(CONSENT_CHANGED_EVENT, check);
+  }, [google]);
 
   useEffect(() => {
     if (window.innerWidth < minWidth) {
@@ -226,7 +239,7 @@ export function AdSlot({
           here.add(r.ad.campaignId);
           countSeen(r.ad);
         }
-        setState({ ad: r.ad, promo: r.housePromo });
+        setState({ ad: r.ad, promo: r.housePromo, google: r.google });
       })
       .catch(() => alive && setState({ ad: null, promo: true }));
     return () => {
@@ -245,6 +258,15 @@ export function AdSlot({
       </div>
     );
   const { ad } = state;
+  if (!ad && google && consented) {
+    // Google's unit; when Google has nothing for it, the place (label and all) folds away.
+    return (
+      <aside aria-label={AD_LABEL} className={`has-[ins[data-ad-status=unfilled]]:hidden ${className}`}>
+        <Label sponsor="" />
+        <GoogleAd client={google.client} unit={google.unit} wide={AD_SLOT_FORMATS[slot].includes('billboard')} />
+      </aside>
+    );
+  }
   if (!ad) {
     if (!state.promo || fallback === 'none') return null;
     return <div className={className}>{fallback === 'promo' ? <HousePromo /> : <HouseBillboard section={category && sectionName ? { slug: category, name: sectionName } : undefined} />}</div>;

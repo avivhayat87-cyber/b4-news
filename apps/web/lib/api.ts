@@ -76,6 +76,7 @@ const EMPTY_SITE: PublicSite = {
   contact: { email: '', phone: '', address: '' },
   pages: [],
   consent: { version: LEGAL_VERSION_DEFAULT, adsCookies: false },
+  ads: { googleClient: null },
 };
 
 /** Links, contact details and info-page titles from the CMS ("site" tag). Never takes the page down. */

@@ -13,8 +13,10 @@ import {
   SITE_LINK_KEYS,
   SiteSettings,
   docToHtml,
+  googleLive,
   textToDoc,
 } from '@b4/shared';
+import { getAdSettings } from './ads/campaigns';
 import type { Services } from './context';
 import { ACCESSIBILITY_PAGE, COMMENT_RULES_PAGE, PRIVACY_PAGE, TERMS_PAGE } from './legal-pages';
 
@@ -96,13 +98,15 @@ export async function publishLegalVersion(s: Services, staffId: string, now = ne
 }
 
 export async function publicSite(s: Services): Promise<PublicSite> {
-  const site = await getSite(s);
+  const [site, ads] = await Promise.all([getSite(s), getAdSettings(s.db)]);
+  // Third-party ad cookies are in use only while Google ads are on: only then does the banner ask about them.
+  const google = googleLive(ads) ? ads.google.client : null;
   return {
     links: Object.fromEntries(Object.entries(site.links).filter(([, v]) => v)),
     contact: site.contact,
     pages: PAGE_SLUGS.map((slug) => ({ slug, title: site.pages[slug].title })),
-    // No third-party ad cookies yet, so the banner only asks about the terms.
-    consent: { version: site.legal.version, adsCookies: false },
+    consent: { version: site.legal.version, adsCookies: google !== null },
+    ads: { googleClient: google },
   };
 }
 

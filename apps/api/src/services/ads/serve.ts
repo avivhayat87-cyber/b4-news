@@ -4,13 +4,27 @@
 // second, measured by the browser), the click and the lead are counted against it. Only numbers
 // are kept: no reader is identified, and how often one reader saw an ad is counted in their own
 // browser.
-import { AD_LABEL, AD_SLOT_FORMATS, AD_SLOTS, type AdSlot, type PublicAd, type PublicAdQuery, type PublicAdSlot, adLeadConsent } from '@b4/shared';
+import {
+  AD_LABEL,
+  AD_SLOT_FORMATS,
+  AD_SLOTS,
+  type AdSettings,
+  type AdSlot,
+  type PublicAd,
+  type PublicAdQuery,
+  type PublicAdSlot,
+  WEB_AD_SLOTS,
+  type WebAdSlot,
+  adLeadConsent,
+  googleLive,
+} from '@b4/shared';
 import { adCampaigns, adCreatives, adStats, and, eq, inArray, sql } from '@b4/db';
 import type { SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { keyedHash, safeEqualHex } from '../../lib/crypto';
 import { israelDay } from '../agent/team';
 import type { Services } from '../context';
+import { legalVersion } from '../site-settings';
 import { creativeFits, getAdSettings } from './campaigns';
 
 type Query = z.output<typeof PublicAdQuery>;
@@ -67,11 +81,23 @@ function pickWeighted<T extends { weight: number }>(items: T[], random = Math.ra
   return items[items.length - 1] ?? null;
 }
 
-/** One place's ad, or none. A switched-off ad system answers none, and the site shows its own promo (or nothing). */
+/** Google's unit for a place nobody bought, when Google is on and allowed there; else null. */
+async function googleFor(s: Services, settings: AdSettings, slot: AdSlot): Promise<PublicAdSlot['google']> {
+  if (!googleLive(settings) || !(WEB_AD_SLOTS as readonly AdSlot[]).includes(slot)) return null;
+  const place = slot as WebAdSlot;
+  const unit = settings.google.slots.includes(place) ? settings.google.units[place] : '';
+  return unit ? { client: settings.google.client, unit, consentVersion: await legalVersion(s) } : null;
+}
+
+/**
+ * One place's ad, or none. A switched-off ad system answers none, and the site shows its own promo
+ * (or nothing). A place no campaign takes may go to Google, when it is allowed there.
+ */
 export async function serveAd(s: Services, slot: AdSlot, q: Query, random = Math.random): Promise<PublicAdSlot> {
   const settings = await getAdSettings(s.db);
-  const empty: PublicAdSlot = { ad: null, housePromo: settings.housePromo, appFeedEvery: settings.appFeedEvery };
-  if (!settings.enabled) return empty;
+  const base = { ad: null, housePromo: settings.housePromo, appFeedEvery: settings.appFeedEvery, google: null };
+  if (!settings.enabled) return base;
+  const empty = async (): Promise<PublicAdSlot> => ({ ...base, google: await googleFor(s, settings, slot) });
   const now = new Date().toISOString();
   const rows = await s.db
     .select({
@@ -103,11 +129,11 @@ export async function serveAd(s: Services, slot: AdSlot, q: Query, random = Math
   // The campaign by its weight, then one of its ads at random.
   const campaigns = [...new Map(fitting.map((r) => [r.campaignId, { id: r.campaignId, weight: r.weight }])).values()];
   const campaign = pickWeighted(campaigns, random);
-  if (!campaign) return empty;
+  if (!campaign) return empty();
   const mine = fitting.filter((r) => r.campaignId === campaign.id);
   const chosen = mine[Math.floor(random() * mine.length)] ?? mine[0]!;
   await bump(s, chosen.creative.id, slot, 'served');
-  return { ...empty, ad: toPublicAd(s, slot, chosen) };
+  return { ...base, ad: toPublicAd(s, slot, chosen) };
 }
 
 function toPublicAd(s: Services, slot: AdSlot, r: Candidate): PublicAd {

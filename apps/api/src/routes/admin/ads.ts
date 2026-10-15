@@ -34,6 +34,7 @@ import * as ads from '../../services/ads/campaigns';
 import * as leads from '../../services/ads/leads';
 import * as agent from '../../services/agent/ads';
 import type { Services } from '../../services/context';
+import { revalidateSite } from '../../services/publish';
 
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const params = z.object({ id: z.string().uuid() });
@@ -55,10 +56,12 @@ export const adsRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s
 
   app.get('/ads', { schema: { response: { 200: AdsOverviewDto } } }, async () => ads.adsOverview(s));
 
+  // Turning Google on or off changes what the cookie banner asks and the site's ads.txt: the site's "site" pages refresh.
   app.put('/ads/settings', { schema: { body: AdSettings, response: { 200: AdSettings } } }, async (req) => {
     const staff = requireStaff(req, 'admin');
     const saved = await ads.saveAdSettings(s.db, staff.id, req.body);
     await audit(s.db, { userId: staff.id, entity: 'ads', entityId: 'settings', action: 'update', details: saved });
+    await revalidateSite(s, ['site']).catch((err) => s.log.warn({ err: err instanceof Error ? err.message : err }, 'site revalidate failed'));
     return saved;
   });
 

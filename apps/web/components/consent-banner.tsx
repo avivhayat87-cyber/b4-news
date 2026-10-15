@@ -9,8 +9,11 @@ import { consentApi } from '@/lib/client-api';
 
 const KEY = 'b4.consent';
 export const OPEN_CONSENT_EVENT = 'b4:consent-open';
+/** Fired when the reader answers, so the ad places see a new choice about advertising cookies at once. */
+export const CONSENT_CHANGED_EVENT = 'b4:consent-changed';
 
-type Stored = { visitorId: string; version: string; ads: boolean; at: string };
+/** askedAds: whether the bar asked about advertising cookies (it does only while third-party ads are on). */
+type Stored = { visitorId: string; version: string; ads: boolean; askedAds?: boolean; at: string };
 
 function read(): Stored | null {
   try {
@@ -40,25 +43,28 @@ export function ConsentBanner({ version, adsCookies }: { version: string; adsCoo
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (read()?.version !== version) setOpen(true);
+    // A new terms version, or ad cookies came into use after this reader answered without being asked about them.
+    const stored = read();
+    if (stored?.version !== version || (adsCookies && !stored?.askedAds)) setOpen(true);
     const reopen = () => setOpen(true);
     window.addEventListener(OPEN_CONSENT_EVENT, reopen);
     return () => window.removeEventListener(OPEN_CONSENT_EVENT, reopen);
-  }, [version]);
+  }, [version, adsCookies]);
 
   const answer = useCallback(
     (ads: boolean) => {
-      const stored: Stored = { visitorId: read()?.visitorId ?? newId(), version, ads, at: new Date().toISOString() };
+      const stored: Stored = { visitorId: read()?.visitorId ?? newId(), version, ads, askedAds: adsCookies, at: new Date().toISOString() };
       try {
         window.localStorage.setItem(KEY, JSON.stringify(stored));
       } catch {
         // Private mode or blocked storage: the bar returns on the next visit.
       }
       setOpen(false);
+      window.dispatchEvent(new Event(CONSENT_CHANGED_EVENT));
       // The record is evidence, not a gate: reading goes on even if the API is unreachable.
       void consentApi.record({ visitorId: stored.visitorId, version, ads }).catch(() => undefined);
     },
-    [version],
+    [version, adsCookies],
   );
 
   if (!open) return null;

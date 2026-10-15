@@ -252,4 +252,33 @@ describe('advertising', () => {
     expect(off.ad).toBeNull();
     expect(off.housePromo).toBe(true);
   });
+
+  it('lets Google fill only the places allowed for it where no campaign runs, and asks readers about ad cookies only then', async () => {
+    const google = { enabled: true, client: 'pub-1234567890123456', slots: ['sidebar', 'article_end'], units: { sidebar: '1111111111', article_end: '2222222222', home_top: '3333333333' } };
+    expect((await admin.put('/ads/settings', { enabled: true, housePromo: true, appFeedEvery: 8, google: { ...google, client: '' } })).status).toBe(400);
+    expect((await admin.put('/ads/settings', { enabled: true, housePromo: true, appFeedEvery: 8, google: { ...google, client: 'ca-pub-12' } })).status).toBe(400);
+    const saved = await admin.put('/ads/settings', { enabled: true, housePromo: true, appFeedEvery: 8, google });
+    expect(saved.status).toBe(200);
+    expect(saved.body.google.client).toBe('ca-pub-1234567890123456');
+
+    const site = (await pub('GET', '/site')).body;
+    expect(site.consent.adsCookies).toBe(true);
+    expect(site.ads.googleClient).toBe('ca-pub-1234567890123456');
+
+    // A place nobody bought, allowed for Google: its unit, with the terms version the reader's consent must match.
+    const end = (await pub('GET', '/ads/article_end?device=desktop')).body;
+    expect(end.ad).toBeNull();
+    expect(end.google).toEqual({ client: 'ca-pub-1234567890123456', unit: '2222222222', consentVersion: site.consent.version });
+    // A campaign of ours comes first; a place not allowed (even with a unit) stays ours; the app never.
+    const side = (await pub('GET', '/ads/sidebar?device=desktop')).body;
+    expect(side.ad).not.toBeNull();
+    expect(side.google).toBeNull();
+    expect((await pub('GET', '/ads/home_top?device=desktop')).body.google).toBeNull();
+    expect((await pub('GET', '/ads/app_article?device=mobile')).body.google).toBeNull();
+
+    // Google off: no unit anywhere, and the banner stops asking about ad cookies.
+    await admin.put('/ads/settings', { enabled: true, housePromo: true, appFeedEvery: 8, google: { ...google, enabled: false } });
+    expect((await pub('GET', '/ads/article_end?device=desktop')).body.google).toBeNull();
+    expect((await pub('GET', '/site')).body).toMatchObject({ consent: { adsCookies: false }, ads: { googleClient: null } });
+  });
 });
