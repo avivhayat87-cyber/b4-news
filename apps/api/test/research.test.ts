@@ -1,7 +1,7 @@
 // The research reporter: a link or screenshots become a research file, the article is written from
 // it alone and ends with the sources (names only), details without an official source are marked
 // down, every source is kept as proof, and a month's research stops at its budget.
-import { articleDrafts, eq, researchTasks } from '@b4/db';
+import { articleDrafts, articles, eq, researchTasks } from '@b4/db';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ingestImage } from '../src/lib/images';
@@ -18,8 +18,15 @@ const PAGE = `<html><head><title>מחיר הדלק יעלה בחודש הבא</t
 <p>לפי ההודעה, העלייה נובעת מעליית מחירי הנפט בעולם ומשינוי בשער הדולר בחודש האחרון. המחיר המרבי נקבע על פי נוסחה קבועה.</p>
 <p>המחיר הבא ייקבע בתחילת החודש שאחריו, לפי אותה נוסחה. בתחנות עם שירות מלא יתווסף למחיר תשלום נפרד, כפי שנקבע בצו הפיקוח על המחירים.</p></article></body></html>`;
 
+const GOV2 = 'https://www.gov.il/he/pages/fuel-price-correction';
+const PAGE2 = `<html><head><title>תיקון: מחיר הדלק יעלה ב-15 אגורות</title></head><body><article><h1>תיקון: מחיר הדלק יעלה ב-15 אגורות</h1>
+<p>משרד האנרגיה עדכן הערב כי מחיר ליטר בנזין 95 יעלה בתחילת החודש הבא ב-15 אגורות, ולא ב-12 אגורות כפי שפורסם בבוקר.</p>
+<p>לפי העדכון, המחיר המרבי בשירות עצמי יגיע ל-7.45 שקלים לליטר, בגלל עלייה נוספת בשער הדולר.</p>
+<p>המשרד הוסיף כי התיקון נובע מנתון שהתקבל אחרי פרסום ההודעה הראשונה, וכי הנוסחה עצמה לא השתנתה.</p></article></body></html>`;
+
 /** The pages the research reads, answered in-process (no network in tests). */
 const fetchPages: Fetcher = async (url) => {
+  if (url.startsWith(GOV2)) return { url, status: 200, contentType: 'text/html; charset=utf-8', body: Buffer.from(PAGE2) };
   if (url.startsWith(GOV)) return { url, status: 200, contentType: 'text/html; charset=utf-8', body: Buffer.from(PAGE) };
   throw new Error(`unexpected fetch in test: ${url}`);
 };
@@ -98,6 +105,42 @@ describe('the research reporter', () => {
     expect(task.dossier.claims).toEqual([expect.objectContaining({ label: 'unverified' })]);
     expect(task.dossier.creditLine).toBe('');
     expect(task.draftId).toBeTruthy();
+  });
+
+  it('updates an article we already have, and changes it only when the editor puts the update in', async () => {
+    const [first] = (await editor.get('/research')).body.tasks.filter((t: { url: string | null; draftId: string | null }) => t.url === GOV && t.draftId);
+    const draftsBefore = (await ctx.db.select().from(articleDrafts)).length;
+    const started = await editor.post('/research', { kind: 'link', url: GOV2, targetDraftId: first.draftId });
+    expect(started.status).toBe(202);
+    await ctx.drain();
+    const task = (await editor.get(`/research/${started.body.id}`)).body;
+    // No new article: the update waits in the file of the one we have.
+    expect(task).toMatchObject({ status: 'done', draftId: first.draftId, target: { draftId: first.draftId }, update: { state: 'ready' } });
+    expect(task.update.paragraphs.join(' ')).toContain('15 אגורות');
+    expect(await ctx.db.select().from(articleDrafts)).toHaveLength(draftsBefore);
+    const [untouched] = await ctx.db.select().from(articleDrafts).where(eq(articleDrafts.id, first.draftId));
+    expect(untouched!.bodyText).not.toContain('15 אגורות');
+
+    const applied = await editor.post(`/research/${task.id}/apply-update`);
+    expect(applied.body.update.state).toBe('applied');
+    const [draft] = await ctx.db.select().from(articleDrafts).where(eq(articleDrafts.id, first.draftId));
+    expect(draft!.bodyText).toMatch(/^(## )?עדכון \(\d+\.\d+\)/);
+    expect(draft!.bodyText).toContain('15 אגורות');
+    // One sources line at the end, with the update's sources merged in.
+    expect(draft!.bodyText.match(/מקורות:/g)).toHaveLength(1);
+    expect(draft!.bodyText.trim().endsWith('מקורות: ממשלת ישראל')).toBe(true);
+    expect((await editor.post(`/research/${task.id}/apply-update`)).status).toBe(409);
+  });
+
+  it('opens a published article for an update without changing the site', async () => {
+    const [article] = await ctx.db.select().from(articles).limit(1);
+    const started = await editor.post('/research', { kind: 'link', url: `${GOV2}?a=1`, targetArticleId: article!.id });
+    await ctx.drain();
+    const task = (await editor.get(`/research/${started.body.id}`)).body;
+    expect(task.target.draftId).toBeTruthy();
+    expect((await editor.post(`/research/${task.id}/dismiss-update`)).body.update.state).toBe('dismissed');
+    const [same] = await ctx.db.select().from(articles).where(eq(articles.id, article!.id));
+    expect(same!.bodyHtml).toBe(article!.bodyHtml);
   });
 
   it('needs a link, at least one screenshot, or an idea of a sentence', async () => {
@@ -197,7 +240,7 @@ describe('the research reporter', () => {
   it('counts the research on the reporter in the agent team', async () => {
     const team = (await admin.get('/agents')).body;
     const reporter = team.agents.find((a: { id: string }) => a.id === 'reporter');
-    expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write', 'research.accounts']);
+    expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write', 'research.update', 'research.accounts']);
     const usage = (await admin.get('/agents/usage')).body;
     expect(usage.agents.find((a: { id: string }) => a.id === 'reporter').usage.calls).toBeGreaterThan(0);
   });

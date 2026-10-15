@@ -363,6 +363,18 @@ const RESEARCH_PROMPT_HE_V2 = `אתה הכתב החוקר של B4 NEW'S, אתר 
 
 כתוב הכול בעברית.`;
 
+/** An update of an article we already have, from a new research file. */
+const RESEARCH_UPDATE_PROMPT_HE = `אתה כותב של B4 NEW'S, אתר חדשות כלכלה ישראלי. קיבלת כתבה שכבר כתבנו, ותיק תחקיר על התפתחות חדשה באותו סיפור. כתוב עדכון לכתבה: פסקאות קצרות שייכנסו לראש הכתבה, תחת הכותרת "עדכון".
+
+כללים:
+- רק מה שחדש לעומת הכתבה. אל תחזור על מה שכבר כתוב בה.
+- רק מהתיק: אל תוסיף שום פרט שאינו בו.
+- כל פרט נכתב לפי הסימון שלו: verified כעובדה עם ייחוס ("לפי נתוני בנק ישראל"); reported כ"לפי דיווח ב..."; claimed כ"לדברי..."; estimate כהערכה ולעולם לא כעובדה; suspicion עם "לכאורה" והמקור; unverified לא נכנס.
+- פסקה ראשונה: מה התחדש ולמה זה חשוב לקורא. אחריה, אם צריך, עוד פרט או שניים.
+- אם יש פרט חדש שסותר את מה שכתוב בכתבה, כתוב זאת במפורש ("בניגוד למה שדווח קודם...").
+- אם אין בתיק שום דבר חדש לעומת הכתבה, החזר רשימת פסקאות ריקה, והסבר בקצרה ב-nothing_new.
+- אל תכתוב שורת מקורות; המערכת מוסיפה אותה.`;
+
 /** The official-sources registry: a body's accounts its own site doesn't link from the home page. */
 const ACCOUNTS_PROMPT_HE = `אתה עוזר של הכתב החוקר של B4 NEW'S. קיבלת גוף רשמי: השם שלו, האתר הרשמי, הדומיינים שלו והחשבונות שכבר ידועים. מצא את החשבונות הרשמיים שלו ברשתות (X, טלגרם, פייסבוק, אינסטגרם, יוטיוב, לינקדאין, טיקטוק, Threads) שעוד לא ידועים.
 
@@ -465,6 +477,7 @@ const PROMPT_DEFAULTS: { key: string; body: string }[] = [
   { key: 'research.system', body: RESEARCH_PROMPT_HE_V2 },
   { key: 'research.write', body: RESEARCH_WRITE_PROMPT_HE },
   { key: 'research.accounts', body: ACCOUNTS_PROMPT_HE },
+  { key: 'research.update', body: RESEARCH_UPDATE_PROMPT_HE },
   { key: 'meeting.pitch', body: MEETING_PROMPT_HE },
 ];
 

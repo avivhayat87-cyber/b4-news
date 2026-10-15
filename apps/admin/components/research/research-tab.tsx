@@ -15,6 +15,7 @@ import { COLOR, RESEARCH_DEPTH, RESEARCH_STATUS, timeAgo } from '@/lib/labels';
 /** "שכתוב בלבד": the link's article rewritten as before, no research (a link only). */
 type Depth = ResearchDepth | 'rewrite';
 const ACTIVE = ['queued', 'researching', 'writing'];
+const UPDATE_STATE: Record<NonNullable<ResearchTaskDto['update']>['state'], string> = { ready: 'מחכה בתיק התחקיר של הכתבה', applied: 'הוכנס לכתבה', dismissed: 'לא הוכנס', empty: 'לא נמצא משהו חדש' };
 
 export function ColorPicker({ value, onChange }: { value: DraftColor; onChange(c: DraftColor): void }) {
   return (
@@ -45,13 +46,16 @@ export function Destination({ magazineId, setMagazineId }: { magazineId: string;
   );
 }
 
-/** Stories we already have that look like this one: open the existing one instead of writing again. */
-function SimilarWarning({ items, title }: { items: SimilarStoryDto[]; title: string }) {
+/**
+ * Stories we already have that look like this one: open the existing one, or (before a research
+ * starts) have the reporter write only what is new, as an update the editor puts into it.
+ */
+function SimilarWarning({ items, title, onUpdate, busy }: { items: SimilarStoryDto[]; title: string; onUpdate?: (x: SimilarStoryDto) => void; busy?: boolean }) {
   if (!items.length) return null;
   return (
     <div className="rounded-lg bg-warn-soft px-4 py-3 text-sm text-warn" role="status">
       <p className="font-bold">{title}</p>
-      <p className="mt-0.5 text-ink-2">אפשר לפתוח את הקיימת ולעדכן אותה, במקום לכתוב כתבה חדשה.</p>
+      <p className="mt-0.5 text-ink-2">{onUpdate ? 'אפשר לעדכן את הקיימת עם תחקיר: הכתב-החוקר כותב רק מה שחדש, והעדכון מחכה לאישור שלכם בתוך הכתבה.' : 'אפשר לפתוח את הקיימת ולעדכן אותה, במקום לכתוב כתבה חדשה.'}</p>
       <ul className="mt-2 space-y-1">
         {items.map((x) => (
           <li key={`${x.kind}-${x.id}`}>
@@ -65,6 +69,11 @@ function SimilarWarning({ items, title }: { items: SimilarStoryDto[]; title: str
               </Link>
             )}{' '}
             <span className="text-muted">· {timeAgo(x.at)}</span>
+            {onUpdate && (
+              <Button size="sm" className="mr-2" busy={busy} onClick={() => onUpdate(x)}>
+                לעדכן אותה עם תחקיר
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -156,6 +165,26 @@ function ResearchForm({ overview, mode }: { overview: ResearchOverviewDto; mode:
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
   const ready = idea ? note.trim().length >= 10 : link ? Boolean(url.trim()) : shots.length > 0;
+  // The same research, written as an update of an article we already have.
+  const update = useMutation({
+    mutationFn: (x: SimilarStoryDto) =>
+      admin.post<ResearchTaskDto>('/research', {
+        kind: idea ? 'idea' : kind,
+        ...(idea ? {} : link ? { url: url.trim() } : { mediaIds: shots.map((m) => m.id) }),
+        note: note.trim(),
+        depth: chosen === 'rewrite' ? overview.defaultDepth : chosen,
+        ...(x.kind === 'article' ? { targetArticleId: Number(x.id) } : { targetDraftId: x.id }),
+      }),
+    onSuccess: () => {
+      toast('הכתב-החוקר בודק מה חדש. העדכון יחכה לכם ב"תיק התחקיר" של הכתבה הקיימת.');
+      setUrl('');
+      setShots([]);
+      setNote('');
+      setChecked('');
+      void qc.invalidateQueries({ queryKey: ['research'] });
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
 
   return (
     <Card title={idea ? 'רעיון לתחקיר' : 'מקישור או צילום מסך'}>
@@ -176,7 +205,7 @@ function ResearchForm({ overview, mode }: { overview: ResearchOverviewDto; mode:
                 <Spinner small /> בודק אם כבר כתבנו על זה…
               </p>
             )}
-            <SimilarWarning items={similar.data ?? []} title="ייתכן שכבר כתבנו על זה" />
+            <SimilarWarning items={similar.data ?? []} title="ייתכן שכבר כתבנו על זה" onUpdate={ready && budgetLeft > 0 ? (x) => update.mutate(x) : undefined} busy={update.isPending} />
           </div>
         ) : (
         <div className="inline-flex rounded-lg bg-stone p-1" role="tablist" aria-label="מה יש לכם">
@@ -203,7 +232,7 @@ function ResearchForm({ overview, mode }: { overview: ResearchOverviewDto; mode:
                 <Spinner small /> בודק אם כבר יש לנו את הכתבה…
               </p>
             )}
-            <SimilarWarning items={similar.data ?? []} title="כבר יש לנו כתבה מהקישור הזה" />
+            <SimilarWarning items={similar.data ?? []} title="כבר יש לנו כתבה מהקישור הזה" onUpdate={ready && budgetLeft > 0 ? (x) => update.mutate(x) : undefined} busy={update.isPending} />
           </div>
         ) : (
           <Field label="צילומי מסך" hint="עד 4 צילומים: טלגרם, X, וואטסאפ או אתר. הכתב-החוקר קורא את הטקסט שבהם ומחפש את המקור.">
@@ -286,7 +315,8 @@ function TaskRow({ task }: { task: ResearchTaskDto }) {
         {task.status === 'done' && ` · ${task.searches} חיפושים · $${task.costUsd.toFixed(2)}`}
       </p>
       {task.error && <p className="text-sm text-danger">{task.error}</p>}
-      {task.status === 'done' && !task.official && <p className="text-sm font-semibold text-danger">לא נמצא מקור רשמי: הכתבה נשענת על דיווחים בלבד.</p>}
+      {task.target && task.update && <p className="text-sm font-semibold text-info">עדכון לכתבה הקיימת: {UPDATE_STATE[task.update.state]}</p>}
+      {task.status === 'done' && !task.official && <p className="text-sm font-semibold text-danger">לא נמצא מקור רשמי: {task.target ? 'העדכון נשען' : 'הכתבה נשענת'} על דיווחים בלבד.</p>}
       <SimilarWarning items={task.similar} title="ייתכן שכבר יש לנו את הסיפור הזה" />
     </li>
   );

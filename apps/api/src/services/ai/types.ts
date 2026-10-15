@@ -199,6 +199,23 @@ export type ResearchWriteRequest = {
   note: string;
 };
 
+/** An update of an article we already have, from a research file: only what is new. */
+export const ResearchUpdateOutput = z.object({
+  paragraphs: upTo(z.string(), 20),
+  /** Empty paragraphs: why there is nothing to add. */
+  nothing_new: clip(600),
+});
+export type ResearchUpdateOutput = z.infer<typeof ResearchUpdateOutput>;
+
+export type ResearchUpdateRequest = {
+  /** prompt_templates "research.update", with the newsroom rules */
+  systemPrompt: string;
+  styleRules: string;
+  dossier: string;
+  existing: { title: string; subtitle: string; body: string };
+  note: string;
+};
+
 /** The legal review: only the risks a person must decide on (Hebrew reasons and advice). */
 export const ReviewOutput = z.object({
   issues: z
@@ -280,6 +297,7 @@ export interface TextAI {
   /** searches: how many web searches it made (each is billed apart from the tokens); toolErrors: searches or fetches that failed. */
   research(req: ResearchRequest): Promise<AiResult<ResearchOutput> & { searches: number; toolErrors: string[] }>;
   researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>>;
+  researchUpdate(req: ResearchUpdateRequest): Promise<AiResult<ResearchUpdateOutput>>;
   meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>>;
   /** The official-sources registry: a body's accounts its site doesn't link (two searches at most). */
   findAccounts(req: AccountsRequest): Promise<AiResult<AccountsOutput> & { searches: number; toolErrors: string[] }>;

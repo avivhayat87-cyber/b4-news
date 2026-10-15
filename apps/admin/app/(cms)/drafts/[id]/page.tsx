@@ -1,7 +1,7 @@
 'use client';
 // The split-screen editor: the canvas on the right (Hebrew reading start), the
 // read-only original and the tools on the left. Everything autosaves.
-import type { DraftDetail, DraftReviewDto, MediaDto } from '@b4/shared';
+import type { DraftDetail, DraftReviewDto, MediaDto, ResearchTaskDto } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -47,8 +47,12 @@ function Editor({ id }: { id: string }) {
     refetchInterval: (q) => (q.state.data && (q.state.data.activeJob || ['queued_ai', 'ai_processing'].includes(q.state.data.status)) ? 2000 : false),
   });
   const draft = draftQ.data;
-  // An article from a research opens on its file; any other on its original.
-  const tab: Tab = chosenTab ?? (draft?.origin === 'research' ? 'research' : 'original');
+  // A research behind the article: it wrote it, or proposes an update to it.
+  const researchQ = useQuery({ queryKey: ['draft-research', id], queryFn: () => admin.get<ResearchTaskDto | null>(`/drafts/${id}/research`) });
+  const hasResearch = draft?.origin === 'research' || Boolean(researchQ.data);
+  const updateWaiting = researchQ.data?.update?.state === 'ready';
+  // An article from a research (or with an update waiting) opens on its file; any other on its original.
+  const tab: Tab = chosenTab ?? (draft?.origin === 'research' || updateWaiting ? 'research' : 'original');
   // The legal review of the final text: a red bar while a risk waits for a decision.
   const final = draft?.status === 'text_final' || draft?.status === 'ready';
   const reviewQ = useQuery({
@@ -123,7 +127,7 @@ function Editor({ id }: { id: string }) {
   const back = draft.magazine ? `/magazines/${draft.magazine.id}` : '/saved';
 
   const tabs: { id: Tab; label: string; dot?: boolean }[] = [
-    ...(draft.origin === 'research' ? [{ id: 'research' as const, label: 'תיק התחקיר' }] : []),
+    ...(hasResearch ? [{ id: 'research' as const, label: 'תיק התחקיר', dot: updateWaiting }] : []),
     { id: 'original', label: 'המקור' },
     { id: 'ai', label: 'עוזר AI', dot: aiBusy },
     { id: 'images', label: 'תמונות', dot: !draft.hero },

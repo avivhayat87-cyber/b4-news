@@ -49,7 +49,8 @@ import { activeStyleRules, tracked, writerPrompt } from './ai';
 import { WEB_SEARCH_USD, textCostUsd } from './ai/prices';
 import type { ImageReference, ResearchOutput, Usage } from './ai/types';
 import type { Services } from './context';
-import { assertMagazine, categoryIdOf, nextPosition, requestImages } from './drafts';
+import { addUpdateBlock, assertMagazine, categoryIdOf, loadDraft, nextPosition, requestImages } from './drafts';
+import { openForEditing } from './articles';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
 
@@ -164,6 +165,7 @@ export async function startResearch(s: Services, staff: Staff, input: StartResea
     const found = await s.db.select({ id: mediaAssets.id, mimeType: mediaAssets.mimeType }).from(mediaAssets).where(inArray(mediaAssets.id, mediaIds));
     if (found.length !== mediaIds.length || found.some((m) => !m.mimeType.startsWith('image/'))) throw errors.notFound('צילום המסך');
   }
+  const targetDraftId = await updateTarget(s, staff, input);
   const [row] = await s.db
     .insert(researchTasks)
     .values({
@@ -174,12 +176,26 @@ export async function startResearch(s: Services, staff: Staff, input: StartResea
       note: input.note,
       magazineId: input.magazineId ?? null,
       colorLabel: input.magazineId ? null : (input.colorLabel ?? 'purple'),
+      targetDraftId,
       createdBy: staff.id,
     })
     .returning();
   // One attempt: a research is paid for by its searches, so a failure waits for a person.
   await enqueue(s.db, RESEARCH_JOB, { taskId: row!.id }, { createdBy: staff.id, maxAttempts: 1 });
   return researchTask(s, row!.id);
+}
+
+/**
+ * The draft an update goes into: a published article's draft is opened for editing (the site
+ * doesn't change until the editor updates it). Null: a new article.
+ */
+async function updateTarget(s: Services, staff: Staff, input: StartResearchInput): Promise<string | null> {
+  if (input.targetArticleId) return (await openForEditing(s, staff, input.targetArticleId)).draftId;
+  if (!input.targetDraftId) return null;
+  const draft = await loadDraft(s.db, input.targetDraftId);
+  if (draft.status === 'skipped') throw new AppError(409, 'target_skipped', 'הכתבה סומנה "לא לפרסם". החזירו אותה לעריכה קודם.');
+  if (draft.status === 'published' && draft.publishedArticleId) return (await openForEditing(s, staff, draft.publishedArticleId)).draftId;
+  return draft.id;
 }
 
 /** A failed research again. A file that was already made is kept (only the writing is redone). */
@@ -380,6 +396,7 @@ export async function runResearch(s: Services, job: JobRow) {
   } else {
     await s.db.update(researchTasks).set({ status: 'writing', updatedAt: new Date() }).where(eq(researchTasks.id, task.id));
   }
+  if (task.targetDraftId) return writeUpdate(s, task, dossier, cost);
 
   // 2. The article, from the file alone; the sources line is added here, never by the model.
   const write = await writerPrompt(s.db, 'research.write');
@@ -451,6 +468,47 @@ async function originalItem(s: Services, url: string, page: Page): Promise<strin
     .onConflictDoNothing()
     .returning({ id: scrapedItems.id });
   return item?.id ?? null;
+}
+
+/**
+ * An update of an article we already have: only what is new, as paragraphs for the top of it.
+ * Nothing goes into the article until an editor puts it in (applyUpdate).
+ */
+async function writeUpdate(s: Services, task: TaskRow, dossier: ResearchDossierRecord, cost: number) {
+  const target = await loadDraft(s.db, task.targetDraftId!);
+  const textAi = await s.ai.text();
+  const prompt = await writerPrompt(s.db, 'research.update');
+  const styleRules = `${await activeStyleRules(s.db)}\n${await editorGuidelinesFor(s.db)}`;
+  const { result } = await tracked(
+    s.db,
+    { type: 'research', provider: textAi.provider, requestedBy: task.createdBy, promptKey: 'research.update', promptVersion: prompt.version, draftId: target.id, costOf: (r) => (textAi.live ? callCost(r.usage) : null) },
+    () => textAi.researchUpdate({ systemPrompt: prompt.body, styleRules, dossier: dossierText(dossier), existing: { title: target.title, subtitle: target.subtitle, body: target.bodyText }, note: task.note }),
+  );
+  if (textAi.live) cost += callCost(result.usage);
+  const paragraphs = result.data.paragraphs.map((p) => p.trim()).filter(Boolean);
+  const update = { paragraphs, reason: result.data.nothing_new, state: paragraphs.length ? ('ready' as const) : ('empty' as const), decidedAt: null };
+  await s.db
+    .update(researchTasks)
+    .set({ status: 'done', draftId: target.id, update, costUsd: cost.toFixed(4), lastError: null, updatedAt: new Date() })
+    .where(eq(researchTasks.id, task.id));
+  await enqueue(s.db, ARCHIVE_JOB, { taskId: task.id }, { createdBy: task.createdBy, maxAttempts: 1 });
+  return { update: update.state };
+}
+
+/** The editor puts the proposed update at the top of the article (its sources join the sources line). */
+export async function applyUpdate(s: Services, staff: Staff, id: string): Promise<ResearchTaskDto> {
+  const task = await loadTask(s, id);
+  if (!task.targetDraftId || task.update?.state !== 'ready') throw new AppError(409, 'no_update', 'אין עדכון שמחכה להכנסה.');
+  await addUpdateBlock(s, staff, task.targetDraftId, task.update.paragraphs, task.dossier?.creditLine ?? '');
+  await s.db.update(researchTasks).set({ update: { ...task.update, state: 'applied', decidedAt: new Date().toISOString() }, updatedAt: new Date() }).where(eq(researchTasks.id, id));
+  return researchTask(s, id);
+}
+
+export async function dismissUpdate(s: Services, id: string): Promise<ResearchTaskDto> {
+  const task = await loadTask(s, id);
+  if (task.update?.state !== 'ready') throw new AppError(409, 'no_update', 'אין עדכון שמחכה להכנסה.');
+  await s.db.update(researchTasks).set({ update: { ...task.update, state: 'dismissed', decidedAt: new Date().toISOString() }, updatedAt: new Date() }).where(eq(researchTasks.id, id));
+  return researchTask(s, id);
 }
 
 export async function markResearchFailed(s: Services, job: JobRow, error: Error) {
@@ -571,6 +629,8 @@ const TASK_FIELDS = {
   official: sql<boolean>`coalesce(exists (select 1 from jsonb_array_elements(${researchTasks.dossier} -> 'claims') c where c ->> 'label' = 'verified'), false)`,
   similar: researchTasks.similar,
   draftId: researchTasks.draftId,
+  targetDraftId: researchTasks.targetDraftId,
+  update: researchTasks.update,
   searches: researchTasks.searches,
   costUsd: researchTasks.costUsd,
   lastError: researchTasks.lastError,
@@ -609,6 +669,8 @@ async function taskDtos(s: Services, rows: TaskListRow[], dossiers: Map<string, 
       dossier: d ? dossierDto(s, d) : null,
       official: Boolean(r.official),
       similar: r.similar,
+      target: r.targetDraftId ? { draftId: r.targetDraftId, title: r.title ?? '' } : null,
+      update: r.update ? { paragraphs: r.update.paragraphs, reason: r.update.reason, state: r.update.state } : null,
       draftId: r.draftId,
       searches: r.searches,
       costUsd: Number(r.costUsd),

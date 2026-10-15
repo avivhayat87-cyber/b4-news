@@ -3,7 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { AccountsOutput, AccountsRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
+import type { AccountsOutput, AccountsRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchUpdateOutput, ResearchUpdateRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
@@ -151,6 +151,17 @@ export class FakeText implements TextAI {
       data: { title, subtitle: '', paragraphs: details.length ? details : [summary || '(אין פרטים)'], suggested_category: classifyHeadline(title), suggested_tags: [] },
       usage: usage(),
     };
+  }
+
+  /** The file's details that the article doesn't already say, as they are. */
+  async researchUpdate(req: ResearchUpdateRequest): Promise<AiResult<ResearchUpdateOutput>> {
+    const details = req.dossier
+      .split('\n')
+      .map((l) => /^- \[(\w+)\] (.*?)(?: \(מקורות: [^)]*\))?(?: \| הערה: .*)?$/.exec(l))
+      .filter((m): m is RegExpExecArray => m !== null && m[1] !== 'unverified')
+      .map((m) => m[2]!)
+      .filter((d) => !req.existing.body.includes(d));
+    return { data: { paragraphs: details, nothing_new: details.length ? '' : '(ספק לדוגמה) אין בתיק פרט שלא כתוב בכתבה.' }, usage: usage() };
   }
 
   /** No search without a key: nothing new is found (the registry still reads the bodies' own sites). */

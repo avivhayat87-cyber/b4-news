@@ -39,6 +39,8 @@ import {
   type SocialPlanRequest,
   ResearchOutput,
   type ResearchRequest,
+  ResearchUpdateOutput,
+  type ResearchUpdateRequest,
   ResearchWriteOutput,
   type ResearchWriteRequest,
   ReviewFixOutput,
@@ -115,6 +117,7 @@ const SCHEMAS = {
     suggested_category: { anyOf: [{ type: 'string', enum: [...CATEGORY_SLUGS] }, { type: 'null' }] },
     suggested_tags: strArray,
   }),
+  researchUpdate: obj({ paragraphs: strArray, nothing_new: str }),
   accounts: obj({
     accounts: { type: 'array', items: obj({ platform: { type: 'string', enum: [...OFFICIAL_PLATFORMS] }, url: str, evidence_url: str }) },
   }),
@@ -380,6 +383,19 @@ export class AnthropicText implements TextAI {
         data.claims.some((c) => c.label === 'verified') || left <= 0
           ? null
           : `Received, but no detail in the file is verified by an official source. You have ${left} searches left: look once more for the official source itself (the ministry's, regulator's or central bank's own site, e.g. "site:gov.il" or "site:boi.org.il" and the subject in Hebrew; the government decision; the company's filing), open it with web_fetch if found, and call submit_dossier again with the whole file, updated. If there is none, submit the same file.`,
+    });
+  }
+
+  /** An update block for an article we already have: the main model, from the file and the article. */
+  researchUpdate(req: ResearchUpdateRequest) {
+    const e = req.existing;
+    return this.json({
+      model: this.model,
+      system: [req.systemPrompt, NEWSROOM_RULES, MARKERS, `House style:\n${req.styleRules}`].join('\n\n'),
+      user: [tagged('article', `${e.title}\n${e.subtitle}\n\n${e.body}`.slice(0, 30_000)), tagged('research_file', req.dossier), req.note ? tagged('editor_note', req.note) : ''].filter(Boolean).join('\n\n'),
+      schema: SCHEMAS.researchUpdate,
+      parse: ResearchUpdateOutput,
+      maxTokens: 4000,
     });
   }
 

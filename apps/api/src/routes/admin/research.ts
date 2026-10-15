@@ -60,6 +60,18 @@ export const researchRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     return reply.status(202).send(await research.retryArchive(s, staff, req.params.id));
   });
 
+  // Putting a research's update into an article changes its text: recorded with who did it.
+  app.post('/research/:id/apply-update', { schema: { params, response: { 200: ResearchTaskDto } } }, async (req) => {
+    const staff = requireStaff(req, 'editor');
+    const task = await research.applyUpdate(s, staff, req.params.id);
+    await audit(s.db, { userId: staff.id, entity: 'research', entityId: req.params.id, action: 'apply_update', details: { draftId: task.target?.draftId ?? null } });
+    return task;
+  });
+
+  app.post('/research/:id/dismiss-update', { schema: { params, response: { 200: ResearchTaskDto } } }, async (req) => {
+    requireStaff(req, 'editor');
+    return research.dismissUpdate(s, req.params.id);
+  });
   app.get(
     '/research/:id/sources/:sourceId/text',
     { schema: { params: params.extend({ sourceId: z.string().regex(/^s\d{1,3}$/) }), response: { 200: SourceCopyDto } } },

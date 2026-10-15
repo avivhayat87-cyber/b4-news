@@ -591,6 +591,10 @@ export const researchTasks = pgTable(
     /** Stories we already have that look like the same one: [{ kind, id, title, at, href }] */
     similar: jsonb().$type<{ kind: 'article' | 'draft'; id: string; title: string; at: string; href: string }[]>().notNull().default([]),
     draftId: uuid().references(() => articleDrafts.id, { onDelete: 'set null' }),
+    /** An update of an article we already have: its draft (the research proposes an update block, not a new article). */
+    targetDraftId: uuid().references(() => articleDrafts.id, { onDelete: 'set null' }),
+    /** The proposed update: its paragraphs, why there is none, and whether the editor put it in. */
+    update: jsonb().$type<{ paragraphs: string[]; reason: string; state: 'ready' | 'applied' | 'dismissed' | 'empty'; decidedAt: string | null } | null>(),
     searches: integer().notNull().default(0),
     costUsd: numeric({ precision: 10, scale: 4 }).notNull().default('0'),
     lastError: text(),

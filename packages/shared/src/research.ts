@@ -176,6 +176,10 @@ export const ResearchTaskDto = z.object({
   official: z.boolean(),
   /** Looks like a story we already have (found after the research, for screenshots). */
   similar: z.array(SimilarStoryDto),
+  /** An update of an article we already have (draftId is then that article's draft). */
+  target: z.object({ draftId: id, title: z.string() }).nullable(),
+  /** The update it proposes: put in by an editor ("applied"), set aside ("dismissed"), or nothing new found ("empty"). */
+  update: z.object({ paragraphs: z.array(z.string()), reason: z.string(), state: z.enum(['ready', 'applied', 'dismissed', 'empty']) }).nullable(),
   draftId: id.nullable(),
   searches: z.number().int(),
   costUsd: z.number(),
@@ -205,6 +209,9 @@ export const StartResearchInput = z
     depth: z.enum(RESEARCH_DEPTHS).default('quick'),
     magazineId: id.optional(),
     colorLabel: z.enum(DRAFT_COLORS).optional(),
+    /** Update an article we already have instead of writing a new one: its draft, or the published article. */
+    targetDraftId: id.optional(),
+    targetArticleId: z.number().int().positive().optional(),
   })
   .refine((v) => (v.kind === 'link' ? Boolean(v.url) : v.kind === 'screenshot' ? v.mediaIds.length > 0 : v.note.length >= 10), 'צריך קישור, צילום מסך אחד לפחות, או רעיון של משפט אחד לפחות');
 export type StartResearchInput = z.infer<typeof StartResearchInput>;

@@ -176,6 +176,13 @@
       "when": 1792059423977,
       "tag": "0024_official_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792067533427,
+      "tag": "0025_research_update",
+      "breakpoints": true
     }
   ]
 }

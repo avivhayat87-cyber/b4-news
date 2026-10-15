@@ -68,6 +68,46 @@ function SourceCard({ taskId, source }: { taskId: string; source: ResearchSource
   );
 }
 
+/** An update of this article from a new research: put in at the top by the editor, or set aside. */
+function UpdateBox({ task, onDone }: { task: ResearchTaskDto; onDone(): void }) {
+  const toast = useToast();
+  const apply = useMutation({
+    mutationFn: () => admin.post(`/research/${task.id}/apply-update`),
+    onSuccess: () => {
+      toast('העדכון נכנס לראש הכתבה. באתר הוא יופיע רק אחרי "שמירה ועדכון באתר".');
+      onDone();
+    },
+    onError: (e) => toast(errorMessage(e), 'danger'),
+  });
+  const dismiss = useMutation({ mutationFn: () => admin.post(`/research/${task.id}/dismiss-update`), onSuccess: onDone, onError: (e) => toast(errorMessage(e), 'danger') });
+  const u = task.update!;
+  if (u.state === 'empty') return <p className="rounded-lg bg-stone px-4 py-3 text-sm text-ink-2">הכתב-החוקר בדק ולא מצא משהו חדש לעומת הכתבה. {u.reason}</p>;
+  return (
+    <section className={cx('space-y-3 rounded-lg px-4 py-3 ring-1', u.state === 'ready' ? 'bg-info-soft ring-info/30' : 'bg-stone ring-line')}>
+      <p className="font-bold text-info">{u.state === 'ready' ? 'הכתב-החוקר מציע עדכון לכתבה' : u.state === 'applied' ? 'העדכון הוכנס לכתבה' : 'העדכון לא הוכנס'}</p>
+      <div className="space-y-2 rounded-md bg-white p-3 text-sm leading-relaxed">
+        <p className="font-bold">עדכון</p>
+        {u.paragraphs.map((p) => (
+          <p key={p} dir="auto">
+            {p}
+          </p>
+        ))}
+      </div>
+      {u.state === 'ready' && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="primary" busy={apply.isPending} onClick={() => apply.mutate()}>
+            להכניס לראש הכתבה
+          </Button>
+          <Button size="sm" variant="ghost" busy={dismiss.isPending} onClick={() => dismiss.mutate()}>
+            לא עכשיו
+          </Button>
+        </div>
+      )}
+      <p className="text-xs text-muted">העדכון כתוב רק מהתיק שלמטה. מקורות העדכון יצטרפו לשורת המקורות בסוף הכתבה.</p>
+    </section>
+  );
+}
+
 export function DossierPanel({ draftId }: { draftId: string }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -101,6 +141,8 @@ export function DossierPanel({ draftId }: { draftId: string }) {
           תחקיר {RESEARCH_DEPTH[task.depth].name} · {task.searches} חיפושים · ${task.costUsd.toFixed(2)} · {task.createdBy} · {formatDateTime(task.createdAt)}
         </span>
       </div>
+
+      {task.update && <UpdateBox task={task} onDone={() => { void qc.invalidateQueries({ queryKey: ['draft-research', draftId] }); void qc.invalidateQueries({ queryKey: ['draft', draftId] }); }} />}
 
       {!d.claims.some((c) => c.label === 'verified') && (
         <div className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger" role="note">

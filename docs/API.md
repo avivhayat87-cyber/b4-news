@@ -180,6 +180,7 @@ A research is a `research.run` job (one attempt) and then a `research.archive` j
 | GET | `/admin/research/:id` | any | `ResearchTaskDto` with its file: every detail with its label and sources, the sources with their proof (`archive`: saved, when, `hasText`, the screenshot's address), the sources line, similar stories |
 | POST | `/admin/research/:id/retry` | editor | → 202 `ResearchTaskDto`: a failed research again (a file already made is kept; only the writing is redone); 409 otherwise |
 | POST | `/admin/research/:id/archive` | editor | → 202 `ResearchTaskDto`: keep the sources again (the ones not saved yet) |
+| POST | `/admin/research/:id/apply-update` · `/dismiss-update` | editor | → `ResearchTaskDto`: an update research's proposal put at the top of its article (audited; a final text is reopened) or set aside; 409 `no_update`. Start one with `targetDraftId` or `targetArticleId` in `StartResearchInput` |
 | GET | `/admin/research/:id/sources/:sourceId/text` | any | `SourceCopyDto`: the copy of a source's text kept as proof |
 | GET | `/admin/drafts/:id/research` | any | `ResearchTaskDto` the draft was written from, or `null` |
 | GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`); a change is audited |

@@ -751,6 +751,36 @@ export async function amendFinalText(s: Services, staffId: string, draftId: stri
   return true;
 }
 
+/**
+ * A research's update at the top of a draft, under "עדכון" with the date, and its sources merged
+ * into the sources line at the end. A final text is reopened (it changed; it is checked again
+ * when it is final). On the site nothing changes until the editor updates the article.
+ */
+export async function addUpdateBlock(s: Services, staff: Staff, draftId: string, paragraphs: string[], creditLine: string): Promise<void> {
+  const draft = await loadDraft(s.db, draftId);
+  if (draft.status === 'text_final') await reopenText(s, staff, draftId);
+  else if (draft.status !== 'editing' && draft.status !== 'ai_failed') throw new AppError(409, 'not_editable', 'אי אפשר להכניס עדכון לכתבה במצב הזה. פתחו אותה לעריכה ונסו שוב.');
+  const today = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric' }).format(new Date());
+  const doc = sanitizeDoc(draft.bodyDoc);
+  doc.content.unshift(...textToDoc([`## עדכון (${today})`, ...paragraphs]).content);
+  const added = creditLine.replace(/^מקורות:\s*/, '').split(/,\s*/).filter(Boolean);
+  if (added.length) {
+    const at = doc.content.findLastIndex((b) => docToText({ type: 'doc', content: [b] }).trim().startsWith('מקורות:'));
+    const had = at >= 0 ? docToText({ type: 'doc', content: [doc.content[at]!] }).trim().replace(/^מקורות:\s*/, '').split(/,\s*/).filter(Boolean) : [];
+    const line = textToDoc([`מקורות: ${[...new Set([...had, ...added])].join(', ')}`]).content;
+    if (at >= 0) doc.content.splice(at, 1, ...line);
+    else doc.content.push(...line);
+  }
+  const bodyDoc = sanitizeDoc(doc);
+  const bodyText = docToText(bodyDoc);
+  const [updated] = await s.db
+    .update(articleDrafts)
+    .set({ bodyDoc, bodyText, version: sql`${articleDrafts.version} + 1`, updatedBy: staff.id })
+    .where(eq(articleDrafts.id, draftId))
+    .returning({ version: articleDrafts.version, title: articleDrafts.title, subtitle: articleDrafts.subtitle });
+  await s.db.insert(draftRevisions).values({ draftId, version: updated!.version, source: 'ai_refine', title: updated!.title, subtitle: updated!.subtitle, bodyDoc, bodyText, createdBy: staff.id });
+}
+
 export async function reopenText(s: Services, staff: Staff, draftId: string) {
   const draft = await loadDraft(s.db, draftId);
   if (draft.status !== 'text_final') return;

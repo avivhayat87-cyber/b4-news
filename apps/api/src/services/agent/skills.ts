@@ -9,7 +9,7 @@ import { AppError, errors } from '../../errors';
 /** Each agent's skills (prompt_templates keys), in the order the CMS shows them. */
 export const AGENT_SKILLS: Record<AgentId, string[]> = {
   chief: ['agent.system', 'meeting.pitch'],
-  reporter: ['research.system', 'research.write', 'research.accounts'],
+  reporter: ['research.system', 'research.write', 'research.update', 'research.accounts'],
   rewrite: ['rewrite.system', 'refine.system'],
   reviewer: ['review.system', 'review.fix'],
   social: ['social.plan', 'social.kit', 'social.caption'],
