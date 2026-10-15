@@ -21,6 +21,7 @@
 //   live.env      secrets, created once      data/db, data/media   the real data
 //   releases/<id> installed versions         backups/<stamp>-...     copies of data/
 //   staging/      throwaway copy for rehearsals   logs/   run/
+//   mcp/          the Claude app's MCP server, copied from the running version (its path never changes)
 //
 // On the cloud server (docs/WORKFLOW.md, deploy/cloud) live.env also sets where things are:
 // DATABASE_URL=postgres://… (instead of data/db; the rehearsal uses "<name>_staging" on the same
@@ -42,8 +43,15 @@ const DIR = {
   backups: path.join(HOME, 'backups'),
   logs: path.join(HOME, 'logs'),
   run: path.join(HOME, 'run'),
+  mcp: path.join(HOME, 'mcp'),
 };
-const FILE = { env: path.join(HOME, 'live.env'), state: path.join(HOME, 'state.json'), lock: path.join(HOME, 'release.lock') };
+const FILE = {
+  env: path.join(HOME, 'live.env'),
+  state: path.join(HOME, 'state.json'),
+  lock: path.join(HOME, 'release.lock'),
+  // The config pasted into the Claude app points here, so it outlives releases and rollbacks.
+  mcp: path.join(HOME, 'mcp', 'b4-news-mcp.mjs'),
+};
 const PORTS = { live: { api: 4100, web: 3100, cms: 3101 }, staging: { api: 4200, web: 3200, cms: 3201 } };
 const SERVED = ['@b4/api', '@b4/web', '@b4/admin'];
 const CHECKED = ['@b4/shared', '@b4/db', ...SERVED];
@@ -257,7 +265,14 @@ function apiEnv(which, keys, token) {
     SCRAPER_ALLOW_PRIVATE: 'false',
     WORKER: which === 'live' ? 'inline' : 'off',
     SHUTDOWN_TOKEN: token,
+    MCP_SCRIPT: FILE.mcp,
   };
+}
+
+/** The Claude app's MCP server (one dependency-free file), from the version about to run live. */
+function installMcp(R) {
+  fs.mkdirSync(DIR.mcp, { recursive: true });
+  fs.copyFileSync(path.join(R, 'apps', 'api', 'mcp', 'b4-news-mcp.mjs'), FILE.mcp);
 }
 
 /** Browser-facing addresses are baked in at build time and always point at the live site. */
@@ -364,6 +379,7 @@ async function startApi(R, which, keys) {
 }
 
 async function startAll(R, which, keys) {
+  if (which === 'live') installMcp(R);
   if (!(await startApi(R, which, keys))) fail(`The ${which} API did not come up (see logs/${which}-api.log).`);
   await startService(R, which, 'web', keys);
   await startService(R, which, 'cms', keys);

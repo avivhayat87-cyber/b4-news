@@ -193,6 +193,7 @@ A research is a `research.run` job (one attempt) and then a `research.archive` j
 | POST | `/admin/meetings` | editor | `StartMeetingInput` (`focus`, optional) → 202 `MeetingDto` (5/min, audited): a `meeting.run` job; 409 `meeting_running`, `nothing_to_meet` (fewer than 5 discovered articles in the last 36 hours) or `research_budget` |
 | POST | `/admin/meetings/:id/pitches/:pitchId/approve` | editor | `ApprovePitchInput` (`title`, `angle`, `depth`, magazine or color; all optional) → `MeetingDto` (audited): starts an idea research; 409 `pitch_decided`, `research_budget` |
 | POST | `/admin/meetings/:id/pitches/:pitchId/reject` | editor | → `MeetingDto`: "not now"; 409 when it is already approved |
+| GET / PUT | `/admin/agent/meeting-settings` | any / admin | `MeetingSettings` (`morning`: hold the meeting by itself every day, `hour` 5–12 in Israel, `focus`, `skipSaturday`); a change is audited. A morning meeting's `MeetingDto` has `auto: true` |
 
 ### The legal review (after the text is final, before publishing)
 

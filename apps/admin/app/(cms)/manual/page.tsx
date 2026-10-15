@@ -5,7 +5,7 @@
 import { CATEGORIES, type DraftColor, type MediaDto } from '@b4/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FocalPicker, UploadButton } from '@/components/image-upload';
 import { MeetingTab } from '@/components/research/meeting-tab';
 import { ColorPicker, Destination, ResearchTab } from '@/components/research/research-tab';
@@ -102,8 +102,16 @@ function ByWriting() {
   );
 }
 
+const MODES = ['research', 'idea', 'meeting', 'write'] as const;
+type Mode = (typeof MODES)[number];
+
 export default function ManualPage() {
-  const [mode, setMode] = useState<'research' | 'idea' | 'meeting' | 'write'>('research');
+  const [mode, setMode] = useState<Mode>('research');
+  // A link straight to a tab (the morning meeting's email opens "ישיבת מערכת").
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab && (MODES as readonly string[]).includes(tab)) setMode(tab as Mode);
+  }, []);
   return (
     <>
       <PageHeader title="העלאה ידנית" subtitle="דיווח שהכתב-החוקר בודק, רעיון שהוא חוקר, הצעות מישיבת המערכת, או כתבה שאתם כותבים. הכול נכנס לאותו תהליך עריכה והעלאה." />

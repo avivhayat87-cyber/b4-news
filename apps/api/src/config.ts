@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
@@ -17,6 +18,7 @@ const optionalBool = z
 const DEV_PEPPER = 'local-development-pepper-not-secret';
 const DEV_REVALIDATE_SECRET = 'local-development-revalidate-secret';
 const DEFAULT_MEDIA_DIR = fileURLToPath(new URL('../../../.data/media', import.meta.url));
+const DEFAULT_MCP_SCRIPT = fileURLToPath(new URL('../mcp/b4-news-mcp.mjs', import.meta.url));
 
 const Env = z
   .object({
@@ -95,6 +97,13 @@ const Env = z
     REVALIDATE_SECRET: z.string().optional(),
     SITE_REVALIDATE_URL: z.string().url().optional(),
     META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v23.0'),
+
+    // The Claude app
+    /**
+     * The MCP server file the Claude app's config points to. The live environment sets a copy
+     * outside its release folders, so a release doesn't break the config pasted into the app.
+     */
+    MCP_SCRIPT: z.string().refine((p) => path.isAbsolute(p), 'an absolute path').default(DEFAULT_MCP_SCRIPT),
   })
   .transform((env, ctx) => {
     const production = env.NODE_ENV === 'production';
@@ -180,6 +189,7 @@ const Env = z
         secret: env.REVALIDATE_SECRET || (production ? '' : DEV_REVALIDATE_SECRET),
       },
       metaGraphVersion: env.META_GRAPH_VERSION,
+      mcpScript: env.MCP_SCRIPT,
     };
   });
 

@@ -1,5 +1,6 @@
 // The newsroom agent: reads run at once, changes wait for the editor's approval,
 // roles are respected, and the Claude app's tokens reach only the tools.
+import { existsSync } from 'node:fs';
 import { agentConversations, aiJobs, eq, scrapeRuns } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setup, signInStaff, staffClient } from './helpers';
@@ -104,6 +105,13 @@ describe('newsroom agent', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/v1/admin/sources', headers: bearer })).statusCode).toBe(403);
     expect((await editor.post(`/agent/tokens/${created.body.token.id}/revoke`, {})).status).toBe(204);
     expect((await ctx.app.inject({ method: 'GET', url: '/api/v1/admin/agent/tools', headers: bearer })).statusCode).toBe(401);
+  });
+
+  it('gives the Claude app a config that a release or a Node update does not break', async () => {
+    const config = (await editor.get('/agent/mcp-config')).body;
+    // Node from the PATH, not this process's own (versioned) folder; the script from MCP_SCRIPT.
+    expect(config).toEqual({ command: 'node', args: [ctx.config.mcpScript], env: { B4_API_URL: 'http://api.test/api/v1' } });
+    expect(existsSync(config.args[0])).toBe(true);
   });
 
   it('stores the editor agent settings', async () => {

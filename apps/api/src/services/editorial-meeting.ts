@@ -1,9 +1,10 @@
 // The editorial meeting: what discovery found in the last MEETING_HOURS, grouped into topics for
 // free (the more sites cover a topic, the hotter it is), and the original stories one AI call
 // proposes from them (the chief editor's "meeting.pitch" skill). Nothing is researched until a
-// person approves a pitch; then it becomes an idea research (services/research.ts).
-import { MEETING_HOURS, type ApprovePitchInput, type MeetingDto, type PitchDto, type StartMeetingInput } from '@b4/shared';
-import { type PitchRecord, and, articles, categories, desc, editorialMeetings, eq, gte, inArray, scrapedItems, sources, sql, users } from '@b4/db';
+// person approves a pitch; then it becomes an idea research (services/research.ts). The morning
+// meeting is held by itself every day at its hour, and the admins get its pitches by email.
+import { MEETING_HOURS, type ApprovePitchInput, type MeetingDto, type PitchDto, type StartMeetingInput, MeetingSettings, type MeetingSettings as Settings } from '@b4/shared';
+import { type Db, type PitchRecord, and, appSettings, articles, categories, desc, editorialMeetings, eq, gte, inArray, jobs, scrapedItems, sources, sql, users } from '@b4/db';
 import { AppError, errors } from '../errors';
 import { enqueue, type JobRow } from '../lib/jobs';
 import { topicOverlap } from '../lib/similarity';
@@ -13,6 +14,9 @@ import type { Services } from './context';
 import { assertBudget, researchStates, similarByTopic, startResearch } from './research';
 
 export const MEETING_JOB = 'meeting.run';
+export const MORNING_TICK_JOB = 'meeting.tick';
+const TICK_MS = 15 * 60_000;
+const SETTINGS_KEY = 'agent.meeting';
 
 type Staff = { id: string; fullName: string };
 type MeetingRow = typeof editorialMeetings.$inferSelect;
@@ -81,15 +85,20 @@ async function recentItems(s: Services): Promise<MeetingItem[]> {
 // ---------------------------------------------------------------------------
 
 export async function startMeeting(s: Services, staff: Staff, input: StartMeetingInput): Promise<MeetingDto> {
+  return meeting(s, await openMeeting(s, staff.id, input.focus));
+}
+
+/** The checks every meeting passes (budget, one at a time, enough to read), then its job. staffId null: the morning meeting. */
+async function openMeeting(s: Services, staffId: string | null, focus: string): Promise<string> {
   await assertBudget(s);
   const [running] = await s.db.select({ id: editorialMeetings.id }).from(editorialMeetings).where(inArray(editorialMeetings.status, ['queued', 'thinking'])).limit(1);
   if (running) throw new AppError(409, 'meeting_running', 'ישיבת מערכת כבר מתקיימת. חכו שתסתיים.');
   if ((await recentItems(s)).length < MIN_ITEMS) {
     throw new AppError(409, 'nothing_to_meet', `האיתור לא מצא מספיק כתבות ב-${MEETING_HOURS} השעות האחרונות. הריצו איתור כתבות, או כתבו רעיון בלשונית "רעיון לתחקיר".`);
   }
-  const [row] = await s.db.insert(editorialMeetings).values({ focus: input.focus, createdBy: staff.id }).returning({ id: editorialMeetings.id });
-  await enqueue(s.db, MEETING_JOB, { meetingId: row!.id }, { createdBy: staff.id, maxAttempts: 1 });
-  return meeting(s, row!.id);
+  const [row] = await s.db.insert(editorialMeetings).values({ focus, createdBy: staffId }).returning({ id: editorialMeetings.id });
+  await enqueue(s.db, MEETING_JOB, { meetingId: row!.id }, { createdBy: staffId, maxAttempts: 1 });
+  return row!.id;
 }
 
 function israelToday(): string {
@@ -161,7 +170,98 @@ export async function runMeeting(s: Services, job: JobRow) {
     .update(editorialMeetings)
     .set({ status: 'ready', summary: result.data.summary, itemsRead: items.length, topics: topics.length, pitches, costUsd: cost.toFixed(4), lastError: null, updatedAt: new Date() })
     .where(eq(editorialMeetings.id, row.id));
+  // The morning meeting tells the admins (a failed email never fails the meeting).
+  if (row.createdBy === null && pitches.length) await emailPitches(s, row.id, result.data.summary, pitches);
   return { pitches: pitches.length };
+}
+
+const DEPTH_NAME: Record<string, string> = { quick: 'מהיר', regular: 'רגיל', deep: 'מעמיק' };
+
+async function emailPitches(s: Services, meetingId: string, summary: string, pitches: PitchRecord[]) {
+  const admins = await s.db.select({ email: users.email }).from(users).where(and(eq(users.role, 'admin'), eq(users.isActive, true)));
+  const text = [
+    `ישיבת הבוקר של B4 NEW'S: ${pitches.length} הצעות לכתבות מקוריות, ממה שהאיתור מצא.`,
+    '',
+    summary,
+    '',
+    ...pitches.map((p, i) => `${i + 1}. ${p.title}\n   ${p.angle}\n   ${p.coverage > 1 ? `מסוקר ב-${p.coverage} אתרים · ` : ''}עומק מוצע: ${DEPTH_NAME[p.depth] ?? p.depth}`),
+    '',
+    `לאישור ההצעות: ${s.config.cmsUrl}/manual?tab=meeting`,
+    '',
+    'שום דבר לא נחקר עד שתאשרו.',
+  ].join('\n');
+  let sent = 0;
+  for (const a of admins) {
+    try {
+      await s.mailer.send({ to: a.email, subject: `ישיבת הבוקר: ${pitches.length} הצעות לכתבות`, text });
+      sent++;
+    } catch (e) {
+      s.log.warn({ meetingId, err: e instanceof Error ? e.message : e }, 'morning meeting: email to an admin failed');
+    }
+  }
+  if (sent) await s.db.update(editorialMeetings).set({ notifiedAt: new Date() }).where(eq(editorialMeetings.id, meetingId));
+}
+
+// ---------------------------------------------------------------------------
+// The morning meeting
+// ---------------------------------------------------------------------------
+
+export async function getMeetingSettings(db: Db): Promise<Settings> {
+  const [row] = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, SETTINGS_KEY)).limit(1);
+  const parsed = MeetingSettings.safeParse(row?.value ?? {});
+  return parsed.success ? parsed.data : MeetingSettings.parse({});
+}
+
+export async function saveMeetingSettings(db: Db, staffId: string, input: Settings): Promise<Settings> {
+  const value = MeetingSettings.parse(input);
+  await db
+    .insert(appSettings)
+    .values({ key: SETTINGS_KEY, value, updatedBy: staffId })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedBy: staffId, updatedAt: new Date() } });
+  return value;
+}
+
+const israel = (d: Date) =>
+  Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(d).map((p) => [p.type, p.value]));
+const israelDay = (d: Date) => {
+  const p = israel(d);
+  return `${p.year}-${p.month}-${p.day}`;
+};
+
+/** Due now: on, its hour in Israel, not a skipped Saturday, and no meeting (by anyone) today yet. */
+export function isMorningDue(settings: Settings, lastMeeting: Date | null, now: Date): boolean {
+  const p = israel(now);
+  if (!settings.morning || Number(p.hour) !== settings.hour) return false;
+  if (settings.skipSaturday && p.weekday === 'Sat') return false;
+  return !lastMeeting || israelDay(lastMeeting) !== israelDay(now);
+}
+
+/** The recurring job (every 15 minutes, a database look only): holds the morning meeting when it is due. */
+export async function runMorningTick(s: Services, _job: JobRow) {
+  try {
+    const [last] = await s.db.select({ at: editorialMeetings.createdAt }).from(editorialMeetings).orderBy(desc(editorialMeetings.createdAt)).limit(1);
+    if (!isMorningDue(await getMeetingSettings(s.db), last?.at ?? null, new Date())) return { held: false };
+    return { held: await holdMorningMeeting(s) };
+  } finally {
+    await ensureMorningTick(s.db, new Date(Date.now() + TICK_MS));
+  }
+}
+
+/** The morning meeting, now. Nothing to read, a meeting already on or no budget left: skipped (and logged), never an error. */
+export async function holdMorningMeeting(s: Services): Promise<boolean> {
+  try {
+    await openMeeting(s, null, (await getMeetingSettings(s.db)).focus);
+    return true;
+  } catch (e) {
+    if (!(e instanceof AppError)) throw e;
+    s.log.info({ reason: e.code }, 'morning meeting skipped');
+    return false;
+  }
+}
+
+export async function ensureMorningTick(db: Db, runAt = new Date()) {
+  const [queued] = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.kind, MORNING_TICK_JOB), eq(jobs.status, 'queued'))).limit(1);
+  if (!queued) await enqueue(db, MORNING_TICK_JOB, {}, { runAt, maxAttempts: 1 });
 }
 
 export async function markMeetingFailed(s: Services, job: JobRow, error: Error) {
@@ -273,6 +373,7 @@ async function meetingDtos(s: Services, rows: (MeetingRow & { createdByName: str
     pitches: r.pitches.map(({ researchId, decidedAt: _d, ...p }) => ({ ...p, depth: p.depth as PitchDto['depth'], research: researchId ? (states.get(researchId) ?? null) : null })),
     costUsd: Number(r.costUsd),
     error: r.status === 'failed' ? errorMessage(r.lastError) : null,
+    auto: r.createdBy === null,
     createdBy: r.createdByName ?? '',
     createdAt: r.createdAt.toISOString(),
   }));

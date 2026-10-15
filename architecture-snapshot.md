@@ -109,7 +109,8 @@ src/
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
     research.ts       The research reporter: a link, screenshots or an idea → a research file → an article from it; proof of the sources
-    editorial-meeting.ts  The editorial meeting: discovery's topics → story pitches; an approved pitch becomes an idea research
+    editorial-meeting.ts  The editorial meeting: discovery's topics → story pitches; an approved pitch becomes an idea research;
+                      the morning meeting (a recurring job, live only) that emails the admins
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
                         package, network adapters, the social page, branded designs, reels

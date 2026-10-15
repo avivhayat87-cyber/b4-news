@@ -7,6 +7,7 @@ import { CATEGORY_SLUGS } from '@b4/shared';
 import { illustrateSampleArticles } from './dev/illustrations';
 import { ensureDevAdmin, seedDevSources } from './dev/seed';
 import { ensureDigestTick } from './services/digest';
+import { ensureMorningTick } from './services/editorial-meeting';
 import { revalidateSite } from './services/publish';
 import { JobRunner } from './lib/jobs';
 import { handlers } from './services/handlers';
@@ -67,6 +68,8 @@ await app.listen({ host: config.host, port: config.port });
 if (runner && handle.kind === 'pglite') await runner.recoverInterrupted();
 // "העיתון שלי": the recurring job that sends personal issues at each reader's hour.
 if (runner) await ensureDigestTick(handle.db);
+// The morning editorial meeting: on the live site only, so a workshop never mails the admins too.
+if (runner && config.production) await ensureMorningTick(handle.db);
 runner?.start();
 const ai = await app.services.ai.status();
 app.log.info(`AI: text=${ai.text} images=${ai.image}; worker=${config.worker.mode}`);
