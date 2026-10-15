@@ -11,7 +11,7 @@ import { LeadsTable } from '@/components/ads/leads';
 import { useAdTask } from '@/components/ads/use-ad-task';
 import { Badge, Button, Card, ErrorBox, Loading, PageHeader, inputClass, useToast } from '@/components/ui';
 import { admin, errorMessage } from '@/lib/api';
-import { AD_DEVICE, AD_SLOT, AD_STATUS, ctr, formatDateTime } from '@/lib/labels';
+import { AD_DEVICE, AD_SLOT, AD_STATUS, adShare, ctr, formatDateTime } from '@/lib/labels';
 
 function StatusActions({ c }: { c: CampaignDto }) {
   const qc = useQueryClient();
@@ -190,13 +190,19 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
 
       <Card title="פרטי הקמפיין" actions={!editing && <Button size="sm" onClick={() => setEditing(true)}>עריכה</Button>}>
         {editing && overview.data ? (
-          <CampaignForm initial={draftFrom(c)} advertisers={overview.data.advertisers} busy={update.isPending} submitLabel="שמירה" onSubmit={(d) => update.mutate(toInput(d))} />
+          <CampaignForm initial={draftFrom(c)} campaignId={c.id} advertisers={overview.data.advertisers} busy={update.isPending} submitLabel="שמירה" onSubmit={(d) => update.mutate(toInput(d))} />
         ) : (
           <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <dt className="text-muted">תאריכים</dt>
               <dd className="font-bold">
                 {c.startsAt ? formatDateTime(c.startsAt) : 'מהאישור'} – {c.endsAt ? formatDateTime(c.endsAt) : 'בלי תאריך סיום'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted">נתח ברוטציה</dt>
+              <dd className="font-bold">
+                {c.slots.map((s) => `${AD_SLOT[s].name}: ${overview.data ? adShare(c.share, overview.data.settings.places[s].positions) : c.share}`).join(' · ')}
               </dd>
             </div>
             <div>

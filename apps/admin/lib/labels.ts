@@ -454,6 +454,19 @@ export const AD_STATUS: Record<AdStatus, { label: string; tone: Tone }> = {
 };
 
 export const AD_DEVICE: Record<AdDevice, string> = { all: 'מחשב ונייד', desktop: 'מחשב בלבד', mobile: 'נייד בלבד' };
+
+/** How long an ad stays in a rotating place. */
+export const AD_ROTATE: Record<number, string> = { 0: 'אחת בכל כניסה לעמוד', 15: 'כל 15 שניות', 20: 'כל 20 שניות', 30: 'כל 30 שניות', 60: 'כל דקה' };
+
+/** A campaign's share of a place, as a seller says it: "רבע", "חצי", "כל השטח". */
+export function adShare(share: number, positions: number): string {
+  const n = Math.min(share, positions);
+  if (n >= positions) return 'כל השטח';
+  const words: Record<string, string> = { '1/2': 'חצי', '1/3': 'שליש', '2/3': 'שני שלישים', '1/4': 'רבע', '3/4': 'שלושה רבעים' };
+  const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
+  const d = g(n, positions);
+  return words[`${n / d}/${positions / d}`] ?? `${n} מתוך ${positions}`;
+}
 export const AD_GOAL: Record<AdGoal, string> = { leads: 'פניות (לידים)', traffic: 'כניסות לאתר שלהם', awareness: 'חשיפה' };
 export const BANNER_THEME: Record<BannerTheme, string> = { dark: 'כהה', light: 'בהיר', brand: 'אדום', custom: 'הצבע של המפרסם' };
 export const AD_VERDICT: Record<AdReviewDto['verdict'], { label: string; tone: Tone }> = {

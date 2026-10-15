@@ -1,6 +1,7 @@
 'use client';
-// "פרסום": our own ad server. Campaigns (waiting, running, paused), the archive, leads and
-// inquiries, advertisers, the ads agent, and the switches. Admins only: leads are personal data.
+// "פרסום": our own ad server. Campaigns (waiting, running, paused), the occupancy board (what is
+// free in each place's rotation), the archive, leads and inquiries, advertisers, the ads agent,
+// and the switches. Admins only: leads are personal data.
 import type { AdsOverviewDto } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -9,11 +10,12 @@ import { AdsSettings } from '@/components/ads/ads-settings';
 import { AgentTab } from '@/components/ads/agent-tab';
 import { Archive, CampaignCards } from '@/components/ads/campaign-list';
 import { LeadsTable } from '@/components/ads/leads';
+import { OccupancyBoard } from '@/components/ads/occupancy';
 import { Badge, Empty, ErrorBox, LinkButton, Loading, PageHeader, cx } from '@/components/ui';
 import { SITE_URL, admin } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 
-const TABS = ['campaigns', 'inquiries', 'leads', 'archive', 'advertisers', 'agent', 'settings'] as const;
+const TABS = ['campaigns', 'occupancy', 'inquiries', 'leads', 'archive', 'advertisers', 'agent', 'settings'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function AdsPage() {
@@ -32,6 +34,7 @@ export default function AdsPage() {
   const o = query.data;
   const labels: Record<Tab, ReactNode> = {
     campaigns: `קמפיינים (${o.campaigns.length})`,
+    occupancy: 'לוח תפוסה',
     inquiries: (
       <>
         פניות מפרסמים {o.newInquiries > 0 && <Badge tone="danger">{o.newInquiries}</Badge>}
@@ -66,7 +69,8 @@ export default function AdsPage() {
           </button>
         ))}
       </div>
-      {tab === 'campaigns' && <CampaignCards campaigns={o.campaigns} />}
+      {tab === 'campaigns' && <CampaignCards campaigns={o.campaigns} places={o.settings.places} />}
+      {tab === 'occupancy' && <OccupancyBoard />}
       {tab === 'archive' && <Archive campaigns={o.archive} />}
       {tab === 'inquiries' && (
         <div className="space-y-3">

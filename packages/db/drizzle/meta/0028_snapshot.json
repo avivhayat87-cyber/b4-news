@@ -1,5 +1,5 @@
 {
-  "id": "33ff5c87-b865-451c-8939-bcd54be0efa7",
+  "id": "84d0038d-1deb-442a-9083-09a4000785c8",
   "prevId": "a1176ff4-8de8-4a2f-814a-050f613b4942",
   "version": "7",
   "dialect": "postgresql",
@@ -220,6 +220,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 5
+        },
+        "share": {
+          "name": "share",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         },
         "max_views": {
           "name": "max_views",
@@ -1569,19 +1576,6 @@
           "notNull": true,
           "default": "'none'"
         },
-        "ticker": {
-          "name": "ticker",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "desk_plan": {
-          "name": "desk_plan",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "author_id": {
           "name": "author_id",
           "type": "uuid",
@@ -1643,12 +1637,6 @@
         "skip_reason": {
           "name": "skip_reason",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stuck_at": {
-          "name": "stuck_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2455,12 +2443,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ticker_at": {
-          "name": "ticker_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "published_at": {
           "name": "published_at",
           "type": "timestamp with time zone",
@@ -2498,21 +2480,6 @@
             },
             {
               "expression": "published_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "articles_ticker_idx": {
-          "name": "articles_ticker_idx",
-          "columns": [
-            {
-              "expression": "ticker_at",
               "isExpression": false,
               "asc": false,
               "nulls": "last"
@@ -4174,19 +4141,6 @@
         "prompt_by": {
           "name": "prompt_by",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "variants": {
-          "name": "variants",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "pick": {
-          "name": "pick",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -8699,8 +8653,7 @@
         "research",
         "meeting",
         "ads",
-        "discovery_pick",
-        "desk_plan"
+        "discovery_pick"
       ]
     },
     "public.article_status": {

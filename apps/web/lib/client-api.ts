@@ -82,7 +82,7 @@ export const adsApi = {
   slot: (slot: AdSlot, q: { device: 'desktop' | 'mobile'; category?: string; exclude: string[] }) =>
     call<PublicAdSlot>(`/public/ads/${slot}?device=${q.device}${q.category ? `&category=${encodeURIComponent(q.category)}` : ''}${q.exclude.length ? `&exclude=${q.exclude.join(',')}` : ''}`),
   /** Sent even while the reader leaves the page (keepalive), and never fails loudly: a lost view is only a number. */
-  view: (token: string, kind: 'view' | 'open' = 'view') =>
+  view: (token: string, kind: 'view' | 'open' | 'shown' = 'view') =>
     fetch(`${BASE}/public/ads/view`, { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: json({ token, kind }) }).catch(() => undefined),
   lead: (body: AdLeadInput) => call<{ thankYou: string }>('/public/ads/lead', { method: 'POST', body: json(body) }),
   inquiry: (body: AdInquiryInput) => call<void>('/public/ads/inquiry', { method: 'POST', body: json(body) }),
