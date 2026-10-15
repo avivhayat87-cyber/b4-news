@@ -4,7 +4,7 @@
 // person approves a pitch; then it becomes an idea research (services/research.ts). The morning
 // meeting is held by itself every day at its hour, and the admins get its pitches by email.
 import { MEETING_HOURS, type ApprovePitchInput, type MeetingDto, type PitchDto, type StartMeetingInput, MeetingSettings, type MeetingSettings as Settings } from '@b4/shared';
-import { type Db, type PitchRecord, and, appSettings, articles, categories, desc, editorialMeetings, eq, gte, inArray, jobs, scrapedItems, sources, sql, users } from '@b4/db';
+import { type Db, type PitchRecord, and, appSettings, articles, categories, desc, editorialMeetings, eq, gte, inArray, jobs, scrapeRuns, scrapedItems, sources, sql, users } from '@b4/db';
 import { AppError, errors } from '../errors';
 import { enqueue, type JobRow } from '../lib/jobs';
 import { topicOverlap } from '../lib/similarity';
@@ -12,6 +12,7 @@ import { activePrompt, tracked } from './ai';
 import { textCostUsd } from './ai/prices';
 import type { Services } from './context';
 import { assertBudget, researchStates, similarByTopic, startResearch } from './research';
+import { startRun } from './scraper/run';
 
 export const MEETING_JOB = 'meeting.run';
 export const MORNING_TICK_JOB = 'meeting.tick';
@@ -170,15 +171,16 @@ export async function runMeeting(s: Services, job: JobRow) {
     .update(editorialMeetings)
     .set({ status: 'ready', summary: result.data.summary, itemsRead: items.length, topics: topics.length, pitches, costUsd: cost.toFixed(4), lastError: null, updatedAt: new Date() })
     .where(eq(editorialMeetings.id, row.id));
-  // The morning meeting tells the admins (a failed email never fails the meeting).
+  // The morning meeting tells the admins and the editors (a failed email never fails the meeting).
   if (row.createdBy === null && pitches.length) await emailPitches(s, row.id, result.data.summary, pitches);
   return { pitches: pitches.length };
 }
 
 const DEPTH_NAME: Record<string, string> = { quick: 'מהיר', regular: 'רגיל', deep: 'מעמיק' };
 
+/** Whoever can approve a pitch: every active admin and editor. */
 async function emailPitches(s: Services, meetingId: string, summary: string, pitches: PitchRecord[]) {
-  const admins = await s.db.select({ email: users.email }).from(users).where(and(eq(users.role, 'admin'), eq(users.isActive, true)));
+  const staff = await s.db.select({ email: users.email }).from(users).where(and(inArray(users.role, ['admin', 'editor']), eq(users.isActive, true)));
   const text = [
     `ישיבת הבוקר של B4 NEW'S: ${pitches.length} הצעות לכתבות מקוריות, ממה שהאיתור מצא.`,
     '',
@@ -191,12 +193,12 @@ async function emailPitches(s: Services, meetingId: string, summary: string, pit
     'שום דבר לא נחקר עד שתאשרו.',
   ].join('\n');
   let sent = 0;
-  for (const a of admins) {
+  for (const a of staff) {
     try {
       await s.mailer.send({ to: a.email, subject: `ישיבת הבוקר: ${pitches.length} הצעות לכתבות`, text });
       sent++;
     } catch (e) {
-      s.log.warn({ meetingId, err: e instanceof Error ? e.message : e }, 'morning meeting: email to an admin failed');
+      s.log.warn({ meetingId, err: e instanceof Error ? e.message : e }, 'morning meeting: email to a staff member failed');
     }
   }
   if (sent) await s.db.update(editorialMeetings).set({ notifiedAt: new Date() }).where(eq(editorialMeetings.id, meetingId));
@@ -222,7 +224,7 @@ export async function saveMeetingSettings(db: Db, staffId: string, input: Settin
 }
 
 const israel = (d: Date) =>
-  Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(d).map((p) => [p.type, p.value]));
+  Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(d).map((p) => [p.type, p.value]));
 const israelDay = (d: Date) => {
   const p = israel(d);
   return `${p.year}-${p.month}-${p.day}`;
@@ -236,11 +238,35 @@ export function isMorningDue(settings: Settings, lastMeeting: Date | null, now: 
   return !lastMeeting || israelDay(lastMeeting) !== israelDay(now);
 }
 
-/** The recurring job (every 15 minutes, a database look only): holds the morning meeting when it is due. */
+/**
+ * Discovery before the morning meeting, so it has today's articles to read: in the half hour
+ * before its hour, once that day, the Israeli sites only (scraping is free; foreign headlines
+ * would be translated).
+ */
+export function isMorningDiscoveryDue(settings: Settings, lastScheduledRun: Date | null, now: Date): boolean {
+  const p = israel(now);
+  if (!settings.morning || Number(p.hour) !== settings.hour - 1 || Number(p.minute) < 30) return false;
+  if (settings.skipSaturday && p.weekday === 'Sat') return false;
+  return !lastScheduledRun || israelDay(lastScheduledRun) !== israelDay(now);
+}
+
+/** The recurring job (every 15 minutes, a database look only): the morning discovery, then the morning meeting, when due. */
 export async function runMorningTick(s: Services, _job: JobRow) {
   try {
+    const settings = await getMeetingSettings(s.db);
+    const now = new Date();
+    const [run] = await s.db.select({ at: scrapeRuns.createdAt }).from(scrapeRuns).where(eq(scrapeRuns.trigger, 'schedule')).orderBy(desc(scrapeRuns.createdAt)).limit(1);
+    if (isMorningDiscoveryDue(settings, run?.at ?? null, now)) {
+      // No active sites: nothing to scan, and the meeting will skip too (logged, not an error).
+      const started = await startRun(s, null, 'schedule', 'local').catch((e: unknown) => {
+        if (!(e instanceof AppError)) throw e;
+        s.log.info({ reason: e.code }, 'morning discovery skipped');
+        return { created: false };
+      });
+      return { discovery: started.created };
+    }
     const [last] = await s.db.select({ at: editorialMeetings.createdAt }).from(editorialMeetings).orderBy(desc(editorialMeetings.createdAt)).limit(1);
-    if (!isMorningDue(await getMeetingSettings(s.db), last?.at ?? null, new Date())) return { held: false };
+    if (!isMorningDue(settings, last?.at ?? null, now)) return { held: false };
     return { held: await holdMorningMeeting(s) };
   } finally {
     await ensureMorningTick(s.db, new Date(Date.now() + TICK_MS));

@@ -1,6 +1,7 @@
 'use client';
 // The chief editor's morning meeting: held by itself every day at its hour on the live site, with
-// its pitches emailed to the admins. Only an admin changes it (it is a daily AI call).
+// discovery of the Israeli sites half an hour before, and its pitches emailed to the admins and the
+// editors. Only an admin changes it (it is a daily AI call).
 import type { MeetingSettings } from '@b4/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -38,7 +39,7 @@ export function MeetingAgent() {
         <input type="checkbox" checked={form.morning} disabled={!isAdmin} onChange={(e) => setForm({ ...form, morning: e.target.checked })} className="mt-1 size-4" />
         <span>
           לכנס ישיבת מערכת לבד כל בוקר
-          <span className="block text-sm font-normal text-muted">העורך הראשי קורא את מה שהאיתור מצא ומציע כתבות. המנהלים מקבלים מייל עם ההצעות וקישור לאישור. שום דבר לא נחקר עד שמאשרים. רק באתר החי.</span>
+          <span className="block text-sm font-normal text-muted">חצי שעה לפני הישיבה רץ איתור כתבות באתרים הישראליים (בחינם). אחר כך העורך הראשי קורא את מה שנמצא ומציע כתבות, והמנהלים והעורכים מקבלים מייל עם ההצעות וקישור לאישור. שום דבר לא נחקר עד שמאשרים. רק באתר החי.</span>
         </span>
       </label>
       <div className="grid gap-4 sm:grid-cols-2">

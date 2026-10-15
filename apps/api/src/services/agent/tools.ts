@@ -4,7 +4,7 @@
 // button; in the Claude app, its own approval prompt). Every tool checks the
 // person's role, exactly like the CMS screens.
 import { randomUUID } from 'node:crypto';
-import { DIVERGENCE, EditorAgentSettings, SHARE_FORMATS, SHARE_TEMPLATES, SOURCE_REGIONS, type SocialPlanDto, type StaffRole } from '@b4/shared';
+import { DIVERGENCE, EditorAgentSettings, RESEARCH_DEPTHS, SHARE_FORMATS, SHARE_TEMPLATES, SOURCE_REGIONS, type SocialPlanDto, type StaffRole } from '@b4/shared';
 import {
   and,
   articleDrafts,
@@ -26,8 +26,10 @@ import { z } from 'zod';
 import { AppError } from '../../errors';
 import type { Services } from '../context';
 import { createDraftsFromItems, draftDetail, finalizeText, listSaved, requestRefine, similarityToOriginal } from '../drafts';
+import { approvePitch, meetings, rejectPitch, startMeeting } from '../editorial-meeting';
 import { learningReportsList, queueDistill } from '../learning';
 import { startPublish } from '../publish';
+import { researchForDraft, researchOverview, researchTask, startResearch } from '../research';
 import { startRun } from '../scraper/run';
 import { addSources, approveTestedSources } from '../scraper/setup';
 import { reviewQueue } from '../legal-review';
@@ -61,6 +63,10 @@ const clip = (t: string | null | undefined, n: number) => (!t ? '' : t.length > 
 const israelTime = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 const il = (d: Date | string | null | undefined) => (d ? israelTime.format(new Date(d)) : null);
 const regionName = (r: string) => (r === 'international' ? 'מחו״ל' : 'מישראל');
+const researchDepth = { type: 'string', enum: [...RESEARCH_DEPTHS], description: 'quick (default, cheapest), regular, or deep (the strongest model, for a big story)' };
+const DEPTH_LABEL: Record<string, string> = { quick: 'מהיר, בערך 10–30 סנט', regular: 'רגיל, בערך 30–80 סנט', deep: 'מעמיק, בערך 1–3 דולר' };
+/** The depth and its price, for the approval card. */
+const depthLabel = (d: string | undefined) => DEPTH_LABEL[d ?? 'quick'] ?? d ?? '';
 /** A distribution plan as the agent reads it. */
 const planView = (p: SocialPlanDto) => ({
   draftId: p.draftId,
@@ -296,7 +302,136 @@ export const TOOLS: AgentTool[] = [
     },
   },
 
+  {
+    name: 'research_status',
+    label: () => 'מצב התחקירים',
+    description:
+      "The research reporter's latest research (from a link, screenshots or an idea): status, title, depth, searches, cost, whether any detail rests on an official source, and the draft it became; and this month's spend against the budget.",
+    schema: object({}),
+    input: z.object({}),
+    write: false,
+    roles: [],
+    run: async (s) => {
+      const o = await researchOverview(s);
+      return {
+        spentUsd: o.spentUsd,
+        budgetUsd: o.budgetUsd,
+        research: o.tasks.map((t) => ({ id: t.id, kind: t.kind, depth: t.depth, status: t.status, title: t.title, official: t.official, searches: t.searches, costUsd: t.costUsd, error: t.error, at: il(t.createdAt), cmsLink: t.draftId ? `/drafts/${t.draftId}` : null })),
+      };
+    },
+  },
+  {
+    name: 'get_research',
+    label: () => 'תיק תחקיר',
+    description:
+      'One research file (by research id, or by the draft it became): what was reported, every detail with its label (verified, reported, claimed, estimate, suspicion, unverified, debunked) and its sources, open questions, who must be asked for a response, and the sources line at the end of the article.',
+    schema: object({ researchId: { type: 'string', format: 'uuid' }, draftId: { type: 'string', format: 'uuid' } }),
+    input: z.object({ researchId: z.string().uuid().optional(), draftId: z.string().uuid().optional() }).refine((v) => Boolean(v.researchId) !== Boolean(v.draftId), 'צריך מזהה תחקיר או מזהה כתבה'),
+    write: false,
+    roles: [],
+    run: async (s, _staff, input) => {
+      const t = input.researchId ? await researchTask(s, input.researchId) : await researchForDraft(s, input.draftId!);
+      if (!t) return { found: false };
+      const d = t.dossier;
+      return {
+        id: t.id,
+        status: t.status,
+        title: t.title,
+        reported: d?.original ?? null,
+        summary: d?.summary ?? null,
+        details: d?.claims.map((c) => ({ label: c.label, text: c.text, sources: c.sourceIds.map((id) => d.sources.find((x) => x.id === id)?.publisher).filter(Boolean), note: c.note })) ?? [],
+        openQuestions: d?.openQuestions ?? [],
+        responseNeeded: d?.responseNeeded ?? [],
+        sourcesLine: d?.creditLine ?? '',
+        cmsLink: t.draftId ? `/drafts/${t.draftId}` : null,
+      };
+    },
+  },
+  {
+    name: 'editorial_meetings',
+    label: () => 'ישיבות המערכת',
+    description:
+      "The latest editorial meetings and their story pitches (meeting id, pitch id like p1, working headline, angle, why now, what to check, how many sites covered it, and its status: pending, approved, rejected, with the research an approved one became). Only an approved pitch is researched.",
+    schema: object({}),
+    input: z.object({}),
+    write: false,
+    roles: [],
+    run: async (s) =>
+      (await meetings(s, 3)).map((m) => ({
+        id: m.id,
+        at: il(m.createdAt),
+        auto: m.auto,
+        status: m.status,
+        focus: m.focus,
+        summary: m.summary,
+        pitches: m.pitches.map((p) => ({ id: p.id, title: p.title, angle: p.angle, whyNow: p.whyNow, checks: p.checks, coverage: p.coverage, depth: p.depth, status: p.status, research: p.research, alreadyHave: p.similar.map((x) => x.title) })),
+      })),
+  },
+
   // --- Changing (needs approval) -----------------------------------------------------------
+  {
+    name: 'research_link',
+    label: (i) => `תחקיר מקישור · ${depthLabel(i.depth)}`,
+    description:
+      'Sends a link (an article, an official announcement, a post on X or Telegram) to the research reporter: it looks for the official source of every detail, labels each one, keeps proof of the sources, and writes a draft from the file alone. Costs searches: quick (default) about 10-30 cents, regular 30-80 cents, deep $1-3.',
+    schema: object({ url: { type: 'string' }, note: { type: 'string', description: 'What to check in particular (optional)' }, depth: researchDepth }, ['url']),
+    input: z.object({ url: z.string().trim().url().max(2000), note: z.string().trim().max(1000).default(''), depth: z.enum(RESEARCH_DEPTHS).default('quick') }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => startResearch(s, staff, { kind: 'link', url: input.url, note: input.note, depth: input.depth, mediaIds: [] }),
+    outcome: () => 'הכתב-החוקר התחיל לעבוד. התיק והטיוטה יהיו מוכנים בעוד דקה-שתיים.',
+  },
+  {
+    name: 'research_idea',
+    label: (i) => `תחקיר מרעיון · ${depthLabel(i.depth)}`,
+    description: "Sends the newsroom's own question or topic to the research reporter, to research from scratch on official sources and write a draft. Same costs as research_link.",
+    schema: object({ idea: { type: 'string', description: 'The question or topic, a sentence or two' }, depth: researchDepth }, ['idea']),
+    input: z.object({ idea: z.string().trim().min(10).max(3000), depth: z.enum(RESEARCH_DEPTHS).default('quick') }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => startResearch(s, staff, { kind: 'idea', note: input.idea, depth: input.depth, mediaIds: [] }),
+    outcome: () => 'הכתב-החוקר התחיל לחקור את הרעיון.',
+  },
+  {
+    name: 'start_editorial_meeting',
+    label: (i) => (i.focus ? `כינוס ישיבת מערכת: ${i.focus}` : 'כינוס ישיבת מערכת'),
+    description:
+      'Holds an editorial meeting now: reads what discovery found in the last 36 hours and proposes original stories (one AI call, about 3-6 cents). Nothing is researched until a pitch is approved. Read the pitches a minute later with editorial_meetings.',
+    schema: object({ focus: { type: 'string', description: 'An optional direction, e.g. real estate' } }),
+    input: z.object({ focus: z.string().trim().max(300).default('') }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => startMeeting(s, staff, { focus: input.focus }),
+    outcome: () => 'הישיבה התכנסה. ההצעות יהיו מוכנות בעוד פחות מדקה.',
+  },
+  {
+    name: 'approve_pitch',
+    label: (i) => `אישור הצעה ${i.pitchId ?? ''} ותחקיר · ${depthLabel(i.depth)}`,
+    description: 'Approves a pitch of an editorial meeting (ids from editorial_meetings): the research reporter researches it at the chosen depth (its own suggestion if none) and writes a draft. Costs a research.',
+    schema: object({ meetingId: { type: 'string', format: 'uuid' }, pitchId: { type: 'string', description: 'p1, p2…' }, depth: researchDepth }, ['meetingId', 'pitchId']),
+    input: z.object({ meetingId: z.string().uuid(), pitchId: z.string().regex(/^p\d{1,2}$/), depth: z.enum(RESEARCH_DEPTHS).optional() }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => {
+      const m = await approvePitch(s, staff, input.meetingId, input.pitchId, { depth: input.depth });
+      return { pitch: m.pitches.find((p) => p.id === input.pitchId) };
+    },
+    outcome: () => 'ההצעה אושרה, והכתב-החוקר התחיל לחקור.',
+  },
+  {
+    name: 'reject_pitch',
+    label: (i) => `דחיית הצעה ${i.pitchId ?? ''}`,
+    description: 'Sets a pitch of an editorial meeting aside ("not now").',
+    schema: object({ meetingId: { type: 'string', format: 'uuid' }, pitchId: { type: 'string' } }, ['meetingId', 'pitchId']),
+    input: z.object({ meetingId: z.string().uuid(), pitchId: z.string().regex(/^p\d{1,2}$/) }),
+    write: true,
+    roles: ['editor'],
+    run: async (s, staff, input) => {
+      await rejectPitch(s, staff, input.meetingId, input.pitchId);
+      return { ok: true };
+    },
+    outcome: () => 'ההצעה נדחתה.',
+  },
   {
     name: 'start_discovery',
     label: (i) => `התחלת איתור כתבות ${regionName(i.region ?? 'local')}`,

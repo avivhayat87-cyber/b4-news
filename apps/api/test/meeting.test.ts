@@ -1,13 +1,14 @@
 // The editorial meeting: discovery's articles grouped into topics for free, story pitches from one
 // AI call, and research only for the pitches a person approves.
-import { auditLog, eq, researchTasks, scrapedItems } from '@b4/db';
+import { auditLog, eq, researchTasks, scrapedItems, users } from '@b4/db';
+import { allowed, runTool, toolByName } from '../src/services/agent/tools';
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages } from '../src/services/ai/fake';
 import type { MeetingOutput, MeetingRequest } from '../src/services/ai/types';
 import { MeetingSettings } from '@b4/shared';
-import { groupTopics, holdMorningMeeting, isMorningDue } from '../src/services/editorial-meeting';
+import { groupTopics, holdMorningMeeting, isMorningDiscoveryDue, isMorningDue } from '../src/services/editorial-meeting';
 import { setup, signInStaff, staffClient } from './helpers';
 
 const DISCOVERED = [
@@ -118,6 +119,27 @@ describe('editorial meeting', () => {
     expect(new Date(list[0].createdAt) >= new Date(list[1].createdAt)).toBe(true);
   });
 
+  it('lets the chief editor in the chat hold a meeting and approve a pitch, but not a viewer', async () => {
+    const [me] = await ctx.db.select().from(users).where(eq(users.email, 'editor@newsroom.test'));
+    const staff = { id: me!.id, fullName: me!.fullName, role: me!.role };
+    const viewer = { ...staff, role: 'viewer' as const };
+    expect(allowed(toolByName.get('start_editorial_meeting')!, viewer)).toBe(false);
+    expect(allowed(toolByName.get('editorial_meetings')!, viewer)).toBe(true);
+
+    const held = await runTool(ctx.app.services, staff, 'start_editorial_meeting', { focus: 'דיור' });
+    expect(held.ok).toBe(true);
+    await ctx.drain();
+    const list = await runTool(ctx.app.services, staff, 'editorial_meetings', {});
+    const meeting = (list as { result: { id: string; focus: string; pitches: { id: string; status: string }[] }[] }).result[0]!;
+    expect(meeting).toMatchObject({ focus: 'דיור' });
+    const approved = await runTool(ctx.app.services, staff, 'approve_pitch', { meetingId: meeting.id, pitchId: meeting.pitches[0]!.id, depth: 'quick' });
+    expect(approved).toMatchObject({ ok: true, outcome: 'ההצעה אושרה, והכתב-החוקר התחיל לחקור.' });
+    await ctx.drain();
+    const status = await runTool(ctx.app.services, staff, 'research_status', {});
+    expect((status as { result: { research: { kind: string; status: string }[] } }).result.research[0]).toMatchObject({ kind: 'idea', status: 'done' });
+    expect(toolByName.get('approve_pitch')!.label({ pitchId: 'p1', depth: 'regular' })).toBe('אישור הצעה p1 ותחקיר · רגיל, בערך 30–80 סנט');
+  });
+
   it('holds the morning meeting at its hour in Israel, once a day, and not on Saturday', () => {
     const settings = MeetingSettings.parse({});
     const thursday0830 = new Date('2026-10-15T05:30:00Z');
@@ -131,7 +153,17 @@ describe('editorial meeting', () => {
     expect(isMorningDue({ ...settings, morning: false }, null, thursday0830)).toBe(false);
   });
 
-  it('holds the morning meeting by itself and emails its pitches to the admins', async () => {
+  it('runs discovery in the half hour before the morning meeting, once a day', () => {
+    const settings = MeetingSettings.parse({});
+    const thursday0740 = new Date('2026-10-15T04:40:00Z');
+    expect(isMorningDiscoveryDue(settings, null, thursday0740)).toBe(true);
+    expect(isMorningDiscoveryDue(settings, new Date('2026-10-15T04:31:00Z'), thursday0740)).toBe(false);
+    expect(isMorningDiscoveryDue(settings, null, new Date('2026-10-15T04:20:00Z'))).toBe(false);
+    expect(isMorningDiscoveryDue(settings, null, new Date('2026-10-17T04:40:00Z'))).toBe(false);
+    expect(isMorningDiscoveryDue({ ...settings, hour: 9 }, null, new Date('2026-10-15T05:45:00Z'))).toBe(true);
+  });
+
+  it('holds the morning meeting by itself and emails its pitches to the admins and the editors', async () => {
     const admin = staffClient(ctx, await signInStaff(ctx, 'admin'));
     expect((await editor.put('/agent/meeting-settings', { morning: true, hour: 7, focus: 'צרכנות', skipSaturday: true })).status).toBe(403);
     expect((await admin.put('/agent/meeting-settings', { morning: true, hour: 7, focus: 'צרכנות', skipSaturday: true })).status).toBe(200);
@@ -146,5 +178,6 @@ describe('editorial meeting', () => {
     expect(mail?.subject).toBe(`ישיבת הבוקר: ${held.pitches.length} הצעות לכתבות`);
     expect(mail?.text).toContain(held.pitches[0].title);
     expect(mail?.text).toContain('/manual?tab=meeting');
+    expect(ctx.mailer.lastTo('editor@newsroom.test')?.subject).toBe(mail?.subject);
   });
 });
