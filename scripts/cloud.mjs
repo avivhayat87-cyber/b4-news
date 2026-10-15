@@ -102,7 +102,7 @@ async function create() {
   say(`Project ${p}, zone ${ZONE}.`);
 
   say('1/7 Turning on the Google Cloud services the server uses...');
-  gcloud(['services', 'enable', 'compute.googleapis.com', 'iap.googleapis.com', 'aiplatform.googleapis.com', 'logging.googleapis.com', 'monitoring.googleapis.com', 'oslogin.googleapis.com', 'billingbudgets.googleapis.com', '--project', p], { show: true });
+  gcloud(['services', 'enable', 'compute.googleapis.com', 'iap.googleapis.com', 'aiplatform.googleapis.com', 'vision.googleapis.com', 'logging.googleapis.com', 'monitoring.googleapis.com', 'oslogin.googleapis.com', 'billingbudgets.googleapis.com', '--project', p], { show: true });
 
   say('2/7 The server\'s own identity, allowed only Vertex AI and sending logs and metrics...');
   if (!gcloud(['iam', 'service-accounts', 'describe', sa, '--project', p], { allowFail: true }).ok) {

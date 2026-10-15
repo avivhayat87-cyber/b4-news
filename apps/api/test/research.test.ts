@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ingestImage } from '../src/lib/images';
 import { fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages } from '../src/services/ai/fake';
-import type { ResearchOutput, ResearchWriteRequest } from '../src/services/ai/types';
+import type { ImageSearchAI, ResearchOutput, ResearchWriteRequest } from '../src/services/ai/types';
 import { checkDossier } from '../src/services/research';
 import type { Fetcher } from '../src/services/scraper/collect';
 import { setup, signInStaff, staffClient } from './helpers';
@@ -141,6 +141,35 @@ describe('the research reporter', () => {
     expect((await editor.post(`/research/${task.id}/dismiss-update`)).body.update.state).toBe('dismissed');
     const [same] = await ctx.db.select().from(articles).where(eq(articles.id, article!.id));
     expect(same!.bodyHtml).toBe(article!.bodyHtml);
+  });
+
+  it('looks up where a screenshot already appeared on the web, and hands it to the reporter as leads', async () => {
+    let seen = '';
+    class Recording extends FakeText {
+      override async research(req: Parameters<FakeText['research']>[0]) {
+        seen = req.input.imageMatches ?? '';
+        return super.research(req);
+      }
+    }
+    const search: ImageSearchAI = {
+      provider: 'test',
+      live: true,
+      webDetect: async () => ({ bestGuess: ['שריפה בנמל'], pages: [{ url: 'https://archive.example/2019/fire', title: 'שריפה בנמל, 2019' }], fullMatches: 3, partialMatches: 1, similar: 12 }),
+    };
+    const saved = ctx.app.services.ai;
+    ctx.app.services.ai = fixedAi(new Recording(), new PlaceholderImages(), undefined, undefined, undefined, search);
+    try {
+      const png = await sharp({ create: { width: 600, height: 900, channels: 3, background: '#eeeeee' } }).png().toBuffer();
+      const shot = await ingestImage(ctx.db, ctx.storage, png, { kind: 'upload' });
+      const started = await editor.post('/research', { kind: 'screenshot', mediaIds: [shot.id], note: 'תמונה של שריפה שרצה בטלגרם' });
+      await ctx.drain();
+      const task = (await editor.get(`/research/${started.body.id}`)).body;
+      expect(task.dossier.imageChecks).toEqual([{ image: 1, bestGuess: ['שריפה בנמל'], pages: [{ url: 'https://archive.example/2019/fire', title: 'שריפה בנמל, 2019' }], fullMatches: 3, partialMatches: 1, similar: 12 }]);
+      expect(seen).toContain('https://archive.example/2019/fire');
+      expect(seen).toContain('3 exact copies');
+    } finally {
+      ctx.app.services.ai = saved;
+    }
   });
 
   it('needs a link, at least one screenshot, or an idea of a sentence', async () => {

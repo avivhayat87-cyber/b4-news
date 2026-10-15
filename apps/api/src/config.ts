@@ -69,6 +69,8 @@ const Env = z
     AI_MODEL_FAST: z.string().default('claude-haiku-5-5'),
     IMAGE_PROVIDER: z.enum(['gemini', 'placeholder', '']).default(''),
     GEMINI_API_KEY: z.string().optional(),
+    /** Google Vision (reverse image search); the CMS key comes first. On the cloud server the server's own identity is used. */
+    GOOGLE_VISION_API_KEY: z.string().optional(),
     /** The quick, low-resolution drafts the editor chooses from. */
     IMAGE_PREVIEW_MODEL: z.string().default('gemini-3.1-flash-lite-image'),
     /** The chosen draft, redrawn at full quality, and the story images. */
@@ -175,6 +177,7 @@ const Env = z
         model: env.AI_MODEL,
         modelFast: env.AI_MODEL_FAST,
         geminiKey: env.GEMINI_API_KEY,
+        visionKey: env.GOOGLE_VISION_API_KEY,
         imagePreviewModel: env.IMAGE_PREVIEW_MODEL,
         imageModel: env.IMAGE_MODEL,
         imageSize: env.IMAGE_SIZE,

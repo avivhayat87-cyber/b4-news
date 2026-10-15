@@ -57,6 +57,21 @@ export async function testIntegration(s: Services, id: IntegrationId): Promise<C
       if (r.status === 400 || r.status === 401 || r.status === 403) return fail(`המפתח לא התקבל.${reason}`);
       return fail(`Gemini החזיר שגיאה (${r.status}).${reason}`);
     }
+    if (id === 'google_vision') {
+      if (!v.apiKey) return s.config.ai.vertex ? ok('בשרת בענן הבדיקה עוברת דרך הזהות של השרת, בלי מפתח.') : fail('לא הוזן מפתח.');
+      // A blank 1×1 image: one unit of the free monthly thousand.
+      const blank = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+      const r = await getJson('https://vision.googleapis.com/v1/images:annotate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': v.apiKey },
+        body: JSON.stringify({ requests: [{ image: { content: blank }, features: [{ type: 'WEB_DETECTION', maxResults: 1 }] }] }),
+      });
+      if (r.status === 200) return ok('מחובר. בדיקת תמונה הפוכה פעילה בתחקירים עם צילומי מסך.');
+      const reason = typeof r.body.error?.message === 'string' ? ` Google: ${r.body.error.message.slice(0, 200)}` : '';
+      if (JSON.stringify(r.body.error ?? {}).includes('API_KEY_INVALID')) return fail('המפתח לא תקין או בוטל.');
+      if (r.status === 403) return fail(`המפתח התקבל, אבל Cloud Vision API לא מופעל בפרויקט או שהמפתח מוגבל לשירות אחר.${reason}`);
+      return fail(`Google Vision החזיר שגיאה (${r.status}).${reason}`);
+    }
     if (id === 'meta') {
       if (!v.appSecret) return fail('לא הוזן סוד האפליקציה.');
       // The app's own key reads the app itself: a wrong ID or secret is refused here.

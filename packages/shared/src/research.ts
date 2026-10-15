@@ -152,6 +152,10 @@ export const ResearchDossierDto = z.object({
   sources: z.array(ResearchSourceDto),
   /** The line at the end of the article: names only, no links. */
   creditLine: z.string(),
+  /** Where each uploaded image already appeared on the web (reverse image search), in upload order. */
+  imageChecks: z
+    .array(z.object({ image: z.number().int(), bestGuess: z.array(z.string()), pages: z.array(z.object({ url: z.string(), title: z.string() })), fullMatches: z.number().int(), partialMatches: z.number().int(), similar: z.number().int() }))
+    .default([]),
 });
 export type ResearchDossierDto = z.infer<typeof ResearchDossierDto>;
 
@@ -378,5 +382,7 @@ export const ResearcherSettings = z.object({
   approvedSources: z.string().max(5000).default(''),
   /** Keep a screenshot of every source page as proof. */
   screenshots: z.boolean().default(true),
+  /** Look up where uploaded screenshots already appeared on the web (Google Vision, when connected). */
+  reverseImage: z.boolean().default(true),
 });
 export type ResearcherSettings = z.infer<typeof ResearcherSettings>;

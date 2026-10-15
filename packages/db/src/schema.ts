@@ -564,6 +564,8 @@ export type ResearchDossierRecord = {
   responseNeeded: string[];
   sources: ResearchSourceRecord[];
   creditLine: string;
+  /** Reverse image search of the uploaded screenshots (absent in files made before it). */
+  imageChecks?: { image: number; bestGuess: string[]; pages: { url: string; title: string }[]; fullMatches: number; partialMatches: number; similar: number }[];
 };
 
 /**

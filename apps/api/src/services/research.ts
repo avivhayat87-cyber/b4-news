@@ -323,6 +323,39 @@ export function checkDossier(out: ResearchOutput, original: string | null, entri
   };
 }
 
+/** Google's price per image looked up (after the free thousand a month; counted at the price, to stay on the safe side). */
+const IMAGE_CHECK_USD = 0.0035;
+type ImageCheck = NonNullable<ResearchDossierRecord['imageChecks']>[number];
+
+/** Where each uploaded image already appeared on the web: leads for the reporter, and a record in the file. */
+async function reverseImageSearch(s: Services, images: ImageReference[]): Promise<{ checks: ImageCheck[]; costUsd: number }> {
+  if (!images.length) return { checks: [], costUsd: 0 };
+  const search = await s.ai.imageSearch();
+  if (!search.live) return { checks: [], costUsd: 0 };
+  const checks: ImageCheck[] = [];
+  for (const [i, image] of images.entries()) {
+    try {
+      const w = await search.webDetect(image);
+      checks.push({ image: i + 1, bestGuess: w.bestGuess, pages: w.pages.slice(0, 10), fullMatches: w.fullMatches, partialMatches: w.partialMatches, similar: w.similar });
+    } catch (e) {
+      s.log.warn({ err: e instanceof Error ? e.message : e }, 'research: reverse image search failed');
+    }
+  }
+  return { checks, costUsd: images.length * IMAGE_CHECK_USD };
+}
+
+/** The search's findings as the reporter reads them (empty: nothing was searched). */
+function imageMatchesText(checks: ImageCheck[]): string {
+  return checks
+    .map((c) =>
+      [
+        `Image ${c.image}: ${c.bestGuess.length ? `Google's best guess: ${c.bestGuess.join(', ')}. ` : ''}${c.fullMatches} exact copies, ${c.partialMatches} partial, ${c.similar} similar images on the web.`,
+        ...c.pages.map((p) => `- ${p.title || '(no title)'}: ${p.url}`),
+      ].join('\n'),
+    )
+    .join('\n\n');
+}
+
 /** The file as the writer reads it: each detail with its label and who published its sources. */
 function dossierText(d: ResearchDossierRecord): string {
   const publishers = (ids: string[]) => [...new Set(d.sources.filter((x) => ids.includes(x.id)).map((x) => (x.kind === 'news' ? `דיווח ב-${x.publisher}` : x.publisher)))].join(', ');
@@ -359,6 +392,9 @@ export async function runResearch(s: Services, job: JobRow) {
     const entries = approvedEntries(settings);
     const registry = await registryForResearch(s.db);
     const prompt = await writerPrompt(s.db, 'research.system');
+    const images = await screenshotsOf(s, task.mediaIds);
+    const imageChecks = settings.reverseImage ? await reverseImageSearch(s, images) : { checks: [], costUsd: 0 };
+    cost += imageChecks.costUsd;
     const { result } = await tracked(
       s.db,
       {
@@ -379,7 +415,8 @@ export async function runResearch(s: Services, job: JobRow) {
             kind: task.kind as ResearchTaskDto['kind'],
             url: task.url,
             pageText: page ? [page.title, page.intro, page.bodyText].filter(Boolean).join('\n\n') : null,
-            images: await screenshotsOf(s, task.mediaIds),
+            images,
+            imageMatches: imageMatchesText(imageChecks.checks),
             note: task.note,
           },
           today: israelToday(),
@@ -388,7 +425,7 @@ export async function runResearch(s: Services, job: JobRow) {
     if (textAi.live) cost += callCost(result.usage, result.searches);
     searches += result.searches;
     if (result.toolErrors.length) s.log.warn({ taskId: task.id, errors: result.toolErrors }, 'research: web searches or fetches failed');
-    dossier = checkDossier(result.data, task.url, entries, registry);
+    dossier = { ...checkDossier(result.data, task.url, entries, registry), imageChecks: imageChecks.checks };
     await s.db
       .update(researchTasks)
       .set({ status: 'writing', dossier, searches, costUsd: cost.toFixed(4), updatedAt: new Date() })
@@ -607,6 +644,7 @@ function errorMessage(raw: string | null): string | null {
 function dossierDto(s: Services, d: ResearchDossierRecord): ResearchDossierDto {
   return {
     ...d,
+    imageChecks: d.imageChecks ?? [],
     claims: d.claims.map((c) => ({ ...c, label: (CLAIM_LABELS as readonly string[]).includes(c.label) ? (c.label as ClaimLabel) : 'unverified' })),
     sources: d.sources.map(({ archive, usedFor: _u, ...x }) => ({
       ...x,

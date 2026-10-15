@@ -21,7 +21,7 @@ export type IntegrationField = {
 
 export type IntegrationDef = { title: string; description: string; docsUrl: string; fields: IntegrationField[] };
 
-export const INTEGRATION_IDS = ['anthropic', 'gemini', 'smtp', 'meta'] as const;
+export const INTEGRATION_IDS = ['anthropic', 'gemini', 'google_vision', 'smtp', 'meta'] as const;
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 
 export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
@@ -84,7 +84,22 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
       },
     ],
   },
-  smtp: {
+  google_vision: {
+    title: 'Google Vision: בדיקת תמונה הפוכה',
+    description:
+      'כשמעלים לתחקיר צילום מסך או תמונה, בודק איפה התמונה כבר הופיעה ברשת: עמודים עם אותה תמונה, עותקים ותמונות דומות. כך הכתב-החוקר תופס תמונה ישנה שמוצגת כחדשה ומוצא את המקור. 1,000 בדיקות בחודש חינם, אחר כך 3.5 דולר לאלף.',
+    docsUrl: 'https://console.cloud.google.com/apis/library/vision.googleapis.com',
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'מפתח API',
+        secret: true,
+        placeholder: 'AIza…',
+        pattern: '^AIza[0-9A-Za-z_\\-]{30,}$',
+        help: 'ב-console.cloud.google.com: מפעילים את Cloud Vision API, ואז APIs & Services > Credentials > Create credentials > API key, ומגבילים את המפתח ל-Cloud Vision API. בשרת בענן לא צריך מפתח.',
+      },
+    ],
+  },  smtp: {
     title: 'דואר יוצא',
     description: 'קודי כניסה לקוראים, אישור הרשמה לניוזלטר והתראות למפתח על אתר חדש.',
     docsUrl: 'https://nodemailer.com/smtp/',

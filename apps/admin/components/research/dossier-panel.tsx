@@ -174,6 +174,46 @@ export function DossierPanel({ draftId }: { draftId: string }) {
         </div>
       </Section>
 
+      {d.imageChecks.length > 0 ? (
+        <Section title="בדיקת תמונה הפוכה (Google)">
+          {d.imageChecks.map((c) => (
+            <div key={c.image} className="space-y-1.5 rounded-lg bg-stone p-3 text-sm">
+              <p className="font-bold">
+                צילום {c.image}
+                {c.bestGuess.length > 0 && <span className="font-normal text-ink-2"> · Google מזהה: {c.bestGuess.join(', ')}</span>}
+              </p>
+              <p className="text-xs text-muted">
+                {c.fullMatches} עותקים זהים · {c.partialMatches} עותקים חלקיים · {c.similar} תמונות דומות ברשת
+              </p>
+              {c.pages.length > 0 ? (
+                <ul className="space-y-0.5 text-xs">
+                  {c.pages.map((p) => (
+                    <li key={p.url}>
+                      <a href={p.url} target="_blank" rel="noopener noreferrer nofollow" className="underline" dir="auto">
+                        {p.title || p.url}
+                      </a>{' '}
+                      <span className="text-muted" dir="ltr">
+                        {(() => {
+                          try {
+                            return new URL(p.url).hostname.replace(/^www\./, '');
+                          } catch {
+                            return '';
+                          }
+                        })()}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-ink-2">התמונה לא נמצאה בעמודים אחרים ברשת.</p>
+              )}
+            </div>
+          ))}
+          <p className="text-xs text-muted">עמודים שבהם התמונה כבר הופיעה הם רמזים, לא מקורות. תמונה שהופיעה לפני האירוע המדווח עשויה להיות ממוחזרת.</p>
+        </Section>
+      ) : (
+        task.kind === 'screenshot' && <p className="text-xs text-muted">לא בוצעה בדיקת תמונה הפוכה: Google Vision לא מחובר (הגדרות &gt; חיבורים), או שהבדיקה כבויה בהגדרות הכתב-החוקר.</p>
+      )}
       <Section title="מה ידוע עכשיו">
         <p className="text-sm leading-relaxed" dir="auto">{d.summary}</p>
       </Section>

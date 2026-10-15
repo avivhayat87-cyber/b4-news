@@ -8,7 +8,8 @@ import { FakeText, FakeVisual, PlaceholderImages, PlaceholderVideo } from './fak
 import { GeminiImages, type ImageSize } from './gemini-images';
 import { GeminiVideo } from './gemini-video';
 import { GeminiVisual } from './gemini-visual';
-import type { ImageAI, ImageTier, TextAI, Usage, VideoAI, VisualAI } from './types';
+import { GoogleVision, NoImageSearch } from './google-vision';
+import type { ImageAI, ImageSearchAI, ImageTier, TextAI, Usage, VideoAI, VisualAI } from './types';
 import { VertexImages } from './vertex-images';
 import { VertexVideo } from './vertex-video';
 
@@ -24,6 +25,8 @@ export interface AiHub {
   video(model?: string): Promise<VideoAI>;
   /** The visual agent (Google Gemini): the prompts for article images and reels, and its learning. */
   visual(): Promise<VisualAI>;
+  /** Reverse image search (Google Vision); the stand-in when it isn't connected. */
+  imageSearch(): Promise<ImageSearchAI>;
   status(): Promise<{ text: string; image: string; live: boolean }>;
 }
 
@@ -38,8 +41,16 @@ export class AiNotConnectedError extends PermanentJobError {
 }
 
 /** Fixed providers (tests). */
-export function fixedAi(text: TextAI, image: ImageAI, draftImage: ImageAI = image, video: VideoAI = new PlaceholderVideo(), visual: VisualAI = new FakeVisual()): AiHub {
+export function fixedAi(
+  text: TextAI,
+  image: ImageAI,
+  draftImage: ImageAI = image,
+  video: VideoAI = new PlaceholderVideo(),
+  visual: VisualAI = new FakeVisual(),
+  imageSearch: ImageSearchAI = new NoImageSearch(),
+): AiHub {
   return {
+    imageSearch: async () => imageSearch,
     text: async () => text,
     image: async (tier = 'final') => (tier === 'draft' ? draftImage : image),
     video: async () => video,
@@ -108,11 +119,23 @@ export function createAiHub(config: Config, settings: SettingsStore, tokens: Tok
     throw new AiNotConnectedError('image');
   };
 
+  const noImageSearch = new NoImageSearch();
+  let visionCache: { key: string; ai: ImageSearchAI } | null = null;
+  /** The CMS key first; on the cloud server, the server's own identity. Not connected: the stand-in (it is optional). */
+  const imageSearch = async (): Promise<ImageSearchAI> => {
+    const v = await settings.integration('google_vision');
+    const key = v.apiKey ? `key:${v.apiKey}` : vertex ? `vertex:${vertex.project}` : null;
+    if (!key) return noImageSearch;
+    if (visionCache?.key !== key) visionCache = { key, ai: new GoogleVision(v.apiKey ? { apiKey: v.apiKey } : { tokens }) };
+    return visionCache.ai;
+  };
+
   return {
     text,
     image,
     video,
     visual,
+    imageSearch,
     status: async () => {
       const [t, i] = await Promise.all([text().catch(() => null), image().catch(() => null)]);
       return { text: t?.provider ?? 'none', image: i?.provider ?? 'none', live: Boolean(t?.live && i?.live) };

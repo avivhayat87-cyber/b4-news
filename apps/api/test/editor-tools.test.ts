@@ -6,6 +6,7 @@ import { aiJobs, eq } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AiNotConnectedError, fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages, PlaceholderVideo } from '../src/services/ai/fake';
+import { NoImageSearch } from '../src/services/ai/google-vision';
 import type { ImageAI, ImageReference, ImageShape, ImageTier } from '../src/services/ai/types';
 import { PermanentJobError } from '../src/lib/jobs';
 import { imageErrorMessage } from '../src/services/image-brief';
@@ -180,6 +181,7 @@ describe('images', () => {
   it('shows why a batch failed', async () => {
     ctx.app.services.ai = {
       text: async () => new FakeText(),
+      imageSearch: async () => new NoImageSearch(),
       image: async () => {
         throw new AiNotConnectedError('image');
       },

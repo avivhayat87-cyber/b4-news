@@ -96,7 +96,8 @@ src/
   services/         Domain logic (no HTTP). One file or folder per domain:
     context.ts        Services = { db, config, settings, ai, storage, fetch, mailer, capture, log }, wired once
     handlers.ts       Job kind → handler: the only place that maps queued work to code
-    ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent;
+    ai/               AiHub and providers (Anthropic text; Gemini images, video and the visual agent; Google Vision's
+                        reverse image search;
                         development stand-ins), types
     agent/            The newsroom agent and the agent team: tools over the services, chat, model engine,
                         the team (team.ts: who the agents are, their models and usage), their skills

@@ -103,6 +103,7 @@ export class SettingsStore {
       'gemini.previewModel': c.ai.imagePreviewModel,
       'gemini.imageModel': c.ai.imageModel,
       'gemini.imageSize': c.ai.imageSize,
+      'google_vision.apiKey': c.ai.visionKey,
       'smtp.url': c.smtpUrl,
       'smtp.from': c.mailFrom,
     };

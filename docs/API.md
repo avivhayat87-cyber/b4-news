@@ -183,7 +183,7 @@ A research is a `research.run` job (one attempt) and then a `research.archive` j
 | POST | `/admin/research/:id/apply-update` · `/dismiss-update` | editor | → `ResearchTaskDto`: an update research's proposal put at the top of its article (audited; a final text is reopened) or set aside; 409 `no_update`. Start one with `targetDraftId` or `targetArticleId` in `StartResearchInput` |
 | GET | `/admin/research/:id/sources/:sourceId/text` | any | `SourceCopyDto`: the copy of a source's text kept as proof |
 | GET | `/admin/drafts/:id/research` | any | `ResearchTaskDto` the draft was written from, or `null` |
-| GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`); a change is audited |
+| GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`, `reverseImage`: look up uploaded screenshots with Google Vision when connected); a change is audited |
 
 ### The official-sources registry
 

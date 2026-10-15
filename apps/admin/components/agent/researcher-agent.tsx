@@ -107,6 +107,13 @@ export function ResearcherAgent() {
         </span>
       </label>
 
+      <label className="flex items-start gap-2 text-[15px] font-semibold">
+        <input type="checkbox" checked={form.reverseImage} disabled={!isAdmin} onChange={(e) => setForm({ ...form, reverseImage: e.target.checked })} className="mt-1 size-4" />
+        <span>
+          לבדוק איפה צילומי המסך כבר הופיעו ברשת (בדיקת תמונה הפוכה)
+          <span className="block text-sm font-normal text-muted">דרך Google Vision, כשהוא מחובר ב"הגדרות" &gt; "חיבורים". תופס תמונה ישנה שמוצגת כחדשה, ועוזר למצוא את המקור. 1,000 בדיקות בחודש חינם.</span>
+        </span>
+      </label>
       <div className="rounded-lg bg-info-soft px-4 py-3 text-sm text-info">
         העלות: חיפוש באינטרנט עולה סנט, ועוד הקריאה של העמודים. תחקיר מהיר, כולל כתיבת הכתבה, בערך 10–30 סנט; מעמיק עד 1–3 דולר. כשלא נמצא מקור רשמי, הכתב-החוקר מקבל סבב אחד נוסף לחפש אותו, בתוך מגבלת החיפושים.
       </div>

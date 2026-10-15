@@ -133,7 +133,7 @@ export type ResearchRequest = {
   approvedSources: string[];
   depth: ResearchDepth;
   /** For an idea, note is the idea itself. */
-  input: { kind: ResearchKind; url: string | null; pageText: string | null; images: ImageReference[]; note: string };
+  input: { kind: ResearchKind; url: string | null; pageText: string | null; images: ImageReference[]; note: string; /** Where the images already appeared on the web (reverse image search), as text; empty when not searched. */ imageMatches?: string };
   /** Israel time, so "today" and "yesterday" in a report are understood. */
   today: string;
 };
@@ -198,6 +198,23 @@ export type ResearchWriteRequest = {
   dossier: string;
   note: string;
 };
+
+/** Where an image appeared on the web before (reverse image search). */
+export type WebDetection = {
+  /** What the image seems to show, in Google's words. */
+  bestGuess: string[];
+  pages: { url: string; title: string }[];
+  fullMatches: number;
+  partialMatches: number;
+  similar: number;
+};
+
+/** Reverse image search (Google Vision's web detection), with a stand-in that finds nothing. */
+export interface ImageSearchAI {
+  readonly provider: string;
+  readonly live: boolean;
+  webDetect(image: ImageReference): Promise<WebDetection>;
+}
 
 /** An update of an article we already have, from a research file: only what is new. */
 export const ResearchUpdateOutput = z.object({
