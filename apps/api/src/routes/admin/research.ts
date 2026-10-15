@@ -1,23 +1,38 @@
-// The research reporter (services/research.ts): starting a research from a link or screenshots,
-// the free "do we already have this story" check, the list and one research with its file, the
-// copies of its sources, and the reporter's settings.
-import { ResearchOverviewDto, ResearcherSettings, ResearchTaskDto, SimilarStoriesInput, SimilarStoryDto, SourceCopyDto, StartResearchInput } from '@b4/shared';
+// The research reporter (services/research.ts): starting a research from a link, screenshots or an
+// idea, the free "do we already have this story" check, the list and one research with its file,
+// the copies of its sources, and the reporter's settings. And the editorial meeting
+// (services/editorial-meeting.ts): holding one, and approving or turning down its pitches.
+import {
+  ApprovePitchInput,
+  MeetingDto,
+  MeetingSettings,
+  ResearchOverviewDto,
+  ResearcherSettings,
+  ResearchTaskDto,
+  SimilarStoriesInput,
+  SimilarStoryDto,
+  SourceCopyDto,
+  StartMeetingInput,
+  StartResearchInput,
+} from '@b4/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { audit } from '../../lib/audit';
 import { requireStaff } from '../../plugins/auth';
 import { getResearcherSettings, saveResearcherSettings } from '../../services/agent/researcher';
 import type { Services } from '../../services/context';
+import * as meeting from '../../services/editorial-meeting';
 import * as research from '../../services/research';
 
 const params = z.object({ id: z.string().uuid() });
+const pitchParams = params.extend({ pitchId: z.string().regex(/^p\d{1,2}$/) });
 
 export const researchRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
   app.get('/research', { schema: { response: { 200: ResearchOverviewDto } } }, async () => research.researchOverview(s));
 
   app.post('/research/similar', { schema: { body: SimilarStoriesInput, response: { 200: z.array(SimilarStoryDto) } } }, async (req) => {
     requireStaff(req, 'editor');
-    return research.similarForUrl(s, req.body.url);
+    return 'url' in req.body ? research.similarForUrl(s, req.body.url) : research.similarByTopic(s, req.body.text);
   });
 
   // Each research costs searches and tokens: a tight limit, and a record of who asked.
@@ -56,5 +71,46 @@ export const researchRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     const saved = await saveResearcherSettings(s.db, staff.id, req.body);
     await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'researcher-settings', action: 'update', details: { monthlyBudgetUsd: saved.monthlyBudgetUsd, defaultDepth: saved.defaultDepth } });
     return saved;
+  });
+
+
+  // --- The editorial meeting ---------------------------------------------------------------------
+  app.get('/meetings', { schema: { response: { 200: z.array(MeetingDto) } } }, async () => meeting.meetings(s));
+
+  app.get('/meetings/:id', { schema: { params, response: { 200: MeetingDto } } }, async (req) => meeting.meeting(s, req.params.id));
+
+  // One AI call per meeting (cheap, but not free): a limit, and a record of who called it.
+  app.post('/meetings', { schema: { body: StartMeetingInput, response: { 202: MeetingDto } }, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor');
+    const held = await meeting.startMeeting(s, staff, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'meeting', entityId: held.id, action: 'start', details: { focus: held.focus } });
+    return reply.status(202).send(held);
+  });
+
+  // Approving starts a paid research: recorded with who decided.
+  app.post(
+    '/meetings/:id/pitches/:pitchId/approve',
+    { schema: { params: pitchParams, body: ApprovePitchInput, response: { 200: MeetingDto } }, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
+      const staff = requireStaff(req, 'editor');
+      const result = await meeting.approvePitch(s, staff, req.params.id, req.params.pitchId, req.body);
+      await audit(s.db, { userId: staff.id, entity: 'meeting', entityId: req.params.id, action: 'approve', details: { pitch: req.params.pitchId, depth: req.body.depth ?? null } });
+      return result;
+    },
+  );
+
+  // The morning meeting: held by itself every day, and it emails the admins (an admin's call).
+  app.get('/agent/meeting-settings', { schema: { response: { 200: MeetingSettings } } }, async () => meeting.getMeetingSettings(s.db));
+
+  app.put('/agent/meeting-settings', { schema: { body: MeetingSettings, response: { 200: MeetingSettings } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const saved = await meeting.saveMeetingSettings(s.db, staff.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'agent', entityId: 'meeting-settings', action: 'update', details: saved });
+    return saved;
+  });
+
+  app.post('/meetings/:id/pitches/:pitchId/reject', { schema: { params: pitchParams, response: { 200: MeetingDto } } }, async (req) => {
+    const staff = requireStaff(req, 'editor');
+    return meeting.rejectPitch(s, staff, req.params.id, req.params.pitchId);
   });
 };

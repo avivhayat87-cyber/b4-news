@@ -99,9 +99,26 @@ describe('the research reporter', () => {
     expect(task.draftId).toBeTruthy();
   });
 
-  it('needs a link, or at least one screenshot', async () => {
+  it('needs a link, at least one screenshot, or an idea of a sentence', async () => {
     expect((await editor.post('/research', { kind: 'screenshot', mediaIds: [] })).status).toBe(400);
     expect((await editor.post('/research', { kind: 'link' })).status).toBe(400);
+    expect((await editor.post('/research', { kind: 'idea', note: 'דירות' })).status).toBe(400);
+  });
+
+  it('researches the newsroom\'s own idea, after a free check for what we already have', async () => {
+    const idea = 'מחיר הדלק יעלה בחודש הבא: כמה זה יעלה למשפחה ממוצעת בשנה?';
+    // The free check by the idea's words finds the draft about the fuel price from the first research.
+    const similar = await editor.post('/research/similar', { text: idea });
+    expect(similar.status).toBe(200);
+    expect(similar.body.map((x: { kind: string }) => x.kind)).toContain('draft');
+
+    const started = await editor.post('/research', { kind: 'idea', note: idea });
+    expect(started.status).toBe(202);
+    expect(started.body).toMatchObject({ kind: 'idea', url: null, screenshots: [], note: idea });
+    await ctx.drain();
+    const task = (await editor.get(`/research/${started.body.id}`)).body;
+    expect(task).toMatchObject({ status: 'done', kind: 'idea' });
+    expect(task.draftId).toBeTruthy();
   });
 
   it('marks down a detail whose label needs an official source it does not have', () => {
@@ -113,16 +130,19 @@ describe('the research reporter', () => {
           { text: 'הריבית עלתה ל-4.5%', label: 'verified', source_urls: ['https://www.boi.org.il/press/1'], note: '' },
           { text: 'השר אמר שהמחירים ירדו', label: 'claimed', source_urls: [], note: '' },
           { text: 'החברה הודיעה על דיבידנד', label: 'verified', source_urls: ['https://x.com/company_official/status/9'], note: '' },
+          // A bank's own rate page behind a mere report: kept in the file, not named at the end.
+          { text: 'שער הדולר לפי אתר הבנק', label: 'reported', source_urls: ['https://www.bank.example/fx'], note: '' },
         ],
         sources: [
           { url: 'https://www.ynet.co.il/economy/article/abc', title: 'כתבה', publisher: 'ynet', kind: 'company', used_for: 'fact' },
           { url: 'https://he.wikipedia.org/wiki/בנק_ישראל', title: 'בנק ישראל', publisher: 'ויקיפדיה', kind: 'wiki', used_for: 'background' },
+          { url: 'https://www.bank.example/fx', title: 'שערי מט"ח', publisher: 'הבנק', kind: 'company', used_for: 'fact' },
         ],
       }),
       null,
       ['x.com/company_official'],
     );
-    expect(d.claims.map((c) => c.label)).toEqual(['reported', 'unverified', 'verified', 'unverified', 'verified']);
+    expect(d.claims.map((c) => c.label)).toEqual(['reported', 'unverified', 'verified', 'unverified', 'verified', 'reported']);
     expect(d.claims[1]!.note).toContain('חשד בלי מקור רשמי');
     // A news site is a news site whatever the reporter called it, and never named in the sources line.
     expect(d.sources.find((x) => x.url.includes('ynet'))).toMatchObject({ kind: 'news', approved: false });
@@ -177,6 +197,7 @@ describe('the research reporter', () => {
     const team = (await admin.get('/agents')).body;
     const reporter = team.agents.find((a: { id: string }) => a.id === 'reporter');
     expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write']);
-    expect(reporter.usage.calls).toBeGreaterThan(0);
+    const usage = (await admin.get('/agents/usage')).body;
+    expect(usage.agents.find((a: { id: string }) => a.id === 'reporter').usage.calls).toBeGreaterThan(0);
   });
 });

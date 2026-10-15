@@ -108,7 +108,9 @@ src/
     drafts.ts         Selections → drafts, AI rewrite/refine/images, autosave, finalize, reading models
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
-    research.ts       The research reporter: a link or screenshots → a research file → an article from it; proof of the sources
+    research.ts       The research reporter: a link, screenshots or an idea → a research file → an article from it; proof of the sources
+    editorial-meeting.ts  The editorial meeting: discovery's topics → story pitches; an approved pitch becomes an idea research;
+                      the morning meeting (a recurring job, live only) that emails the admins
     publish.ts        Preview, final approval, the publish job
     social*.ts        Distribution: the distribution plan before publishing (social-plan.ts), the social
                         package, network adapters, the social page, branded designs, reels
@@ -188,7 +190,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
-| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `image_batches`, `media_assets` |
+| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |
@@ -280,6 +282,10 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
   is written from the research file alone and ends with the sources by name, without links; the
   CMS keeps a copy and a screenshot of every source. Searches cost money: one attempt per
   research, quick by default, and a monthly budget. Decided by the owner on 2026-10-14.
+- **The editorial meeting only proposes.** The chief editor (`services/editorial-meeting.ts`)
+  pitches stories from what discovery found (topics grouped for free, one AI call without
+  search); a person approves each pitch before it is researched, and a pitch that grew from no
+  discovered topic is dropped. Decided by the owner on 2026-10-14.
 - **Who decides how an article goes out:** the social editor (Claude, the fast model,
   `services/social-plan.ts`) chooses the frame, the post and the story when the text is marked
   final, and only recommends a reel. A person approves a reel (it costs a video), and its video

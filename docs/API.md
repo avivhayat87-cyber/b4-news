@@ -175,14 +175,25 @@ A research is a `research.run` job (one attempt) and then a `research.archive` j
 | Method | Path | Role | |
 | --- | --- | --- | --- |
 | GET | `/admin/research` | any | `ResearchOverviewDto`: the 20 latest research (without their files), this month's estimated spend and the budget, the default depth |
-| POST | `/admin/research/similar` | editor | `{ url }` → `SimilarStoryDto[]`: articles and drafts from the same link (free, no AI) |
-| POST | `/admin/research` | editor | `StartResearchInput` (`kind` link · screenshot, `url` or `mediaIds` (≤4 uploaded images), `note`, `depth` quick (default) · regular · deep, magazine or color) → 202 `ResearchTaskDto` (10/min, audited); 409 `research_budget` when the month's budget is spent |
+| POST | `/admin/research/similar` | editor | `{ url }` → `SimilarStoryDto[]`: articles and drafts from the same link; or `{ text }`: recent ones with similar headlines (free, no AI) |
+| POST | `/admin/research` | editor | `StartResearchInput` (`kind` link · screenshot · idea, `url` or `mediaIds` (≤4 uploaded images), `note` (for an idea, the idea itself, 10+ characters), `depth` quick (default) · regular · deep, magazine or color) → 202 `ResearchTaskDto` (10/min, audited); 409 `research_budget` when the month's budget is spent |
 | GET | `/admin/research/:id` | any | `ResearchTaskDto` with its file: every detail with its label and sources, the sources with their proof (`archive`: saved, when, `hasText`, the screenshot's address), the sources line, similar stories |
 | POST | `/admin/research/:id/retry` | editor | → 202 `ResearchTaskDto`: a failed research again (a file already made is kept; only the writing is redone); 409 otherwise |
 | POST | `/admin/research/:id/archive` | editor | → 202 `ResearchTaskDto`: keep the sources again (the ones not saved yet) |
 | GET | `/admin/research/:id/sources/:sourceId/text` | any | `SourceCopyDto`: the copy of a source's text kept as proof |
 | GET | `/admin/drafts/:id/research` | any | `ResearchTaskDto` the draft was written from, or `null` |
 | GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`); a change is audited |
+
+### The editorial meeting
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/meetings` | any | `MeetingDto[]`: the 5 latest meetings, newest first, each pitch with the research it became (status, draft, whether something rests on an official source) |
+| GET | `/admin/meetings/:id` | any | `MeetingDto` |
+| POST | `/admin/meetings` | editor | `StartMeetingInput` (`focus`, optional) → 202 `MeetingDto` (5/min, audited): a `meeting.run` job; 409 `meeting_running`, `nothing_to_meet` (fewer than 5 discovered articles in the last 36 hours) or `research_budget` |
+| POST | `/admin/meetings/:id/pitches/:pitchId/approve` | editor | `ApprovePitchInput` (`title`, `angle`, `depth`, magazine or color; all optional) → `MeetingDto` (audited): starts an idea research; 409 `pitch_decided`, `research_budget` |
+| POST | `/admin/meetings/:id/pitches/:pitchId/reject` | editor | → `MeetingDto`: "not now"; 409 when it is already approved |
+| GET / PUT | `/admin/agent/meeting-settings` | any / admin | `MeetingSettings` (`morning`: hold the meeting by itself every day, `hour` 5–12 in Israel, `focus`, `skipSaturday`); a change is audited. A morning meeting's `MeetingDto` has `auto: true` |
 
 ### The legal review (after the text is final, before publishing)
 
@@ -241,7 +252,8 @@ The editor's social tab now shows the distribution plan. These endpoints stay fo
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/agents` | any | `AgentTeamDto`: every agent (`chief`, `rewrite`, `social`, `visual`, `translator`, `learning`) with its model, whether it is live, its skills (the version in use, who wrote it) and its usage this month (calls, tokens, estimated cost; `partial` when Google bills part of it), the newsroom rules, and the fixed rules |
+| GET | `/admin/agents` | any | `AgentTeamDto`: every agent (`chief`, `reporter`, `rewrite`, `reviewer`, `social`, `visual`, `translator`, `learning`) with its model, whether it is live, its skills (the version in use, who wrote it), the newsroom rules, and the fixed rules |
+| GET | `/admin/agents/usage?period=all\|day\|month\|year\|custom&from=&to=` | any | `AgentUsageReportDto`: what each agent did and cost in the period (calls, tokens, estimated cost; `partial` when some calls have no known price), and all of them together. Days are Israel time; `custom` takes `from` and `to` (YYYY-MM-DD, both included). Default `month` |
 | GET | `/admin/skills/:key` | any | `SkillDto`: every version (newest first), which one is in use, the markers a new version must keep; 404 for an unknown key |
 | PUT | `/admin/skills/:key` | admin | `SaveSkillInput` → `SkillDto`: a new version, in use at once (audited); 422 `missing_placeholder` when a marker such as `{{style_rules}}` is gone |
 | POST | `/admin/skills/:key/versions/:version/restore` | admin | → `SkillDto`: the older version comes back as a new version under the admin (audited) |

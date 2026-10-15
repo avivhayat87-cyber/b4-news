@@ -2,6 +2,7 @@
 // images that follow the article (and, if asked, the original's photo), quick
 // image drafts of which only the chosen one is redrawn at full quality, and
 // image batches that say why they failed.
+import { aiJobs, eq } from '@b4/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AiNotConnectedError, fixedAi } from '../src/services/ai';
 import { FakeText, PlaceholderImages, PlaceholderVideo } from '../src/services/ai/fake';
@@ -14,16 +15,19 @@ let ctx: Awaited<ReturnType<typeof setup>>;
 let editor: ReturnType<typeof staffClient>;
 let draftId: string;
 
-/** Draws placeholders and remembers what it was asked for. */
+/** Draws placeholders and remembers what it was asked for (priced like the model it is named after). */
 class RecordingImages implements ImageAI {
   readonly provider = 'recording';
-  readonly model = 'recording';
   readonly live = true;
   calls: { prompt: string; references: ImageReference[] }[] = [];
   finished: { prompt: string; draft: ImageReference }[] = [];
   failWith: Error | null = null;
   private readonly inner: PlaceholderImages;
-  constructor(tier: ImageTier = 'final') {
+  constructor(
+    tier: ImageTier = 'final',
+    readonly model = 'recording',
+    readonly size?: string,
+  ) {
     this.inner = new PlaceholderImages(tier);
   }
   async generate(prompt: string, opts: { count: number; shape: ImageShape; references?: ImageReference[] }) {
@@ -114,8 +118,8 @@ describe('images', () => {
   });
 
   it('draws quick drafts, and redraws only the chosen one at full quality before it can be published', async () => {
-    const drafts = new RecordingImages('draft');
-    const finals = new RecordingImages('final');
+    const drafts = new RecordingImages('draft', 'gemini-3.1-flash-lite-image', '1K');
+    const finals = new RecordingImages('final', 'gemini-nano-banana-2.1', '2K');
     ctx.app.services.ai = fixedAi(new FakeText(), finals, drafts);
     await editor.post(`/drafts/${draftId}/images`, { prompt: 'A harbor at dawn' });
     await ctx.drain();
@@ -144,6 +148,14 @@ describe('images', () => {
     expect(state.batches[0].images.map((m: { id: string }) => m.id)).not.toContain(state.heroId);
     expect((await editor.get(`/drafts/${draftId}`)).body.hero).toMatchObject({ id: state.heroId, width: 1600, height: 900 });
     expect((await editor.get(`/drafts/${draftId}/preview`)).body.items[0].problems).not.toContain(notReady);
+    // What each step cost at Google's prices: 3 drafts at 1K, then the chosen one at 2K.
+    const priced = await ctx.db.select({ model: aiJobs.model, costUsd: aiJobs.costUsd }).from(aiJobs).where(eq(aiJobs.type, 'article_images'));
+    expect(priced.filter((j) => j.model.startsWith('gemini'))).toEqual(
+      expect.arrayContaining([
+        { model: 'gemini-3.1-flash-lite-image', costUsd: '0.1008' },
+        { model: 'gemini-nano-banana-2.1', costUsd: '0.0504' },
+      ]),
+    );
 
     // Choosing it again later reuses the full-quality version.
     await editor.patch(`/drafts/${draftId}`, { heroMediaId: null });

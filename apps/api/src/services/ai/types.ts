@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, CLAIM_LABELS, REEL_MOTIONS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth } from '@b4/shared';
+import { CATEGORY_SLUGS, CLAIM_LABELS, REEL_MOTIONS, RESEARCH_DEPTHS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth, type ResearchKind } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -132,18 +132,49 @@ export type ResearchRequest = {
   /** The newsroom's approved sources besides official ones (domains or account addresses). */
   approvedSources: string[];
   depth: ResearchDepth;
-  input: { kind: 'link' | 'screenshot'; url: string | null; pageText: string | null; images: ImageReference[]; note: string };
+  /** For an idea, note is the idea itself. */
+  input: { kind: ResearchKind; url: string | null; pageText: string | null; images: ImageReference[]; note: string };
   /** Israel time, so "today" and "yesterday" in a report are understood. */
   today: string;
 };
 
-/** The article written from the file (no image prompt: the visual agent writes those). */
+/** The editorial meeting: original story pitches from the topics discovery found. */
+export const MeetingOutput = z.object({
+  summary: clip(1500),
+  pitches: upTo(
+    z.object({
+      title: clip(300),
+      angle: clip(1500),
+      why_now: clip(800),
+      checks: upTo(clip(400), 8),
+      official_sources: upTo(clip(200), 8),
+      category: z.enum(CATEGORY_SLUGS).nullable(),
+      cluster_ids: upTo(clip(20), 10),
+      depth: z.enum(RESEARCH_DEPTHS),
+    }),
+    8,
+  ),
+});
+export type MeetingOutput = z.infer<typeof MeetingOutput>;
+
+export type MeetingRequest = {
+  /** prompt_templates "meeting.pitch" */
+  systemPrompt: string;
+  focus: string;
+  /** The topics, as the model reads them: id, how many sites, the headlines with their sites and sections. */
+  topics: { id: string; sites: number; category: string | null; headlines: { title: string; source: string; at: string }[] }[];
+  /** What we published lately, so the meeting doesn't propose it again. */
+  published: string[];
+  today: string;
+};
+
+/** The article written from the file (no image prompt: the visual agent writes those). Trimmed, never refused: the research is already paid for. */
 export const ResearchWriteOutput = z.object({
-  title: z.string().min(1).max(200),
-  subtitle: z.string().max(400),
-  paragraphs: z.array(z.string()).min(1).max(80),
-  suggested_category: z.enum(CATEGORY_SLUGS).nullable(),
-  suggested_tags: z.array(z.string().max(40)).max(8),
+  title: z.string().min(1).transform((s) => s.slice(0, 200)),
+  subtitle: clip(400),
+  paragraphs: z.array(z.string()).min(1).transform((a) => a.slice(0, 80)),
+  suggested_category: z.enum(CATEGORY_SLUGS).nullable().catch(null),
+  suggested_tags: upTo(clip(40), 8),
 });
 export type ResearchWriteOutput = z.infer<typeof ResearchWriteOutput>;
 
@@ -237,6 +268,7 @@ export interface TextAI {
   /** searches: how many web searches it made (each is billed apart from the tokens); toolErrors: searches or fetches that failed. */
   research(req: ResearchRequest): Promise<AiResult<ResearchOutput> & { searches: number; toolErrors: string[] }>;
   researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>>;
+  meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>>;
   review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;
   reviewFix(req: ReviewFixRequest): Promise<AiResult<ReviewFixOutput>>;
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;
@@ -258,6 +290,8 @@ export interface ImageAI {
   readonly provider: string;
   readonly model: string;
   readonly live: boolean;
+  /** The size it draws at (1K, 2K, 4K), which sets the price; none for the stand-in. */
+  readonly size?: string;
   generate(prompt: string, opts: { count: number; shape: ImageShape; references?: ImageReference[] }): Promise<Buffer[]>;
   /** The approved draft, redrawn at this generator's quality and kept as it is. */
   finish(prompt: string, draft: ImageReference, shape: ImageShape): Promise<Buffer>;

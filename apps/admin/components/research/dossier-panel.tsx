@@ -109,7 +109,7 @@ export function DossierPanel({ draftId }: { draftId: string }) {
         </div>
       )}
 
-      <Section title="מה נטען בדיווח">
+      <Section title={task.kind === 'idea' ? 'הרעיון' : 'מה נטען בדיווח'}>
         <div className="space-y-2 rounded-lg bg-stone p-3 text-sm">
           <p className="text-muted">{[d.original.who, d.original.when].filter(Boolean).join(' · ')}</p>
           <p dir="auto">{d.original.what}</p>

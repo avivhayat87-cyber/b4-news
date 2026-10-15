@@ -11,7 +11,7 @@
 // out as the plan said. Every AI call is tracked in ai_jobs. Approving a reel teaches the visual
 // agent. Instagram's API can't add music from its library: that is done in the app.
 import { randomUUID } from 'node:crypto';
-import { type ReelMotion, type ReelPlan, ReelSettings, type ShareTemplate, VIDEO_PRICE_PER_SECOND } from '@b4/shared';
+import { DEFAULT_VIDEO_MODEL, type ReelMotion, type ReelPlan, ReelSettings, type ShareTemplate, VIDEO_PRICE_PER_SECOND } from '@b4/shared';
 import { and, articleDrafts, articleShares, desc, eq, inArray, jobs, mediaAssets, socialPlans, sql } from '@b4/db';
 import sharp from 'sharp';
 import { AppError, errors } from '../errors';
@@ -20,6 +20,7 @@ import { PermanentJobError, enqueue, type JobRow } from '../lib/jobs';
 import { getSocialSettings } from './agent/social';
 import { recordReelFeedback, writeReelPrompts } from './agent/visual';
 import { activePrompt, tracked } from './ai';
+import { imageCostUsd } from './ai/prices';
 import type { ImageReference } from './ai/types';
 import { articleBodyText } from './article-content';
 import type { Services } from './context';
@@ -44,7 +45,7 @@ const fill = (template: string, values: Record<string, string>) => template.repl
 
 export async function reelSettingsOf(s: Services, raw: unknown): Promise<{ settings: ReelSettings; model: string; estimateUsd: number | null }> {
   const settings = ReelSettings.parse(raw ?? {});
-  const model = settings.model || (await s.settings.integration('gemini')).videoModel || 'veo-3.1-fast-generate-preview';
+  const model = settings.model || (await s.settings.integration('gemini')).videoModel || DEFAULT_VIDEO_MODEL;
   const price = VIDEO_PRICE_PER_SECOND[model]?.[settings.resolution];
   return { settings, model, estimateUsd: price === undefined ? null : Math.round(price * settings.durationSeconds * 100) / 100 };
 }
@@ -201,7 +202,16 @@ export async function runReelImage(s: Services, job: JobRow) {
   const references = await articlePictures(s, article);
   const { result: images } = await tracked(
     s.db,
-    { type: 'social_image', provider: imageAi.provider, requestedBy: job.createdBy, promptKey: 'reel.image', promptVersion: template.version, imageCount: 1, model: imageAi.model },
+    {
+      type: 'social_image',
+      provider: imageAi.provider,
+      requestedBy: job.createdBy,
+      promptKey: 'reel.image',
+      promptVersion: template.version,
+      imageCount: 1,
+      model: imageAi.model,
+      costOf: (r) => imageCostUsd(imageAi, r.images.length),
+    },
     async () => ({ images: await imageAi.generate(promptText, { count: 1, shape: 'portrait', references }) }),
   );
   const picture = await ingestImage(s.db, s.storage, images.images[0]!, { kind: 'ai_social', isAiGenerated: true, aiPrompt: plan.imagePrompt, createdBy: job.createdBy });

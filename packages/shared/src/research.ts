@@ -1,7 +1,8 @@
-// Contracts for the research reporter (/admin/research/*): an article researched from a link or
-// from screenshots, on official sources only. Every detail of the article is in the research file
-// with its label and its sources; the sources are kept as proof (a copy of the text and a
-// screenshot of the page).
+// Contracts for the research reporter (/admin/research/*): an article researched from a link, from
+// screenshots or from the newsroom's own idea, on official sources only. Every detail of the
+// article is in the research file with its label and its sources; the sources are kept as proof
+// (a copy of the text and a screenshot of the page). And the editorial meeting (/admin/meetings/*):
+// story pitches from what discovery found, researched only once a person approves them.
 import { z } from 'zod';
 import { DRAFT_COLORS } from './cms';
 
@@ -15,7 +16,8 @@ export type ResearchDepth = (typeof RESEARCH_DEPTHS)[number];
 /** Searches allowed per depth (each costs a cent). */
 export const RESEARCH_SEARCHES: Record<ResearchDepth, number> = { quick: 3, regular: 8, deep: 15 };
 
-export const RESEARCH_KINDS = ['link', 'screenshot'] as const;
+/** link and screenshot: a report to check; idea: the newsroom's own question or topic (or an approved pitch). */
+export const RESEARCH_KINDS = ['link', 'screenshot', 'idea'] as const;
 export type ResearchKind = (typeof RESEARCH_KINDS)[number];
 
 /**
@@ -198,20 +200,106 @@ export const StartResearchInput = z
     url: z.string().trim().url('הקישור לא תקין').max(2000).optional(),
     /** Uploaded screenshots (media ids), up to four. */
     mediaIds: z.array(id).max(4).default([]),
-    /** What to check in particular ("תבדוק במיוחד את המספר"). */
-    note: z.string().trim().max(1000).default(''),
+    /** What to check in particular ("תבדוק במיוחד את המספר"); for an idea, the idea itself. */
+    note: z.string().trim().max(3000).default(''),
     depth: z.enum(RESEARCH_DEPTHS).default('quick'),
     magazineId: id.optional(),
     colorLabel: z.enum(DRAFT_COLORS).optional(),
   })
-  .refine((v) => (v.kind === 'link' ? Boolean(v.url) : v.mediaIds.length > 0), 'צריך קישור, או לפחות צילום מסך אחד');
+  .refine((v) => (v.kind === 'link' ? Boolean(v.url) : v.kind === 'screenshot' ? v.mediaIds.length > 0 : v.note.length >= 10), 'צריך קישור, צילום מסך אחד לפחות, או רעיון של משפט אחד לפחות');
 export type StartResearchInput = z.infer<typeof StartResearchInput>;
 
-export const SimilarStoriesInput = z.object({ url: z.string().trim().url().max(2000) });
+/** A link (the same link), or the words of an idea (similar headlines). */
+export const SimilarStoriesInput = z.union([z.object({ url: z.string().trim().url().max(2000) }), z.object({ text: z.string().trim().min(3).max(3000) })]);
 
 /** The copy of a source's text kept as proof. */
 export const SourceCopyDto = z.object({ url: z.string(), capturedAt: iso.nullable(), text: z.string() });
 export type SourceCopyDto = z.infer<typeof SourceCopyDto>;
+
+// ---------------------------------------------------------------------------
+// The editorial meeting
+// ---------------------------------------------------------------------------
+
+/** How far back the meeting reads what discovery found. */
+export const MEETING_HOURS = 36;
+
+export const MEETING_STATUSES = ['queued', 'thinking', 'ready', 'failed'] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+
+export const PITCH_STATUSES = ['pending', 'approved', 'rejected'] as const;
+export type PitchStatus = (typeof PITCH_STATUSES)[number];
+
+/** An article discovery found that a pitch grew from: a lead, never a source. */
+export const PitchLeadDto = z.object({ itemId: id, title: z.string(), url: z.string(), source: z.string() });
+export type PitchLeadDto = z.infer<typeof PitchLeadDto>;
+
+/** A story the meeting proposes: a question to research, not a fact. */
+export const PitchDto = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** What makes it ours and not a rewrite: the angle, what it adds for the reader. */
+  angle: z.string(),
+  whyNow: z.string(),
+  /** What to check, and in which official sources. */
+  checks: z.array(z.string()),
+  officialSources: z.array(z.string()),
+  category: z.string().nullable(),
+  depth: z.enum(RESEARCH_DEPTHS),
+  /** How many sites covered its topic in the hours read (the heat of the story). */
+  coverage: z.number().int(),
+  leads: z.array(PitchLeadDto),
+  /** Articles and drafts we already have that look like it (free headline overlap). */
+  similar: z.array(SimilarStoryDto),
+  status: z.enum(PITCH_STATUSES),
+  decidedBy: z.string().nullable(),
+  /** The research an approved pitch became, as it stands. */
+  research: z.object({ id, status: z.enum(RESEARCH_STATUSES), draftId: id.nullable(), official: z.boolean() }).nullable(),
+});
+export type PitchDto = z.infer<typeof PitchDto>;
+
+export const MeetingDto = z.object({
+  id,
+  focus: z.string(),
+  status: z.enum(MEETING_STATUSES),
+  /** What is happening, in a few sentences. */
+  summary: z.string(),
+  /** What the meeting read: discovered articles in the last MEETING_HOURS, and the topics they made. */
+  itemsRead: z.number().int(),
+  topics: z.number().int(),
+  pitches: z.array(PitchDto),
+  costUsd: z.number(),
+  error: z.string().nullable(),
+  /** The morning meeting held by itself (createdBy is then empty). */
+  auto: z.boolean(),
+  createdBy: z.string(),
+  createdAt: iso,
+});
+export type MeetingDto = z.infer<typeof MeetingDto>;
+
+/** The morning meeting: held by itself every day at this hour (Israel), and the admins get its pitches by email. */
+export const MeetingSettings = z.object({
+  morning: z.boolean().default(true),
+  hour: z.number().int().min(5).max(12).default(8),
+  /** A standing direction for the morning meeting (empty: whatever is hot). */
+  focus: z.string().trim().max(300).default(''),
+  /** No meeting on Saturdays. */
+  skipSaturday: z.boolean().default(true),
+});
+export type MeetingSettings = z.infer<typeof MeetingSettings>;
+
+/** focus: an optional direction ("נדל"ן ומשכנתאות", "מה מעניין צרכנים השבוע"). */
+export const StartMeetingInput = z.object({ focus: z.string().trim().max(300).default('') });
+export type StartMeetingInput = z.infer<typeof StartMeetingInput>;
+
+/** Approving starts the research of the pitch (as edited), at the chosen depth. */
+export const ApprovePitchInput = z.object({
+  title: z.string().trim().min(3).max(300).optional(),
+  angle: z.string().trim().max(2000).optional(),
+  depth: z.enum(RESEARCH_DEPTHS).optional(),
+  magazineId: id.optional(),
+  colorLabel: z.enum(DRAFT_COLORS).optional(),
+});
+export type ApprovePitchInput = z.infer<typeof ApprovePitchInput>;
 
 /** The research reporter's settings (only an admin changes them). */
 export const ResearcherSettings = z.object({

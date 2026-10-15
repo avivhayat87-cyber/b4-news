@@ -3,6 +3,8 @@
 // endpoint the Claude app (MCP) calls with a personal access token.
 import {
   AgentTeamDto,
+  AgentUsageQuery,
+  AgentUsageReportDto,
   SaveSkillInput,
   SkillDto,
   AgentConversationDto,
@@ -39,7 +41,7 @@ import { draftFacts, getEditorSettings, saveEditorSettings } from '../../service
 import { getReviewerSettings, saveReviewerSettings } from '../../services/agent/reviewer';
 import { getSkill, restoreSkill, saveSkill } from '../../services/agent/skills';
 import { saveSocialSettings, socialAgentOverview } from '../../services/agent/social';
-import { agentTeam } from '../../services/agent/team';
+import { agentTeam, agentUsage } from '../../services/agent/team';
 import { runTool, toolsFor } from '../../services/agent/tools';
 import { activateVisualProfile, getVisualSettings, queueVisualLearning, saveVisualRules, saveVisualSettings, visualOverview } from '../../services/agent/visual';
 import type { Services } from '../../services/context';
@@ -87,6 +89,8 @@ export const agentRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, {
 
   // --- The agent team and their skills ("הגדרות" > "צוות הסוכנים") ---------------------------------
   app.get('/agents', { schema: { response: { 200: AgentTeamDto } } }, async () => agentTeam(s));
+
+  app.get('/agents/usage', { schema: { querystring: AgentUsageQuery, response: { 200: AgentUsageReportDto } } }, async (req) => agentUsage(s, req.query));
 
   const skillParams = z.object({ key: z.string().regex(/^[a-z]+\.[a-z]+$/) });
   app.get('/skills/:key', { schema: { params: skillParams, response: { 200: SkillDto } } }, async (req) => getSkill(s.db, req.params.key));

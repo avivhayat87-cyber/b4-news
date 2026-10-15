@@ -37,14 +37,14 @@ beforeAll(async () => {
 afterAll(() => ctx.close());
 
 describe('reels', () => {
-  it('needs the post text first, and the kit never starts a reel', async () => {
+  it('needs the post text first, the kit never starts a reel, and a reel is Veo Lite at 720p unless chosen otherwise', async () => {
     expect((await editor.post(`/social/articles/${articleId}/reel/prompts`, {})).status).toBe(422);
     await editor.post('/social/generate', { articleIds: [articleId], formats: ['story', 'reel'] });
     await ctx.drain();
     const s = await share();
     expect(s.formats).toEqual(['story', 'reel']);
-    expect(s.reel).toMatchObject({ plan: null, videoUrl: null, posterUrl: null, settings: { durationSeconds: 8, resolution: '1080p', motion: 'zoom_in' } });
-    expect(s.reel.estimateUsd).toBeCloseTo(0.96);
+    expect(s.reel).toMatchObject({ plan: null, videoUrl: null, posterUrl: null, model: 'veo-3.1-lite-generate-preview', settings: { durationSeconds: 8, resolution: '720p', motion: 'zoom_in' } });
+    expect(s.reel.estimateUsd).toBeCloseTo(0.4);
   });
 
   it('starts with two Hebrew prompts for the editor, and makes nothing that costs money', async () => {
@@ -99,14 +99,18 @@ describe('reels', () => {
       hook: before.hook,
       caption: before.caption,
       hashtags: before.hashtags,
-      reelSettings: { durationSeconds: 6, resolution: '720p', motion: 'pan', instruction: '' },
+      // Better than the default, for this reel only.
+      reelSettings: { model: 'veo-3.1-fast-generate-preview', durationSeconds: 6, resolution: '1080p', motion: 'pan', instruction: '' },
     });
 
     expect((await editor.post(`/social/articles/${articleId}/reel/video`)).status).toBe(202);
     await ctx.drain();
     expect(video.calls).toHaveLength(1);
     const req = video.calls[0]!;
-    expect([req.durationSeconds, req.resolution, req.aspectRatio, req.firstFrame.mimeType]).toEqual([6, '720p', '9:16', 'image/jpeg']);
+    expect([req.durationSeconds, req.resolution, req.aspectRatio, req.firstFrame.mimeType]).toEqual([6, '1080p', '9:16', 'image/jpeg']);
+    const videos = await ctx.db.select({ costUsd: aiJobs.costUsd }).from(aiJobs).where(eq(aiJobs.type, 'social_video'));
+    // The stand-in's try cost nothing; Fast at 1080p is $0.12 a second.
+    expect(videos.filter((v) => v.costUsd !== null).map((v) => v.costUsd)).toEqual(['0.7200']);
     expect(req.prompt).toContain('formal news reel');
     expect(req.prompt).toContain('no text');
     expect(req.prompt).toContain('drifts slowly');

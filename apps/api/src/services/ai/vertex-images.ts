@@ -29,7 +29,7 @@ export class VertexImages implements ImageAI {
     private readonly target: VertexTarget,
     private readonly token: TokenSource,
     readonly model: string,
-    private readonly size: ImageSize = '2K',
+    readonly size: ImageSize = '2K',
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 

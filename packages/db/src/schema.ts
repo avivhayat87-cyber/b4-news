@@ -76,6 +76,7 @@ export const aiJobType = pgEnum('ai_job_type', [
   'visual_learning',
   'legal_review',
   'research',
+  'meeting',
 ]);
 export const jobStatus = pgEnum('job_status', ['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export const chatRole = pgEnum('chat_role', ['user', 'assistant']);
@@ -600,6 +601,52 @@ export const researchTasks = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index('research_tasks_created_idx').on(t.createdAt.desc()), index('research_tasks_draft_idx').on(t.draftId)],
+);
+
+/** A story the editorial meeting proposed, and what a person decided about it (see PitchDto). */
+export type PitchRecord = {
+  id: string;
+  title: string;
+  angle: string;
+  whyNow: string;
+  checks: string[];
+  officialSources: string[];
+  category: string | null;
+  depth: string;
+  coverage: number;
+  leads: { itemId: string; title: string; url: string; source: string }[];
+  similar: { kind: 'article' | 'draft'; id: string; title: string; at: string; href: string }[];
+  status: 'pending' | 'approved' | 'rejected';
+  researchId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+};
+
+/**
+ * The editorial meeting: what discovery found in the last hours, grouped into topics for free,
+ * and the stories one AI call proposes from them. A pitch is researched only once approved.
+ */
+export const editorialMeetings = pgTable(
+  'editorial_meetings',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    focus: text().notNull().default(''),
+    /** queued | thinking | ready | failed */
+    status: text().notNull().default('queued'),
+    summary: text().notNull().default(''),
+    itemsRead: integer().notNull().default(0),
+    topics: integer().notNull().default(0),
+    pitches: jsonb().$type<PitchRecord[]>().notNull().default([]),
+    costUsd: numeric({ precision: 10, scale: 4 }).notNull().default('0'),
+    lastError: text(),
+    /** null: the morning meeting, held by itself. */
+    createdBy: uuid().references(() => users.id),
+    /** When its pitches were emailed (the morning meeting). */
+    notifiedAt: tstz(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('editorial_meetings_created_idx').on(t.createdAt.desc())],
 );
 
 /** One risk the legal review found, with the AI's safer wording and a person's decision. */

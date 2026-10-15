@@ -37,7 +37,8 @@ npm run release -- <commit>  # or a specific commit, tag or branch
    articles, comments, readers, drafts, media and the rest must not go down.
 4. **Build** the site and the CMS. The site's first pages are rendered from the rehearsal.
 5. **Test the rehearsal.** On the copy of the live data, the home page, every one of the latest
-   100 articles with its comments, every section, search, the markets page, the sitemap, every
+   100 articles with its comments, a picture through the image optimiser, every section, search,
+   the markets page, the sitemap, every
    other page in the sitemap (the market tabs and the info pages: terms, privacy, accessibility…)
    and the CMS sign-in page must all load. Pages built ahead of time are asked for again after a
    refresh of the site, because a refresh that goes wrong can leave a page "not found" until the

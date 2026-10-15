@@ -51,6 +51,7 @@ import { compareWording } from '../lib/similarity';
 import { editorGuidelinesFor } from './agent/editor';
 import { writeImagePrompt } from './agent/visual';
 import { activeStyleRules, tracked, writerPrompt } from './ai';
+import { imageCostUsd } from './ai/prices';
 import type { Services } from './context';
 import { canonicalUrl, sha256 } from './scraper/collect';
 import { extractArticle } from './scraper/parse';
@@ -483,7 +484,16 @@ export async function runImages(s: Services, job: JobRow) {
   const prompt = imageBrief(draft, brief, Boolean(reference));
   const { result, aiJobId } = await tracked(
     s.db,
-    { type: purpose === 'social' ? 'social_image' : 'article_images', provider: imageAi.provider, model: imageAi.model, draftId: batch.draftId, requestedBy: job.createdBy, imageCount: count },
+    {
+      type: purpose === 'social' ? 'social_image' : 'article_images',
+      provider: imageAi.provider,
+      model: imageAi.model,
+      draftId: batch.draftId,
+      requestedBy: job.createdBy,
+      imageCount: count,
+      // Google bills the images that came back (some of a batch may fail).
+      costOf: (r) => imageCostUsd(imageAi, r.images.length),
+    },
     async () => ({ images: await imageAi.generate(prompt, { count, shape: purpose === 'social' ? 'portrait' : 'landscape', references: reference ? [reference] : [] }) }),
   );
   await s.db.update(imageBatches).set({ aiJobId }).where(eq(imageBatches.id, batchId));
@@ -534,7 +544,7 @@ export async function runFinalImage(s: Services, job: JobRow) {
     const reference = await draftReference(s, preview.storageKey);
     const { result } = await tracked(
       s.db,
-      { type: 'article_images', provider: imageAi.provider, model: imageAi.model, draftId, requestedBy: job.createdBy, imageCount: 1 },
+      { type: 'article_images', provider: imageAi.provider, model: imageAi.model, draftId, requestedBy: job.createdBy, imageCount: 1, costOf: () => imageCostUsd(imageAi, 1) },
       async () => ({ image: await imageAi.finish(finalBrief(preview.aiPrompt ?? ''), reference, 'landscape') }),
     );
     // The editor may have moved the focal point on the draft while this ran.

@@ -97,7 +97,7 @@ function DepthPicker({ value, onChange, link }: { value: Depth; onChange(d: Dept
   );
 }
 
-function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
+function ResearchForm({ overview, mode }: { overview: ResearchOverviewDto; mode: 'report' | 'idea' }) {
   const router = useRouter();
   const qc = useQueryClient();
   const toast = useToast();
@@ -108,21 +108,22 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
   const [depth, setDepth] = useState<Depth>(overview.defaultDepth);
   const [color, setColor] = useState<DraftColor>('purple');
   const [magazineId, setMagazineId] = useState('');
-  const link = kind === 'link';
+  const idea = mode === 'idea';
+  const link = !idea && kind === 'link';
   const chosen: Depth = !link && depth === 'rewrite' ? overview.defaultDepth : depth;
 
-  // The free check, a moment after the link is typed: no AI, only what we already have.
+  // The free check, a moment after the link or the idea is typed: no AI, only what we already have.
+  const typed = (idea ? note : url).trim();
   const [checked, setChecked] = useState('');
   useEffect(() => {
-    const value = url.trim();
-    if (!link || !/^https?:\/\/\S+\.\S+/.test(value)) return;
-    const t = setTimeout(() => setChecked(value), 600);
+    if (idea ? typed.length < 10 : !link || !/^https?:\/\/\S+\.\S+/.test(typed)) return;
+    const t = setTimeout(() => setChecked(typed), idea ? 1200 : 600);
     return () => clearTimeout(t);
-  }, [url, link]);
+  }, [typed, idea, link]);
   const similar = useQuery({
-    queryKey: ['research-similar', checked],
-    queryFn: () => admin.post<SimilarStoryDto[]>('/research/similar', { url: checked }),
-    enabled: link && Boolean(checked) && checked === url.trim(),
+    queryKey: ['research-similar', idea, checked],
+    queryFn: () => admin.post<SimilarStoryDto[]>('/research/similar', idea ? { text: checked } : { url: checked }),
+    enabled: (idea || link) && Boolean(checked) && checked === typed,
   });
 
   const budgetLeft = overview.budgetUsd - overview.spentUsd;
@@ -131,8 +132,8 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
       const dest = { colorLabel: magazineId ? undefined : color, magazineId: magazineId || undefined };
       if (chosen === 'rewrite') return { draftId: (await admin.post<{ draftId: string }>('/manual/url', { url: url.trim(), ...dest })).draftId };
       const task = await admin.post<ResearchTaskDto>('/research', {
-        kind,
-        ...(link ? { url: url.trim() } : { mediaIds: shots.map((m) => m.id) }),
+        kind: idea ? 'idea' : kind,
+        ...(idea ? {} : link ? { url: url.trim() } : { mediaIds: shots.map((m) => m.id) }),
         note: note.trim(),
         depth: chosen,
         ...dest,
@@ -154,10 +155,10 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
     },
     onError: (e) => toast(errorMessage(e), 'danger'),
   });
-  const ready = link ? Boolean(url.trim()) : shots.length > 0;
+  const ready = idea ? note.trim().length >= 10 : link ? Boolean(url.trim()) : shots.length > 0;
 
   return (
-    <Card title="מקישור או צילום מסך">
+    <Card title={idea ? 'רעיון לתחקיר' : 'מקישור או צילום מסך'}>
       <form
         className="space-y-5"
         onSubmit={(e: FormEvent) => {
@@ -165,6 +166,19 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
           create.mutate();
         }}
       >
+        {idea ? (
+          <div className="space-y-3">
+            <Field label="הרעיון" htmlFor="r-idea" hint="שאלה או נושא לבדוק, במשפט או שניים. הכתב-החוקר מחפש את הנתונים והמקורות הרשמיים מאפס.">
+              <textarea id="r-idea" rows={3} maxLength={3000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="למשל: כמה עולה היום משכנתא ממוצעת לעומת לפני שנה?" className={inputClass} />
+            </Field>
+            {similar.isFetching && (
+              <p className="flex items-center gap-2 text-sm text-muted">
+                <Spinner small /> בודק אם כבר כתבנו על זה…
+              </p>
+            )}
+            <SimilarWarning items={similar.data ?? []} title="ייתכן שכבר כתבנו על זה" />
+          </div>
+        ) : (
         <div className="inline-flex rounded-lg bg-stone p-1" role="tablist" aria-label="מה יש לכם">
           {(
             [
@@ -177,8 +191,9 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
             </button>
           ))}
         </div>
+        )}
 
-        {link ? (
+        {idea ? null : link ? (
           <div className="space-y-3">
             <Field label="קישור" htmlFor="r-url" hint="כתבה, הודעה רשמית, פוסט ב-X או בטלגרם.">
               <input id="r-url" type="url" dir="ltr" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" className={inputClass} />
@@ -206,7 +221,7 @@ function ResearchForm({ overview }: { overview: ResearchOverviewDto }) {
           </Field>
         )}
 
-        {chosen !== 'rewrite' && (
+        {!idea && chosen !== 'rewrite' && (
           <Field label="מה לבדוק במיוחד (לא חובה)" htmlFor="r-note" hint="למשל: &quot;תבדוק את המספר&quot;, &quot;מי החברה&quot;. ההערה היא כיוון לחקירה, לא עובדה.">
             <textarea id="r-note" rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
           </Field>
@@ -267,7 +282,7 @@ function TaskRow({ task }: { task: ResearchTaskDto }) {
         )}
       </div>
       <p className="text-xs text-muted">
-        {task.kind === 'link' ? 'מקישור' : `מ-${task.screenshots.length} צילומי מסך`} · {RESEARCH_DEPTH[task.depth].name} · {task.createdBy} · {timeAgo(task.createdAt)}
+        {task.kind === 'link' ? 'מקישור' : task.kind === 'idea' ? 'מרעיון' : `מ-${task.screenshots.length} צילומי מסך`} · {RESEARCH_DEPTH[task.depth].name} · {task.createdBy} · {timeAgo(task.createdAt)}
         {task.status === 'done' && ` · ${task.searches} חיפושים · $${task.costUsd.toFixed(2)}`}
       </p>
       {task.error && <p className="text-sm text-danger">{task.error}</p>}
@@ -277,7 +292,8 @@ function TaskRow({ task }: { task: ResearchTaskDto }) {
   );
 }
 
-export function ResearchTab() {
+/** report: a link or screenshots to check; idea: the newsroom's own question. Both list all recent research. */
+export function ResearchTab({ mode = 'report' }: { mode?: 'report' | 'idea' }) {
   const overview = useQuery({
     queryKey: ['research'],
     queryFn: () => admin.get<ResearchOverviewDto>('/research'),
@@ -286,7 +302,7 @@ export function ResearchTab() {
   if (!overview.data) return overview.isError ? <p className="text-danger">{errorMessage(overview.error)}</p> : <Spinner />;
   return (
     <div className="space-y-6">
-      <ResearchForm overview={overview.data} />
+      <ResearchForm key={mode} overview={overview.data} mode={mode} />
       <Card title="תחקירים אחרונים">
         {overview.data.tasks.length ? (
           <ul className="-my-3 divide-y divide-line">
