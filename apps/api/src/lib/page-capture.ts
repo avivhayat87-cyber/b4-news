@@ -1,6 +1,7 @@
 // A screenshot of a public web page, kept as proof of what a source said and when (the research
-// reporter). It drives a browser that is already installed on the machine (Chrome, Edge or
-// Chromium; BROWSER_PATH, or the usual places), so nothing large is downloaded. Every request the
+// reporter), and the links of a page as a browser draws it (the official-sources registry). It
+// drives a browser that is already installed on the machine (Chrome, Edge or Chromium;
+// BROWSER_PATH, or the usual places), so nothing large is downloaded. Every request the
 // page makes goes through the same check as safeFetch: only public addresses on the web ports, so
 // a page can't make the server's browser reach the server's own network.
 import { promises as dns } from 'node:dns';
@@ -14,12 +15,17 @@ export interface PageCapture {
   readonly available: boolean;
   /** A JPEG of the top of the page as a reader sees it. */
   screenshot(url: string): Promise<Buffer>;
+  /** Every link on the page once it has drawn (sites that build their pages in the browser, or refuse plain requests). */
+  links(url: string): Promise<string[]>;
 }
 
 /** Tests and machines without a browser. */
 export class NoCapture implements PageCapture {
   readonly available = false;
   async screenshot(): Promise<Buffer> {
+    throw new Error('no browser on this machine');
+  }
+  async links(): Promise<string[]> {
     throw new Error('no browser on this machine');
   }
 }
@@ -60,19 +66,31 @@ export class BrowserCapture implements PageCapture {
   constructor(private readonly executablePath: string) {}
 
   async screenshot(url: string): Promise<Buffer> {
+    const png = await this.onPage(url, (page) => page.screenshot({ type: 'png', fullPage: false }));
+    return sharp(png).resize({ width: 1280, withoutEnlargement: true }).jpeg({ quality: 72 }).toBuffer();
+  }
+
+  links(url: string): Promise<string[]> {
+    // Runs in the page: `href` there is the resolved address (the API has no DOM types, hence the cast).
+    return this.onPage(url, (page) => page.$$eval('a[href]', (as) => as.map((a) => (a as unknown as { href: string }).href)));
+  }
+
+  /** The page loaded and drawn in a fresh browser, closed afterwards whatever happens. */
+  private async onPage<T>(url: string, read: (page: import('playwright-core').Page) => Promise<T>): Promise<T> {
     if (!(await allowed(url))) throw new Error('the address is not a public web page');
-    // Loaded only when a screenshot is taken, so the API starts without it.
+    // Loaded only when a page is read, so the API starts without it.
     const { chromium } = await import('playwright-core');
     const browser = await chromium.launch({ executablePath: this.executablePath, headless: true, args: ['--disable-dev-shm-usage', '--no-first-run'] });
     try {
       const context = await browser.newContext({ viewport: { width: 1280, height: 1600 }, locale: 'he-IL', javaScriptEnabled: true, acceptDownloads: false });
       const page = await context.newPage();
       await page.route('**/*', async (route) => ((await allowed(route.request().url())) ? route.continue() : route.abort()));
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25_000 });
+      const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25_000 });
+      // A refusal (a bot wall such as Cloudflare's, a missing page) is not the page: neither proof nor its links.
+      if (res && res.status() >= 400) throw new Error(`HTTP ${res.status()}`);
       // A moment for the page to draw what loads after the document.
       await page.waitForTimeout(1500);
-      const png = await page.screenshot({ type: 'png', fullPage: false });
-      return sharp(png).resize({ width: 1280, withoutEnlargement: true }).jpeg({ quality: 72 }).toBuffer();
+      return await read(page);
     } finally {
       await browser.close();
     }

@@ -169,6 +169,13 @@
       "when": 1792056347602,
       "tag": "0023_morning_meeting",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792059423977,
+      "tag": "0024_official_sources",
+      "breakpoints": true
     }
   ]
 }

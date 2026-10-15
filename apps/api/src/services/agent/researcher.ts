@@ -2,6 +2,8 @@
 // its source rules: which source may back a fact. The research itself is services/research.ts.
 import { NEWS_DOMAINS, OFFICIAL_DOMAINS, type ResearcherSettings, ResearcherSettings as Schema, SOCIAL_DOMAINS, type SourceKind } from '@b4/shared';
 import { type Db, appSettings, eq } from '@b4/db';
+import { accountOf } from '../../lib/social-links';
+import { type RegistryEntry, underDomain } from '../official-sources';
 
 const KEY = 'agent.research';
 
@@ -40,11 +42,13 @@ function onList(url: URL, entries: string[]): boolean {
 
 /**
  * A source's kind and whether it may back a fact, by its address first and the reporter's word
- * second: news sites never may, social posts only from an approved account, official sites always.
- * An unknown site may when the reporter marked it as the subject's own (a company, a person) or
- * as official; the editor sees which in the research file.
+ * second: a body in the official-sources registry (its own site, or a post from one of its
+ * verified accounts) always may, under the body's name; news sites never may, other social posts
+ * only from an account on the approved list, official sites always. An unknown site may when the
+ * reporter marked it as the subject's own (a company, a person) or as official; the editor sees
+ * which in the research file.
  */
-export function judgeSource(raw: string, claimed: SourceKind, entries: string[]): { kind: SourceKind; approved: boolean } | null {
+export function judgeSource(raw: string, claimed: SourceKind, entries: string[], registry: RegistryEntry[] = []): { kind: SourceKind; approved: boolean; publisher?: string } | null {
   let url: URL;
   try {
     url = new URL(raw);
@@ -53,6 +57,16 @@ export function judgeSource(raw: string, claimed: SourceKind, entries: string[])
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   const host = hostOf(url);
+  const account = accountOf(raw);
+  if (account) {
+    const body = registry.find((b) => b.accounts.includes(account.key));
+    if (body) return { kind: 'social', approved: true, publisher: `${body.name} ברשתות החברתיות` };
+  } else {
+    // The most specific domain wins: a ministry's pages before the government portal's.
+    const matches = registry.flatMap((b) => b.domains.filter((d) => underDomain(raw, d)).map((d) => ({ b, d })));
+    const best = matches.sort((x, y) => y.d.length - x.d.length)[0];
+    if (best) return { kind: 'official', approved: true, publisher: best.b.name };
+  }
   const listed = onList(url, entries);
   if (under(host, NEWS_DOMAINS)) return { kind: 'news', approved: listed };
   if (under(host, SOCIAL_DOMAINS)) return { kind: 'social', approved: listed };

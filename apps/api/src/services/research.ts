@@ -20,6 +20,7 @@ import {
 import {
   type ResearchDossierRecord,
   type ResearchSourceRecord,
+  aiJobs,
   and,
   articleDrafts,
   articles,
@@ -42,6 +43,7 @@ import { decodeText } from '../lib/safe-fetch';
 import { topicOverlap } from '../lib/similarity';
 import { editorGuidelinesFor } from './agent/editor';
 import { approvedEntries, getResearcherSettings, judgeSource } from './agent/researcher';
+import { type RegistryEntry, registryForResearch } from './official-sources';
 import { israelMonthStart } from './agent/team';
 import { activeStyleRules, tracked, writerPrompt } from './ai';
 import { WEB_SEARCH_USD, textCostUsd } from './ai/prices';
@@ -85,7 +87,12 @@ export async function researchSpentUsd(s: Services): Promise<number> {
     .select({ total: sql<string | null>`sum(${editorialMeetings.costUsd})` })
     .from(editorialMeetings)
     .where(gte(editorialMeetings.createdAt, start));
-  return Math.round((Number(tasks?.total ?? 0) + Number(meetings?.total ?? 0)) * 10_000) / 10_000;
+  // The registry's weekly account searches are the reporter's too.
+  const [registry] = await s.db
+    .select({ total: sql<string | null>`sum(${aiJobs.costUsd})` })
+    .from(aiJobs)
+    .where(and(eq(aiJobs.promptKey, 'research.accounts'), gte(aiJobs.createdAt, start)));
+  return Math.round((Number(tasks?.total ?? 0) + Number(meetings?.total ?? 0) + Number(registry?.total ?? 0)) * 10_000) / 10_000;
 }
 
 export async function assertBudget(s: Services) {
@@ -240,18 +247,18 @@ const hostName = (url: string) => {
  * The model's file, checked: every source judged by its address, every detail's sources known,
  * and a detail whose label needs an official source but has none marked down (with a note why).
  */
-export function checkDossier(out: ResearchOutput, original: string | null, entries: string[]): ResearchDossierRecord {
+export function checkDossier(out: ResearchOutput, original: string | null, entries: string[], registry: RegistryEntry[] = []): ResearchDossierRecord {
   const sources: ResearchSourceRecord[] = [];
   const add = (url: string, title: string, publisher: string, kind: SourceKind, usedFor: string): ResearchSourceRecord | null => {
     const known = sources.find((x) => sameUrl(x.url, url));
     if (known) return known;
-    const judged = judgeSource(url, kind, entries);
+    const judged = judgeSource(url, kind, entries, registry);
     if (!judged) return null;
     const record: ResearchSourceRecord = {
       id: `s${sources.length + 1}`,
       url,
       title: title.trim() || hostName(url),
-      publisher: SOURCE_NAME[judged.kind] ?? (publisher.trim() || hostName(url)),
+      publisher: judged.publisher ?? SOURCE_NAME[judged.kind] ?? (publisher.trim() || hostName(url)),
       kind: judged.kind,
       approved: judged.approved,
       usedFor,
@@ -334,6 +341,7 @@ export async function runResearch(s: Services, job: JobRow) {
     await s.db.update(researchTasks).set({ status: 'researching', updatedAt: new Date() }).where(eq(researchTasks.id, task.id));
     const settings = await getResearcherSettings(s.db);
     const entries = approvedEntries(settings);
+    const registry = await registryForResearch(s.db);
     const prompt = await writerPrompt(s.db, 'research.system');
     const { result } = await tracked(
       s.db,
@@ -348,7 +356,8 @@ export async function runResearch(s: Services, job: JobRow) {
       async () =>
         textAi.research({
           systemPrompt: prompt.body,
-          approvedSources: entries,
+          // The registry's bodies first (their sites and verified accounts), then the newsroom's own list.
+          approvedSources: [...registry.map((b) => `${b.name}: ${[...b.domains, ...b.accounts].join(', ')}`), ...entries],
           depth: task.depth as ResearchTaskDto['depth'],
           input: {
             kind: task.kind as ResearchTaskDto['kind'],
@@ -363,7 +372,7 @@ export async function runResearch(s: Services, job: JobRow) {
     if (textAi.live) cost += callCost(result.usage, result.searches);
     searches += result.searches;
     if (result.toolErrors.length) s.log.warn({ taskId: task.id, errors: result.toolErrors }, 'research: web searches or fetches failed');
-    dossier = checkDossier(result.data, task.url, entries);
+    dossier = checkDossier(result.data, task.url, entries, registry);
     await s.db
       .update(researchTasks)
       .set({ status: 'writing', dossier, searches, costUsd: cost.toFixed(4), updatedAt: new Date() })

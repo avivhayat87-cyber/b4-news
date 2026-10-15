@@ -184,6 +184,17 @@ A research is a `research.run` job (one attempt) and then a `research.archive` j
 | GET | `/admin/drafts/:id/research` | any | `ResearchTaskDto` the draft was written from, or `null` |
 | GET / PUT | `/admin/agent/researcher-settings` | any / admin | `ResearcherSettings` (`monthlyBudgetUsd`, `defaultDepth`, `approvedSources`: a site or an account address per line, `screenshots`); a change is audited |
 
+### The official-sources registry
+
+| Method | Path | Role | |
+| --- | --- | --- | --- |
+| GET | `/admin/official-sources` | any | `RegistryOverviewDto`: every body with its domains and accounts (verified · pending · missing, with the evidence page), the last weekly check, whether one is running |
+| POST | `/admin/official-sources` | admin | `OfficialSourceInput` (`name`, `kind`, `homepage`, `domains`, `active`) → 201 `OfficialSourceDto` (audited); 409 `source_exists` |
+| PUT · DELETE | `/admin/official-sources/:id` | admin | `OfficialSourceInput` → `OfficialSourceDto` · 204 (audited) |
+| POST | `/admin/official-sources/:id/accounts` | admin | `{ url }` → `OfficialSourceDto`: an account added by hand, verified (audited); 422 `not_an_account` |
+| POST | `/admin/official-sources/:id/accounts/approve` · `/remove` | admin | `{ url }` → `OfficialSourceDto` (audited) |
+| POST | `/admin/official-sources/update` | editor | → 202 `{ queued }`: the weekly check now (5/min) |
+
 ### The editorial meeting
 
 | Method | Path | Role | |

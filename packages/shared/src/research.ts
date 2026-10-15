@@ -301,6 +301,67 @@ export const ApprovePitchInput = z.object({
 });
 export type ApprovePitchInput = z.infer<typeof ApprovePitchInput>;
 
+// ---------------------------------------------------------------------------
+// The official-sources registry
+// ---------------------------------------------------------------------------
+
+export const OFFICIAL_PLATFORMS = ['x', 'telegram', 'facebook', 'instagram', 'youtube', 'linkedin', 'tiktok', 'threads'] as const;
+export type OfficialPlatform = (typeof OFFICIAL_PLATFORMS)[number];
+
+export const ORG_KINDS = ['government', 'regulator', 'central_bank', 'statistics', 'parliament', 'court', 'municipality', 'exchange', 'international', 'company', 'other'] as const;
+export type OrgKind = (typeof ORG_KINDS)[number];
+
+/** verified: its official site links to it (or an admin added it); pending: found elsewhere, waits for an admin; missing: no longer linked. */
+export const ACCOUNT_STATUSES = ['verified', 'pending', 'missing'] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+export const OfficialAccountDto = z.object({
+  platform: z.enum(OFFICIAL_PLATFORMS),
+  /** "x.com/israel_mof": what a post's address is matched against. */
+  key: z.string(),
+  url: z.string(),
+  status: z.enum(ACCOUNT_STATUSES),
+  foundBy: z.enum(['site', 'search', 'admin']),
+  /** The official page that links to it. */
+  evidence: z.string().nullable(),
+  checkedAt: iso.nullable(),
+});
+export type OfficialAccountDto = z.infer<typeof OfficialAccountDto>;
+
+/** A body whose site and verified accounts count as official sources, under its name in the sources line. */
+export const OfficialSourceDto = z.object({
+  id,
+  name: z.string(),
+  kind: z.enum(ORG_KINDS),
+  homepage: z.string(),
+  /** Hosts, or a host and a path ("gov.il/he/departments/ministry_of_finance"), that are this body's own. */
+  domains: z.array(z.string()),
+  accounts: z.array(OfficialAccountDto),
+  active: z.boolean(),
+  addedBy: z.enum(['seed', 'admin', 'research']),
+  lastCheckedAt: iso.nullable(),
+  lastError: z.string().nullable(),
+});
+export type OfficialSourceDto = z.infer<typeof OfficialSourceDto>;
+
+export const RegistryOverviewDto = z.object({
+  sources: z.array(OfficialSourceDto),
+  lastRun: z.object({ at: iso, checked: z.number().int(), added: z.number().int(), pending: z.number().int(), errors: z.number().int(), costUsd: z.number() }).nullable(),
+  running: z.boolean(),
+});
+export type RegistryOverviewDto = z.infer<typeof RegistryOverviewDto>;
+
+export const OfficialSourceInput = z.object({
+  name: z.string().trim().min(2).max(120),
+  kind: z.enum(ORG_KINDS).default('other'),
+  homepage: z.string().trim().url('הכתובת לא תקינה').max(500),
+  domains: z.array(z.string().trim().min(3).max(200)).max(10).default([]),
+  active: z.boolean().default(true),
+});
+export type OfficialSourceInput = z.infer<typeof OfficialSourceInput>;
+
+export const OfficialAccountInput = z.object({ url: z.string().trim().url('הכתובת לא תקינה').max(500) });
+
 /** The research reporter's settings (only an admin changes them). */
 export const ResearcherSettings = z.object({
   /** A month's research stops at this, in US dollars. */

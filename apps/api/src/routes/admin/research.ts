@@ -6,6 +6,10 @@ import {
   ApprovePitchInput,
   MeetingDto,
   MeetingSettings,
+  OfficialAccountInput,
+  OfficialSourceDto,
+  OfficialSourceInput,
+  RegistryOverviewDto,
   ResearchOverviewDto,
   ResearcherSettings,
   ResearchTaskDto,
@@ -22,6 +26,7 @@ import { requireStaff } from '../../plugins/auth';
 import { getResearcherSettings, saveResearcherSettings } from '../../services/agent/researcher';
 import type { Services } from '../../services/context';
 import * as meeting from '../../services/editorial-meeting';
+import * as registry from '../../services/official-sources';
 import * as research from '../../services/research';
 
 const params = z.object({ id: z.string().uuid() });
@@ -112,5 +117,52 @@ export const researchRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
   app.post('/meetings/:id/pitches/:pitchId/reject', { schema: { params: pitchParams, response: { 200: MeetingDto } } }, async (req) => {
     const staff = requireStaff(req, 'editor');
     return meeting.rejectPitch(s, staff, req.params.id, req.params.pitchId);
+  });
+
+  // --- The official-sources registry (what counts as official is an admin's call; recorded) ------
+  app.get('/official-sources', { schema: { response: { 200: RegistryOverviewDto } } }, async () => registry.registryOverview(s));
+
+  app.post('/official-sources', { schema: { body: OfficialSourceInput, response: { 201: OfficialSourceDto } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'admin');
+    const created = await registry.createSource(s, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'official_source', entityId: created.id, action: 'create', details: { name: created.name, homepage: created.homepage } });
+    return reply.status(201).send(created);
+  });
+
+  app.put('/official-sources/:id', { schema: { params, body: OfficialSourceInput, response: { 200: OfficialSourceDto } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const updated = await registry.updateSource(s, req.params.id, req.body);
+    await audit(s.db, { userId: staff.id, entity: 'official_source', entityId: req.params.id, action: 'update', details: { name: updated.name, active: updated.active } });
+    return updated;
+  });
+
+  app.delete('/official-sources/:id', { schema: { params } }, async (req, reply) => {
+    const staff = requireStaff(req, 'admin');
+    await registry.deleteSource(s, req.params.id);
+    await audit(s.db, { userId: staff.id, entity: 'official_source', entityId: req.params.id, action: 'delete' });
+    return reply.status(204).send();
+  });
+
+  app.post('/official-sources/:id/accounts', { schema: { params, body: OfficialAccountInput, response: { 200: OfficialSourceDto } } }, async (req) => {
+    const staff = requireStaff(req, 'admin');
+    const updated = await registry.addAccount(s, req.params.id, req.body.url);
+    await audit(s.db, { userId: staff.id, entity: 'official_source', entityId: req.params.id, action: 'add_account', details: { url: req.body.url } });
+    return updated;
+  });
+
+  app.post(
+    '/official-sources/:id/accounts/:action',
+    { schema: { params: params.extend({ action: z.enum(['approve', 'remove']) }), body: OfficialAccountInput, response: { 200: OfficialSourceDto } } },
+    async (req) => {
+      const staff = requireStaff(req, 'admin');
+      const updated = await registry.setAccount(s, req.params.id, req.body.url, req.params.action);
+      await audit(s.db, { userId: staff.id, entity: 'official_source', entityId: req.params.id, action: `${req.params.action}_account`, details: { url: req.body.url } });
+      return updated;
+    },
+  );
+
+  app.post('/official-sources/update', { schema: { response: { 202: z.object({ queued: z.boolean() }) } }, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const staff = requireStaff(req, 'editor');
+    return reply.status(202).send({ queued: await registry.requestRegistryUpdate(s, staff.id) });
   });
 };

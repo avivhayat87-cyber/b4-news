@@ -1,6 +1,6 @@
 // What the newsroom asks of the AI. Text: Anthropic; the visual agent, images and
 // video: Google Gemini; and a deterministic stand-in of each for development and tests.
-import { CATEGORY_SLUGS, CLAIM_LABELS, REEL_MOTIONS, RESEARCH_DEPTHS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth, type ResearchKind } from '@b4/shared';
+import { CATEGORY_SLUGS, CLAIM_LABELS, OFFICIAL_PLATFORMS, REEL_MOTIONS, RESEARCH_DEPTHS, REVIEW_FLAGS, REVIEW_WHERE, SHARE_TEMPLATES, SOURCE_KINDS, type ResearchDepth, type ResearchKind } from '@b4/shared';
 import { z } from 'zod';
 
 export type Usage = { model: string; inputTokens: number | null; outputTokens: number | null; latencyMs: number };
@@ -138,6 +138,18 @@ export type ResearchRequest = {
   today: string;
 };
 
+/** An official body's accounts on the networks, each with the official page that links to it (checked by the code). */
+export const AccountsOutput = z.object({
+  accounts: upTo(z.object({ platform: z.enum(OFFICIAL_PLATFORMS), url: clip(500), evidence_url: clip(1000) }), 12),
+});
+export type AccountsOutput = z.infer<typeof AccountsOutput>;
+
+export type AccountsRequest = {
+  /** prompt_templates "research.accounts" */
+  systemPrompt: string;
+  body: { name: string; homepage: string; domains: string[]; known: string[] };
+};
+
 /** The editorial meeting: original story pitches from the topics discovery found. */
 export const MeetingOutput = z.object({
   summary: clip(1500),
@@ -269,6 +281,8 @@ export interface TextAI {
   research(req: ResearchRequest): Promise<AiResult<ResearchOutput> & { searches: number; toolErrors: string[] }>;
   researchWrite(req: ResearchWriteRequest): Promise<AiResult<ResearchWriteOutput>>;
   meeting(req: MeetingRequest): Promise<AiResult<MeetingOutput>>;
+  /** The official-sources registry: a body's accounts its site doesn't link (two searches at most). */
+  findAccounts(req: AccountsRequest): Promise<AiResult<AccountsOutput> & { searches: number; toolErrors: string[] }>;
   review(req: ReviewRequest): Promise<AiResult<ReviewOutput>>;
   reviewFix(req: ReviewFixRequest): Promise<AiResult<ReviewFixOutput>>;
   translate(req: TranslateRequest): Promise<AiResult<TranslateOutput>>;

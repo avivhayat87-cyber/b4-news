@@ -8,6 +8,7 @@ import { admin, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { RESEARCH_DEPTH } from '@/lib/labels';
 import { Button, Field, LinkButton, Loading, inputClass, useToast } from '../ui';
+import { OfficialSources } from './official-sources';
 
 export function ResearcherAgent() {
   const qc = useQueryClient();
@@ -62,7 +63,7 @@ export function ResearcherAgent() {
       </div>
 
       <Field
-        label="מקורות מאושרים נוספים"
+        label="מקורות מאושרים נוספים (רשימה חופשית)"
         htmlFor="rs-sources"
         hint="שורה לכל מקור: אתר (למשל example.co.il) או כתובת של חשבון ברשת (למשל x.com/bank_of_israel). פוסט ברשת חברתית מבסס עובדה רק מחשבון שברשימה."
       >
@@ -93,6 +94,10 @@ export function ResearcherAgent() {
           </div>
         </div>
       )}
+
+      <div className="border-y border-line-soft py-5">
+        <OfficialSources />
+      </div>
 
       <label className="flex items-start gap-2 text-[15px] font-semibold">
         <input type="checkbox" checked={form.screenshots} disabled={!isAdmin} onChange={(e) => setForm({ ...form, screenshots: e.target.checked })} className="mt-1 size-4" />

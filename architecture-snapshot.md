@@ -109,6 +109,7 @@ src/
     image-brief.ts    What image generation is asked for (the article, the brief, a reference)
     legal-review.ts   The legal review of every final text: the risks, the decisions, the safer wording
     research.ts       The research reporter: a link, screenshots or an idea → a research file → an article from it; proof of the sources
+    official-sources.ts   The official-sources registry: bodies, their domains and verified accounts; the weekly check
     editorial-meeting.ts  The editorial meeting: discovery's topics → story pitches; an approved pitch becomes an idea research;
                       the morning meeting (a recurring job, live only) that emails the admins
     publish.ts        Preview, final approval, the publish job
@@ -123,7 +124,8 @@ src/
                       jobs (the queue), safe-fetch (SSRF guard), storage (local disk or the R2 bucket),
                       images (renditions), google-auth (the server's own Google Cloud token), mailer,
                       crypto, secret-box, password, audit, similarity, facts, moderation, markets, cards, text-diff,
-                      page-capture (a screenshot of a public page with the machine's own browser)
+                      page-capture (a screenshot, or the links, of a public page with the machine's own browser),
+                      social-links (which network account a link is)
   cli/              Command-line entry points (create-admin, live-db)
   dev/              Development only: sample news sites, illustrations, dev seeds
 test/               vitest integration tests (one file per area) + helpers.ts
@@ -190,7 +192,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | Domain | API | CMS | Site / app | Main tables |
 | --- | --- | --- | --- | --- |
 | **Discovery and sources** (איתור כתבות) | `services/scraper/*`, `routes/admin/sources.ts`, `discovery.ts` | `discovery/`, `sources/` | | `sources`, `scrape_runs`, `scrape_run_items`, `scraped_items` |
-| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `image_batches`, `media_assets` |
+| **Newsroom editing** | `services/drafts.ts`, `image-brief.ts`, `legal-review.ts` (the legal review before publishing), `research.ts` (the research reporter), `editorial-meeting.ts`, `lib/similarity.ts`, `lib/facts.ts`, `lib/page-capture.ts`, `routes/admin/drafts.ts`, `review.ts`, `research.ts`, `media.ts` | `saved/`, `magazines/`, `drafts/`, `review/`, `manual/` (its tabs: from a link or screenshots, an idea, the editorial meeting, writing), `components/editor/`, `components/review/`, `components/research/` | | `magazines`, `article_drafts`, `draft_revisions`, `draft_reviews`, `research_tasks`, `editorial_meetings`, `official_sources`, `image_batches`, `media_assets` |
 | **AI** | `services/ai/*`, `translate.ts`, `learning.ts`; prompts in `prompt_templates` | `learning/` | | `ai_jobs`, `prompt_templates`, `style_*`, `learning_reports` |
 | **Newsroom agent and the agent team** | `services/agent/*` (chat, the team and their skills, editor agent, social editor, visual agent), `routes/admin/agent.ts`, `mcp/` | `agent/` (the chat), the "צוות הסוכנים" tab of `settings/`, `components/agent/` | | `agent_conversations`, `agent_messages`, `staff_api_tokens`, `prompt_templates` (the skills), `visual_feedback`, `visual_profiles` |
 | **Publishing** | `services/publish.ts`, `articles.ts` (published articles: edit in place, remove, restore, delete), `article-content.ts` (draft → article), `article-transfer.ts` (articles from one environment to another), `routes/admin/articles.ts` | the preview pages, `articles/` ("כתבות באתר") | `app/api/revalidate` | `articles`, `article_tags`, `homepage_slots`, `publish_jobs` |

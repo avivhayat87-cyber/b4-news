@@ -603,6 +603,42 @@ export const researchTasks = pgTable(
   (t) => [index('research_tasks_created_idx').on(t.createdAt.desc()), index('research_tasks_draft_idx').on(t.draftId)],
 );
 
+/** An account of an official body (see OfficialAccountDto). */
+export type OfficialAccountRecord = {
+  platform: string;
+  key: string;
+  url: string;
+  status: 'verified' | 'pending' | 'missing';
+  foundBy: 'site' | 'search' | 'admin';
+  evidence: string | null;
+  checkedAt: string | null;
+};
+
+/**
+ * The official-sources registry: bodies whose sites and verified social accounts count as
+ * official sources for the research reporter, named as they are in the sources line.
+ */
+export const officialSources = pgTable(
+  'official_sources',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    name: text().notNull(),
+    /** government | regulator | central_bank | statistics | parliament | court | municipality | exchange | international | company | other */
+    kind: text().notNull().default('other'),
+    homepage: text().notNull(),
+    domains: text().array().notNull().default(sql`'{}'::text[]`),
+    accounts: jsonb().$type<OfficialAccountRecord[]>().notNull().default([]),
+    active: boolean().notNull().default(true),
+    /** seed | admin | research */
+    addedBy: text().notNull().default('admin'),
+    lastCheckedAt: tstz(),
+    lastError: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique('official_sources_homepage_key').on(t.homepage)],
+);
+
 /** A story the editorial meeting proposed, and what a person decided about it (see PitchDto). */
 export type PitchRecord = {
   id: string;

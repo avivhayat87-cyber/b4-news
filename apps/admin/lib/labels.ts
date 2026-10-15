@@ -3,6 +3,7 @@ import {
   type AgentId,
   type ARTICLE_LENGTHS,
   type AudienceSetupKey,
+  type AccountStatus,
   CATEGORIES,
   type ClaimLabel,
   type Divergence,
@@ -14,6 +15,8 @@ import {
   type PublishedArticleDto,
   type ReelMotion,
   type MeetingStatus,
+  type OfficialPlatform,
+  type OrgKind,
   type PitchStatus,
   type ReelStage,
   type ResearchDepth,
@@ -145,6 +148,7 @@ export const SKILL: Record<string, { name: string; use: string }> = {
   'meeting.pitch': { name: 'ישיבת מערכת', use: 'איך מציעים כתבות מקוריות ממה שהאיתור מצא: הזווית, מה לבדוק ובאילו מקורות' },
   'research.system': { name: 'התחקיר', use: 'איך חוקרים דיווח או רעיון: סדר העבודה, אילו מקורות מותרים, ואיך מסמנים כל פרט' },
   'research.write': { name: 'כתיבה מתיק התחקיר', use: 'איך כל פרט נכתב בכתבה לפי הסימון שלו' },
+  'research.accounts': { name: 'חיפוש חשבונות רשמיים', use: 'הבדיקה השבועית של מאגר המקורות הרשמיים: איך מוצאים חשבונות שהאתר הרשמי לא מקשר אליהם בעמוד הבית' },
   'rewrite.system': { name: 'כתיבת כתבה מהמקור', use: 'כל כתבה חדשה. במקום הסימון {{style_rules}} המערכת מכניסה את סגנון הבית שנלמד ואת ההגדרות שלכם.' },
   'refine.system': { name: 'תיקון לפי הערה', use: 'ההערות בעורך: "תקצר", "כותרת חדה יותר"' },
   'review.system': { name: 'הבדיקה המשפטית', use: 'אילו סיכונים מחפשים בכל כתבה, ומה מסמנים' },
@@ -232,6 +236,37 @@ export const PITCH_STATUS: Record<PitchStatus, { label: string; tone: Tone }> = 
   pending: { label: 'ממתינה להחלטה', tone: 'warn' },
   approved: { label: 'אושרה ונחקרת', tone: 'ok' },
   rejected: { label: 'לא עכשיו', tone: 'muted' },
+};
+
+export const ORG_KIND: Record<OrgKind, string> = {
+  government: 'משרד ממשלתי',
+  regulator: 'רגולטור',
+  central_bank: 'בנק מרכזי',
+  statistics: 'סטטיסטיקה',
+  parliament: 'כנסת',
+  court: 'בית משפט',
+  municipality: 'רשות מקומית',
+  exchange: 'בורסה',
+  international: 'גוף בין-לאומי',
+  company: 'חברה',
+  other: 'אחר',
+};
+
+export const OFFICIAL_PLATFORM: Record<OfficialPlatform, string> = {
+  x: 'X',
+  telegram: 'טלגרם',
+  facebook: 'פייסבוק',
+  instagram: 'אינסטגרם',
+  youtube: 'יוטיוב',
+  linkedin: 'לינקדאין',
+  tiktok: 'טיקטוק',
+  threads: 'Threads',
+};
+
+export const ACCOUNT_STATUS: Record<AccountStatus, { label: string; tone: Tone }> = {
+  verified: { label: 'מאומת', tone: 'ok' },
+  pending: { label: 'ממתין לאישור', tone: 'warn' },
+  missing: { label: 'האתר כבר לא מקשר', tone: 'muted' },
 };
 
 export const SOURCE_KIND: Record<SourceKind, string> = {

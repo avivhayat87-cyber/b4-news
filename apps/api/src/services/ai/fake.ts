@@ -3,7 +3,7 @@
 import sharp from 'sharp';
 import { illustrationSvg } from '../../dev/illustrations';
 import { classifyHeadline } from '../classify';
-import type { MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
+import type { AccountsOutput, AccountsRequest, MeetingOutput, MeetingRequest, ResearchOutput, ResearchRequest, ResearchWriteOutput, ResearchWriteRequest } from './types';
 import type { AiResult, DistillRequest, LearnBatchOutput, LearnBatchRequest, ImageAI, ImageReference, ImageShape, ImageTier, RefineRequest, ReviewFixOutput, ReviewFixRequest, ReviewOutput, ReviewRequest, RewriteRequest, ShareKitRequest, SocialPlanRequest, SocialRequest, TextAI, TranslateRequest } from './types';
 import type { DistillOutput, EnglishOutput, ReelPromptsOutput, ReelPromptsRequest, RefineOutput, RewriteOutput, ShareKitOutput, SocialOutput, SocialPlanOutput, TranslateOutput, VideoAI, VideoRequest } from './types';
 import type { ImagePromptOutput, ImagePromptRequest, VisualAI, VisualLearnRequest } from './types';
@@ -151,6 +151,11 @@ export class FakeText implements TextAI {
       data: { title, subtitle: '', paragraphs: details.length ? details : [summary || '(אין פרטים)'], suggested_category: classifyHeadline(title), suggested_tags: [] },
       usage: usage(),
     };
+  }
+
+  /** No search without a key: nothing new is found (the registry still reads the bodies' own sites). */
+  async findAccounts(_req: AccountsRequest): Promise<AiResult<AccountsOutput> & { searches: number; toolErrors: string[] }> {
+    return { data: { accounts: [] }, usage: usage(), searches: 0, toolErrors: [] };
   }
 
   /** A pitch for each of the three hottest topics, so the meeting works without an AI key. */

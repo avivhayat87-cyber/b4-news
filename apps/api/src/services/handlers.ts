@@ -8,6 +8,7 @@ import { BATCH_LEARNING_JOB, runBatchLearning, runDistill } from './learning';
 import { DIGEST_TICK_JOB, ensureDigestTick, runDigestTick } from './digest';
 import { DIGEST_JOB, NOTIFY_JOB, runDigest, runNotify } from './notifications';
 import { MEETING_JOB, MORNING_TICK_JOB, ensureMorningTick, markMeetingFailed, runMeeting, runMorningTick } from './editorial-meeting';
+import { REGISTRY_JOB, REGISTRY_TICK_JOB, ensureRegistryTick, runRegistryTick, runRegistryUpdate } from './official-sources';
 import { FIX_JOB, REVIEW_JOB, markFixFailed, markReviewFailed, runFix, runReview } from './legal-review';
 import { markPublishFailed, runPublish } from './publish';
 import { failRun, runDiscovery } from './scraper/run';
@@ -36,6 +37,8 @@ export const handlers: Handlers<Services> = {
   [RESEARCH_JOB]: { run: runResearch, onFailed: markResearchFailed, maxAttempts: 1 },
   [ARCHIVE_JOB]: { run: runArchive, maxAttempts: 1 },
   [MEETING_JOB]: { run: runMeeting, onFailed: markMeetingFailed, maxAttempts: 1 },
+  [REGISTRY_JOB]: { run: runRegistryUpdate, maxAttempts: 1 },
+  [REGISTRY_TICK_JOB]: { run: runRegistryTick, maxAttempts: 1, onFailed: (s) => ensureRegistryTick(s.db, new Date(Date.now() + 6 * 3600_000)).then(() => undefined) },
   [MORNING_TICK_JOB]: { run: runMorningTick, maxAttempts: 1, onFailed: (s) => ensureMorningTick(s.db, new Date(Date.now() + 15 * 60_000)).then(() => undefined) },
   'social.generate': { run: runSocialGenerate, maxAttempts: 2 },
   [KIT_JOB]: { run: runKit, maxAttempts: 2 },

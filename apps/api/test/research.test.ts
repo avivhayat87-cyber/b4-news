@@ -60,13 +60,14 @@ describe('the research reporter', () => {
     expect(d.claims[0]).toMatchObject({ label: 'verified', sourceIds: ['s1'] });
     // The editor's note is a lead, not a fact: it stays in the file, unverified, and out of the article.
     expect(d.claims.at(-1)).toMatchObject({ text: 'שמעתי שזה יעלה ב-20 אגורות', label: 'unverified' });
-    expect(d.creditLine).toBe('מקורות: gov.il');
+    // A gov.il page: the registry's government portal, by name.
+    expect(d.creditLine).toBe('מקורות: ממשלת ישראל');
 
     const [draft] = await ctx.db.select().from(articleDrafts).where(eq(articleDrafts.id, task.draftId));
     expect(draft).toMatchObject({ origin: 'research', status: 'editing', colorLabel: 'purple' });
     expect(draft!.bodyText).toContain('משרד האנרגיה הודיע היום');
     expect(draft!.bodyText).not.toContain('20 אגורות');
-    expect(draft!.bodyText.trim().endsWith('מקורות: gov.il')).toBe(true);
+    expect(draft!.bodyText.trim().endsWith('מקורות: ממשלת ישראל')).toBe(true);
     expect(draft!.bodyText).not.toContain('https://');
 
     // The proof: a copy of the page's text (no browser here, so no screenshot, and it says so).
@@ -196,7 +197,7 @@ describe('the research reporter', () => {
   it('counts the research on the reporter in the agent team', async () => {
     const team = (await admin.get('/agents')).body;
     const reporter = team.agents.find((a: { id: string }) => a.id === 'reporter');
-    expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write']);
+    expect(reporter.skills.map((x: { key: string }) => x.key)).toEqual(['research.system', 'research.write', 'research.accounts']);
     const usage = (await admin.get('/agents/usage')).body;
     expect(usage.agents.find((a: { id: string }) => a.id === 'reporter').usage.calls).toBeGreaterThan(0);
   });

@@ -3,7 +3,7 @@
 import { CATEGORIES } from '@b4/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { articles, authors, categories, homepageSlots, promptTemplates } from './schema';
+import { type OfficialAccountRecord, articles, authors, categories, homepageSlots, officialSources, promptTemplates } from './schema';
 
 const REWRITE_PROMPT = `Act as an external news reporter. Rewrite this article maintaining the key facts but changing the style and wording to match our site's tone.
 
@@ -363,6 +363,15 @@ const RESEARCH_PROMPT_HE_V2 = `אתה הכתב החוקר של B4 NEW'S, אתר 
 
 כתוב הכול בעברית.`;
 
+/** The official-sources registry: a body's accounts its own site doesn't link from the home page. */
+const ACCOUNTS_PROMPT_HE = `אתה עוזר של הכתב החוקר של B4 NEW'S. קיבלת גוף רשמי: השם שלו, האתר הרשמי, הדומיינים שלו והחשבונות שכבר ידועים. מצא את החשבונות הרשמיים שלו ברשתות (X, טלגרם, פייסבוק, אינסטגרם, יוטיוב, לינקדאין, טיקטוק, Threads) שעוד לא ידועים.
+
+כללים:
+- רק חשבון שהגוף עצמו מפעיל. לא חשבון של עובד, של שר או של בעל תפקיד באופן אישי, של אוהדים, או של אתר חדשות שמסקר את הגוף.
+- לכל חשבון צריך הוכחה: עמוד באתר הרשמי של הגוף (בדומיינים שלו) שמקשר לחשבון. כתוב את כתובת העמוד ב-evidence_url. המערכת בודקת בעצמה שהעמוד באמת מקשר לחשבון.
+- חשבון שלא מצאת לו עמוד רשמי שמקשר אליו: אל תציע אותו.
+- לעולם אל תמציא כתובת.`;
+
 /** The editorial meeting: original story pitches from what discovery found. */
 const MEETING_PROMPT_HE = `אתה העורך הראשי של B4 NEW'S, אתר חדשות כלכלה ישראלי, ומנהל את ישיבת המערכת. לפניך מה שהאיתור שלנו מצא בשעות האחרונות, מקובץ לנושאים: לכל נושא הכותרות, באילו אתרים פורסם, וכמה אתרים סיקרו אותו. לפניך גם הכתבות שכבר פרסמנו לאחרונה.
 
@@ -455,6 +464,7 @@ const PROMPT_DEFAULTS: { key: string; body: string }[] = [
   { key: 'research.system', body: RESEARCH_PROMPT_HE },
   { key: 'research.system', body: RESEARCH_PROMPT_HE_V2 },
   { key: 'research.write', body: RESEARCH_WRITE_PROMPT_HE },
+  { key: 'research.accounts', body: ACCOUNTS_PROMPT_HE },
   { key: 'meeting.pitch', body: MEETING_PROMPT_HE },
 ];
 
@@ -498,6 +508,128 @@ export async function seedReferenceData(db: Db): Promise<void> {
   }
 
   await seedPrompts(db);
+  await seedOfficialSources(db);
+}
+
+/** An account an official site linked to when the registry was started (2026-10-15). */
+const linked = (homepage: string, platform: string, key: string, url: string): OfficialAccountRecord => ({
+  platform,
+  key,
+  url,
+  status: 'verified',
+  foundBy: 'site',
+  evidence: homepage,
+  checkedAt: '2026-10-15T09:00:00.000Z',
+});
+
+/**
+ * The registry's first bodies, each with the accounts its official site linked to (checked in a
+ * browser on 2026-10-15); the weekly check finds the rest. gov.il pages carry the government
+ * portal's own accounts in their footer: they belong to "ממשלת ישראל", not to the ministry.
+ */
+const OFFICIAL_SEED: { name: string; kind: string; homepage: string; domains: string[]; accounts: [string, string, string][] }[] = [
+  {
+    name: 'בנק ישראל',
+    kind: 'central_bank',
+    homepage: 'https://www.boi.org.il',
+    domains: ['boi.org.il'],
+    accounts: [
+      ['linkedin', 'linkedin.com/company/bank-of-israel', 'https://www.linkedin.com/company/bank-of-israel/'],
+      ['youtube', 'youtube.com/user/thebankofisrael', 'https://www.youtube.com/user/thebankofisrael'],
+      ['facebook', 'facebook.com/bankisraelvc', 'https://www.facebook.com/bankisraelvc'],
+      ['instagram', 'instagram.com/bank_of_israel', 'https://www.instagram.com/bank_of_israel'],
+    ],
+  },
+  { name: 'הלשכה המרכזית לסטטיסטיקה', kind: 'statistics', homepage: 'https://www.cbs.gov.il', domains: ['cbs.gov.il'], accounts: [] },
+  {
+    name: 'משרד האוצר',
+    kind: 'government',
+    homepage: 'https://www.gov.il/he/departments/ministry_of_finance',
+    domains: ['gov.il/he/departments/ministry_of_finance', 'mof.gov.il'],
+    accounts: [
+      ['facebook', 'facebook.com/israeli.ministry.of.finance', 'https://www.facebook.com/Israeli.Ministry.of.Finance/'],
+      ['x', 'x.com/israel_mof', 'https://twitter.com/Israel_MOF'],
+      ['youtube', 'youtube.com/channel/ucmt8bdqj1ogwmoagcbkvh3q', 'https://www.youtube.com/channel/UCMT8Bdqj1OGwmOAGCBkvh3Q'],
+      ['instagram', 'instagram.com/ministry_of_finance_il', 'https://www.instagram.com/ministry_of_finance_il/'],
+      ['linkedin', 'linkedin.com/company/israeli-ministry-of-finance', 'https://www.linkedin.com/company/israeli-ministry-of-finance'],
+      ['tiktok', 'tiktok.com/@mof_israel', 'https://www.tiktok.com/@mof_israel'],
+      ['telegram', 't.me/mof_israel', 'https://t.me/MOF_Israel'],
+    ],
+  },
+  {
+    name: 'רשות המסים',
+    kind: 'government',
+    homepage: 'https://www.gov.il/he/departments/israel_tax_authority',
+    domains: ['gov.il/he/departments/israel_tax_authority', 'taxes.gov.il'],
+    accounts: [
+      ['facebook', 'facebook.com/taxesgovil', 'https://www.facebook.com/taxesgovil/'],
+      ['instagram', 'instagram.com/israeltaxauthoriy', 'https://www.instagram.com/israeltaxauthoriy/'],
+      ['youtube', 'youtube.com/channel/uc_5rpglk4gbbte7vpmdtoww', 'https://www.youtube.com/channel/UC_5RpglK4gBbtE7vPMDTOWw'],
+      ['telegram', 't.me/taxes_il', 'https://t.me/taxes_il'],
+    ],
+  },
+  {
+    name: 'משרד ראש הממשלה',
+    kind: 'government',
+    homepage: 'https://www.gov.il/he/departments/prime_ministers_office',
+    domains: ['gov.il/he/departments/prime_ministers_office', 'pmo.gov.il'],
+    accounts: [
+      ['facebook', 'facebook.com/hebpmo', 'https://www.facebook.com/HEBPMO/'],
+      ['x', 'x.com/israelipm_heb', 'https://twitter.com/israelipm_heb'],
+      ['instagram', 'instagram.com/israelipm', 'https://www.instagram.com/israelipm/'],
+    ],
+  },
+  { name: 'רשות ניירות ערך', kind: 'regulator', homepage: 'https://www.isa.gov.il', domains: ['isa.gov.il'], accounts: [] },
+  { name: 'הבורסה לניירות ערך בתל אביב', kind: 'exchange', homepage: 'https://www.tase.co.il', domains: ['tase.co.il'], accounts: [] },
+  { name: 'הכנסת', kind: 'parliament', homepage: 'https://main.knesset.gov.il', domains: ['knesset.gov.il'], accounts: [] },
+  {
+    name: 'המוסד לביטוח לאומי',
+    kind: 'government',
+    homepage: 'https://www.btl.gov.il',
+    domains: ['btl.gov.il'],
+    accounts: [
+      ['youtube', 'youtube.com/user/bituahleumi', 'https://www.youtube.com/user/bituahleumi'],
+      ['telegram', 't.me/btlgovil', 'https://t.me/btlgovil'],
+      ['facebook', 'facebook.com/mybtl', 'https://www.facebook.com/mybtl'],
+      ['instagram', 'instagram.com/bituah_leumi_official', 'https://www.instagram.com/bituah_leumi_official'],
+      ['tiktok', 'tiktok.com/@bituahleumiofficial', 'https://www.tiktok.com/@bituahleumiofficial'],
+    ],
+  },
+  {
+    name: 'ממשלת ישראל',
+    kind: 'government',
+    homepage: 'https://www.gov.il',
+    domains: ['gov.il'],
+    accounts: [
+      ['facebook', 'facebook.com/israelgov', 'https://www.facebook.com/israelGov'],
+      ['x', 'x.com/israelgov', 'https://twitter.com/israelgov'],
+      ['youtube', 'youtube.com/channel/ucqgqeabdf5q0wlxenc6rh5w', 'https://www.youtube.com/channel/UCqGqEABdf5Q0wlxEnc6RH5w'],
+      ['linkedin', 'linkedin.com/company/gov.il', 'https://www.linkedin.com/company/gov.il/'],
+    ],
+  },
+  {
+    name: 'הפדרל ריזרב',
+    kind: 'international',
+    homepage: 'https://www.federalreserve.gov',
+    domains: ['federalreserve.gov'],
+    accounts: [
+      ['facebook', 'facebook.com/federalreserve', 'https://www.facebook.com/federalreserve'],
+      ['instagram', 'instagram.com/federalreserveboard', 'https://www.instagram.com/federalreserveboard/'],
+      ['linkedin', 'linkedin.com/company/federal-reserve-board', 'https://www.linkedin.com/company/federal-reserve-board'],
+      ['youtube', 'youtube.com/federalreserve', 'https://www.youtube.com/federalreserve'],
+      ['x', 'x.com/federalreserve', 'https://x.com/federalreserve'],
+    ],
+  },
+];
+
+/** The registry's first bodies, once: after that it belongs to the newsroom (and its weekly check). */
+async function seedOfficialSources(db: Db): Promise<void> {
+  const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)::int` }).from(officialSources);
+  if (n > 0) return;
+  await db
+    .insert(officialSources)
+    .values(OFFICIAL_SEED.map((o) => ({ name: o.name, kind: o.kind, homepage: o.homepage, domains: o.domains, addedBy: 'seed', accounts: o.accounts.map(([p, k, u]) => linked(o.homepage, p, k, u)) })))
+    .onConflictDoNothing();
 }
 
 type SampleArticle = { cat: string; title: string; excerpt?: string; minutes?: number; author?: string };
