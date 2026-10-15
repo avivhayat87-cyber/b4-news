@@ -107,7 +107,7 @@ export function Shell({ children }: { children: ReactNode }) {
     { href: '/articles', label: 'כתבות באתר', icon: I.articles },
     { href: '/social', label: 'רשתות חברתיות', icon: I.social },
     // Advertising holds leads (personal data): admins only.
-    ...(staff.role === 'admin' ? [{ href: '/ads', label: 'פרסום', icon: I.ads }] : []),
+    ...(staff.role === 'admin' ? [{ href: '/ads', label: 'פרסום', icon: I.ads, badge: dash.data ? dash.data.ads.newInquiries + dash.data.ads.newLeads || undefined : undefined }] : []),
     { href: '/sources', label: 'הגדרות אתרים', icon: I.sites, badge: dash.data?.sources.waitingForDeveloper || undefined },
     { href: '/audience', label: 'מנויים וגולשים', icon: I.audience },
     { href: '/comments', label: 'תגובות גולשים', icon: I.comments, badge: dash.data ? dash.data.comments.toReview + dash.data.comments.reported || undefined : undefined },

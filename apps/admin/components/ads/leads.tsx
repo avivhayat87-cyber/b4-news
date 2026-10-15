@@ -8,8 +8,8 @@ import { admin, errorMessage } from '@/lib/api';
 import { formatDateTime } from '@/lib/labels';
 import { Badge, Button, Empty, ErrorBox, Loading, cx, useToast } from '../ui';
 
-const LABEL: Record<string, string> = { ...AD_LEAD_FIELD_LABELS, note: 'הערה', company: 'עסק', message: 'הודעה' };
-const ORDER = ['name', 'company', 'phone', 'email', 'city', 'note', 'message'];
+const LABEL: Record<string, string> = { ...AD_LEAD_FIELD_LABELS, note: 'הערה', company: 'עסק', message: 'על העסק', interests: 'מה מעניין', section: 'הגיע מהמדור' };
+const ORDER = ['name', 'company', 'phone', 'email', 'city', 'interests', 'section', 'note', 'message'];
 
 /** A CSV that Excel opens in Hebrew (UTF-8 with its mark). */
 function downloadCsv(leads: AdLeadDto[], name: string) {
@@ -43,7 +43,7 @@ export function LeadsTable({ kind, campaignId, title }: { kind: 'lead' | 'inquir
   if (query.isPending) return <Loading />;
   if (query.isError) return <ErrorBox error={query.error} onRetry={() => query.refetch()} />;
   const leads = query.data;
-  if (!leads.length) return <Empty title={kind === 'lead' ? 'עוד אין לידים' : 'עוד אין פניות'}>{kind === 'lead' ? 'כשגולש ישאיר פרטים במודעה עם טופס, הוא יופיע כאן (והמפרסם יקבל מייל).' : 'עסקים שממלאים את הטופס בעמוד "פרסום באתר" מופיעים כאן.'}</Empty>;
+  if (!leads.length) return <Empty title={kind === 'lead' ? 'עוד אין לידים' : 'עוד אין פניות'}>{kind === 'lead' ? 'כשגולש ישאיר פרטים במודעה עם טופס, הוא יופיע כאן (והמפרסם יקבל מייל).' : 'עסקים שממלאים את הטופס בעמוד "פרסמו אצלנו" מופיעים כאן, וכל מנהל מקבל עליהם מייל.'}</Empty>;
 
   return (
     <section className="space-y-3">

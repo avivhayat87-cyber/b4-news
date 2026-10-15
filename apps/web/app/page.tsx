@@ -30,7 +30,7 @@ export default async function HomePage() {
       </section>
       <Hero articles={home.main} latest={home.latest} />
       <TrendingCarousel articles={home.trending} />
-      <AdSlot slot="home_top" className={`${wrap} pt-10`} />
+      <AdSlot slot="home_top" fallback="billboard" className={`${wrap} pt-10`} />
 
       <div className={`${wrap} flex flex-wrap gap-10 pb-3 pt-11`}>
         <div className="grid min-w-0 flex-[999_1_620px] grid-cols-[repeat(auto-fit,minmax(min(290px,100%),1fr))] gap-10">

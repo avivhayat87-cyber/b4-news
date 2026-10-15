@@ -37,6 +37,7 @@ type TaskRow = typeof adAgentTasks.$inferSelect;
 /** What each place is, for the agent (generated from the code, never listed by hand in a skill). */
 const SLOT_WHERE: Record<AdSlot, string> = {
   home_top: 'the site\'s home page, under the top stories (a wide banner)',
+  category_top: 'the top of a section page, above its articles (a wide banner)',
   sidebar: 'the side column of the home page and the sections',
   article_side: 'beside an article, on large screens',
   article_end: 'after the article text, before the comments',

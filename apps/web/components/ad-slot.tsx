@@ -4,10 +4,10 @@
 // short lead form in place when the ad asks for one. How often this reader saw each campaign
 // today is counted here in the browser (no cookie, nothing sent about the reader), and two places
 // on one page never show the same campaign. An outage leaves the place empty, never the page.
-import { AD_LABEL, AD_LEAD_FIELD_LABELS, AD_SIZES, type AdLeadField, type AdSlot as Slot, type PublicAd } from '@b4/shared';
+import { AD_LABEL, AD_LEAD_FIELD_LABELS, AD_SIZES, AD_SLOT_FORMATS, AD_SLOT_NAMES, adSize, type AdLeadField, type AdSlot as Slot, type PublicAd } from '@b4/shared';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiFailure, adsApi } from '@/lib/client-api';
-import { HousePromo, NEW_WINDOW } from './ui';
+import { HouseBillboard, HousePromo, NEW_WINDOW } from './ui';
 import { useAdView } from './use-ad-view';
 
 const SEEN_KEY = 'b4_ads_seen';
@@ -144,12 +144,61 @@ function AdBody({ ad, device }: { ad: PublicAd; device: 'desktop' | 'mobile' }) 
   );
 }
 
+const SPOTS_KEY = 'b4_adspots';
+const FORMAT_SIZE: Record<string, string> = { billboard: `באנר רחב ${adSize(970, 250)} · בנייד ${adSize(320, 100)}`, rectangle: `מלבן ${adSize(300, 250)}`, native: 'מודעה בסגנון כתבה' };
+
 /**
- * fallback "promo": an empty place shows "advertise with B4" (when the CMS allows it).
- * minWidth: a place that exists only on wide screens (beside an article) asks for nothing on a phone.
+ * "?adspots=1" on any page (the CMS links to it) shows every ad place as a labeled frame, for the
+ * rest of the visit in that tab, so the newsroom sees where ads go before any campaign runs;
+ * "?adspots=0" ends it. It only draws frames: nothing is asked of the server or counted.
  */
-export function AdSlot({ slot, category, fallback = 'none', minWidth = 0, className = '' }: { slot: Slot; category?: string; fallback?: 'promo' | 'none'; minWidth?: number; className?: string }) {
-  const [state, setState] = useState<{ ad: PublicAd | null; promo: boolean } | null>(null);
+function spotPreview(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search).get('adspots');
+    if (q === '1') sessionStorage.setItem(SPOTS_KEY, '1');
+    if (q === '0') sessionStorage.removeItem(SPOTS_KEY);
+    return sessionStorage.getItem(SPOTS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function SpotFrame({ slot }: { slot: Slot }) {
+  const height = AD_SLOT_FORMATS[slot].includes('billboard') ? 160 : 250;
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-[10px] border-2 border-dashed border-brand bg-brand-soft/60 p-4 text-center" style={{ minHeight: height }}>
+      <span className="text-xs font-bold tracking-[.06em] text-brand-deep">מקום פרסום</span>
+      <span className="font-display text-xl font-extrabold">{AD_SLOT_NAMES[slot]}</span>
+      <span className="text-sm text-ink-2">{AD_SLOT_FORMATS[slot].map((f) => FORMAT_SIZE[f]).join(' · ')}</span>
+      <a href="?adspots=0" className="mt-1 text-xs font-bold text-ink-2 underline underline-offset-2">
+        יציאה מתצוגת המקומות
+      </a>
+    </div>
+  );
+}
+
+/**
+ * fallback "promo": an empty side place shows "advertise with B4"; "billboard": an empty wide place
+ * shows the house banner (in the section's words when sectionName is given); both when the CMS
+ * allows it. minWidth: a place that exists only on wide screens (beside an article) asks for
+ * nothing on a phone.
+ */
+export function AdSlot({
+  slot,
+  category,
+  sectionName,
+  fallback = 'none',
+  minWidth = 0,
+  className = '',
+}: {
+  slot: Slot;
+  category?: string;
+  sectionName?: string;
+  fallback?: 'promo' | 'billboard' | 'none';
+  minWidth?: number;
+  className?: string;
+}) {
+  const [state, setState] = useState<{ ad: PublicAd | null; promo: boolean; preview?: boolean } | null>(null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLElement>(null);
@@ -157,6 +206,10 @@ export function AdSlot({ slot, category, fallback = 'none', minWidth = 0, classN
   useEffect(() => {
     if (window.innerWidth < minWidth) {
       setState({ ad: null, promo: false });
+      return;
+    }
+    if (spotPreview()) {
+      setState({ ad: null, promo: false, preview: true });
       return;
     }
     const dev = window.matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop';
@@ -185,8 +238,17 @@ export function AdSlot({ slot, category, fallback = 'none', minWidth = 0, classN
   useAdView(box, state?.ad?.token ?? null, onView);
 
   if (!state) return fallback === 'promo' ? <div className={`min-h-[250px] ${className}`} aria-hidden="true" /> : null;
+  if (state.preview)
+    return (
+      <div className={className}>
+        <SpotFrame slot={slot} />
+      </div>
+    );
   const { ad } = state;
-  if (!ad) return fallback === 'promo' && state.promo ? <HousePromo /> : null;
+  if (!ad) {
+    if (!state.promo || fallback === 'none') return null;
+    return <div className={className}>{fallback === 'promo' ? <HousePromo /> : <HouseBillboard section={category && sectionName ? { slug: category, name: sectionName } : undefined} />}</div>;
+  }
 
   return (
     <aside ref={box} aria-label={AD_LABEL} className={className}>

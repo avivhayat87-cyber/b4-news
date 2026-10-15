@@ -9,7 +9,12 @@ import { Badge, Empty } from '../ui';
 const dates = (c: CampaignDto) => `${c.startsAt ? formatDateTime(c.startsAt) : 'מהאישור'} – ${c.endedAt ? formatDateTime(c.endedAt) : c.endsAt ? formatDateTime(c.endsAt) : 'בלי תאריך סיום'}`;
 
 export function CampaignCards({ campaigns }: { campaigns: CampaignDto[] }) {
-  if (!campaigns.length) return <Empty title="אין קמפיינים פעילים">יוצרים קמפיין חדש, או מבקשים הצעה מסוכן הפרסום.</Empty>;
+  if (!campaigns.length)
+    return (
+      <Empty title="אין מודעות פעילות">
+        לוחצים &quot;מודעה חדשה&quot;, בוחרים על הסקיצה של האתר איפה היא תופיע, ומעצבים אותה. או מבקשים הצעה מסוכן הפרסום. עד אז המקומות באתר מציגים את הבאנר &quot;פרסמו אצלנו&quot;.
+      </Empty>
+    );
   return (
     <ul className="grid gap-3 lg:grid-cols-2">
       {campaigns.map((c) => (

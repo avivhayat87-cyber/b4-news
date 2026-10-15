@@ -1,10 +1,10 @@
-// Info pages edited in the CMS (Settings > site details): about, contact,
-// advertise, accessibility, privacy, terms. Any other top-level path is a 404.
+// Info pages edited in the CMS (Settings > site details): about, contact, accessibility, privacy,
+// terms. "advertise" has a page of its own (app/advertise), which sells rather than informs. Any
+// other top-level path is a 404.
 import { PAGE_SLUGS, type PageSlug } from '@b4/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AdvertiseForm } from '@/components/advertise-form';
 import { wrap } from '@/components/ui';
 import { getPage, getSite } from '@/lib/api';
 
@@ -12,11 +12,13 @@ import { getPage, getSite } from '@/lib/api';
 // refreshes (NoFallbackError). Other paths are turned away by isPage() instead.
 export const revalidate = 600;
 
+const INFO_SLUGS = PAGE_SLUGS.filter((p) => p !== 'advertise');
+
 export function generateStaticParams() {
-  return PAGE_SLUGS.map((page) => ({ page }));
+  return INFO_SLUGS.map((page) => ({ page }));
 }
 
-const isPage = (page: string): page is PageSlug => (PAGE_SLUGS as readonly string[]).includes(page);
+const isPage = (page: string): page is PageSlug => (INFO_SLUGS as readonly string[]).includes(page);
 
 type Props = { params: Promise<{ page: string }> };
 
@@ -31,7 +33,7 @@ export default async function InfoPage({ params }: Props) {
   if (!isPage(page)) notFound();
   const [data, site] = await Promise.all([getPage(page), getSite()]);
   if (!data) notFound();
-  const showContact = page === 'contact' || page === 'advertise';
+  const showContact = page === 'contact';
 
   return (
     <div className={`${wrap} py-10`}>
@@ -73,7 +75,6 @@ export default async function InfoPage({ params }: Props) {
               ) : null}
             </dl>
           ) : null}
-          {page === 'advertise' ? <AdvertiseForm /> : null}
         </article>
         <aside>
           <ul className="flex flex-col gap-1 rounded-[10px] border border-line p-3 text-[15px]">

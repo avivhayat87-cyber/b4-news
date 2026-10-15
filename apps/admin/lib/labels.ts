@@ -1,5 +1,8 @@
 // Hebrew labels for everything the CMS shows.
 import {
+  AD_SLOT_NAMES,
+  AD_SLOTS,
+  adSize,
   type AdDevice,
   type AdFormat,
   type AdGoal,
@@ -411,18 +414,20 @@ export const DIVERGENCE_LABEL: Record<Divergence, { name: string; description: s
 export const ARTICLE_LENGTH: Record<(typeof ARTICLE_LENGTHS)[number], string> = { shorter: 'קצר מהמקור', same: 'כמו המקור', longer: 'ארוך מהמקור' };
 
 // --- Advertising ------------------------------------------------------------------------------
-export const AD_SLOT: Record<AdSlot, { name: string; where: string }> = {
-  home_top: { name: 'באנר בדף הבית', where: 'מתחת לכתבות הראשיות בדף הבית' },
-  sidebar: { name: 'טור הצד', where: 'בטור הצד של דף הבית ושל המדורים' },
-  article_side: { name: 'ליד כתבה', where: 'בטור הצד של כתבה (במחשב)' },
-  article_end: { name: 'בסוף כתבה', where: 'אחרי הטקסט של הכתבה, לפני התגובות' },
-  app_feed: { name: 'פיד האפליקציה', where: 'בין הכתבות בדף הבית של האפליקציה' },
-  app_article: { name: 'כתבה באפליקציה', where: 'אחרי כתבה באפליקציה' },
+const SLOT_WHERE: Record<AdSlot, string> = {
+  home_top: 'מתחת לכתבות הראשיות בדף הבית',
+  category_top: 'בראש כל עמוד מדור, מעל הכתבות',
+  sidebar: 'בטור הצד של דף הבית ושל המדורים',
+  article_side: 'בטור הצד של כתבה (במחשב)',
+  article_end: 'אחרי הטקסט של הכתבה, לפני התגובות',
+  app_feed: 'בין הכתבות בדף הבית של האפליקציה',
+  app_article: 'אחרי כתבה באפליקציה',
 };
+export const AD_SLOT = Object.fromEntries(AD_SLOTS.map((s) => [s, { name: AD_SLOT_NAMES[s], where: SLOT_WHERE[s] }])) as Record<AdSlot, { name: string; where: string }>;
 
 export const AD_FORMAT: Record<AdFormat, { name: string; size: string }> = {
-  billboard: { name: 'באנר רחב', size: 'מחשב 970×250, נייד 320×100' },
-  rectangle: { name: 'מלבן', size: '300×250' },
+  billboard: { name: 'באנר רחב', size: `מחשב ${adSize(970, 250)}, נייד ${adSize(320, 100)}` },
+  rectangle: { name: 'מלבן', size: adSize(300, 250) },
   native: { name: 'בסגנון כתבה', size: 'תמונה 16:9, כותרת, שורה וכפתור' },
 };
 

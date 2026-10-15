@@ -338,6 +338,7 @@ A personal access token (`Authorization: Bearer b4s_…`) reaches only `/admin/a
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
+| GET | `/admin/dashboard` | staff | also `ads: { newLeads, newInquiries }` (zeros for anyone but an admin): the "פרסום" menu badge |
 | GET | `/admin/ads` | admin | `AdsOverviewDto`: the switches, advertisers (each with its private report link), campaigns waiting/running/paused, the archive (ended, newest 200), new leads and inquiries. Moves campaigns whose date or view cap passed to the archive first |
 | PUT | `/admin/ads/settings` | admin | `AdSettings` (on/off for every ad, the house promo in empty places, the app feed's spacing) |
 | POST · PUT · DELETE | `/admin/ads/advertisers[/:id]` | admin | `AdvertiserInput` → `AdvertiserDto`; delete only without campaigns (409) |
@@ -368,7 +369,7 @@ Public, never cached:
 | POST | `/public/ads/view` | `{ token, kind: view\|open }` → 204: a measured view, or a lead ad's form opened (its click) |
 | GET | `/public/ads/go/:token` | counts the click → 302 to the advertiser's URL with utm tags (theirs win); a stale token → the site |
 | POST | `/public/ads/lead` | `AdLeadInput` (consent required) → 201 `{ thankYou }`; 5 per 10 minutes per address |
-| POST | `/public/ads/inquiry` | `AdInquiryInput` → 204 ("advertise with us"); 5 an hour |
+| POST | `/public/ads/inquiry` | `AdInquiryInput` (name and phone; email, business, `interests`, `section` and a message optional; consent required) → 204 ("advertise with us"); emails every active admin and the site's contact address; 5 an hour |
 | GET | `/public/partners/:key` | `PartnerReportDto`: an advertiser's campaigns, days and leads behind their signed link |
 
 ## Site cache revalidation (site side)

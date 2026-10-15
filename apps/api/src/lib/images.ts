@@ -47,6 +47,8 @@ type SharpImage = ReturnType<typeof sharp>;
 type SharpMetadata = Awaited<ReturnType<SharpImage['metadata']>>;
 
 const badImage = (message: string) => new AppError(422, 'bad_image', message);
+/** "1200×800" set apart, so a Hebrew message never shows it as "800×1200". */
+const dims = (w: number, h: number) => `⁦${w}×${h}⁩`;
 
 function encode(img: SharpImage, format: 'webp' | 'jpg'): Promise<Buffer> {
   return format === 'webp' ? img.webp({ quality: 82 }).toBuffer() : img.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
@@ -93,7 +95,7 @@ export async function ingestImage(db: Db, storage: MediaStorage, input: Buffer, 
     .toBuffer({ resolveWithObject: true });
   const { width, height } = master.info;
   if (width < MIN_SIZE.width || height < MIN_SIZE.height) {
-    throw badImage(`התמונה קטנה מדי (${width}×${height}). צריך לפחות ${MIN_SIZE.width}×${MIN_SIZE.height}`);
+    throw badImage(`התמונה קטנה מדי: ${dims(width, height)}. צריך לפחות ${dims(MIN_SIZE.width, MIN_SIZE.height)}.`);
   }
 
   const id = randomUUID();
@@ -184,9 +186,9 @@ export async function ingestAdImage(
   const { width: srcW, height: srcH } = oriented.info;
   const { width: w, height: h } = opts;
   if (opts.fit === 'exact' && Math.abs(srcW / srcH - w / h) > (w / h) * 0.03) {
-    throw badImage(`המידות לא מתאימות: ${srcW}×${srcH}. צריך ${w}×${h} (או ${w * 2}×${h * 2} למסכים חדים)`);
+    throw badImage(`המידות לא מתאימות: ${dims(srcW, srcH)}. צריך ${dims(w, h)}, או ${dims(w * 2, h * 2)} למסכים חדים.`);
   }
-  if (srcW < w || srcH < h) throw badImage(`התמונה קטנה מדי (${srcW}×${srcH}). צריך לפחות ${w}×${h}`);
+  if (srcW < w || srcH < h) throw badImage(`התמונה קטנה מדי: ${dims(srcW, srcH)}. צריך לפחות ${dims(w, h)}.`);
   const img =
     opts.fit === 'free'
       ? sharp(oriented.data).resize({ width: w * 2, height: h * 2, fit: 'inside', withoutEnlargement: true })

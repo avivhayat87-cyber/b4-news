@@ -160,7 +160,42 @@ export function ArticleImage({
   );
 }
 
-/** An ad place with no campaign in it (AdSlot's fallback): a house promo for advertisers. */
+/**
+ * A wide ad place with no campaign in it (the home page, the top of a section): a classic house
+ * banner inviting businesses to advertise, in the section's words on a section page.
+ */
+export function HouseBillboard({ section }: { section?: { slug: string; name: string } }) {
+  return (
+    <Link
+      href={section ? `/advertise?section=${section.slug}#contact` : '/advertise'}
+      className="on-dark group relative flex flex-col gap-5 overflow-hidden rounded-[12px] bg-[linear-gradient(115deg,#1C1C20_0%,#26262C_55%,#3B1418_100%)] px-6 py-6 text-white md:flex-row md:items-center md:justify-between md:px-10 md:py-8"
+    >
+      {/* The seal's orbit, as a quiet watermark. */}
+      <svg aria-hidden="true" viewBox="0 0 120 120" className="pointer-events-none absolute -left-20 -top-28 h-[360px] w-[360px] opacity-[.07]">
+        <circle cx="60" cy="60" r="54" fill="none" stroke="#FFFFFF" strokeWidth="5" />
+        <circle cx="60" cy="60" r="34" fill="none" stroke="#FFFFFF" strokeWidth="2" />
+      </svg>
+      <div className="relative flex items-center gap-5">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark */}
+        <img src="/brand/b4-mark.svg" alt="" width={60} height={60} className="hidden h-[60px] w-[60px] shrink-0 md:block" />
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold tracking-[.08em] text-[#FF5A63]">פרסום ב-B4 NEW&apos;S</span>
+          <span className="text-balance font-display text-[22px] font-extrabold leading-tight md:text-[28px]">
+            {section ? `מפרסמים בתחום ${section.name}? זה המקום שלכם.` : 'הקוראים שלנו מקבלים החלטות כלכליות. הגיעו אליהם.'}
+          </span>
+          <span className="text-[15px] leading-relaxed text-mist">
+            {section ? `המודעה שלכם מול קוראי המדור, בדיוק כשהם קוראים על ${section.name}.` : 'באנרים, מודעות עם טופס פניות ופרסום לפי מדור, באתר ובאפליקציה.'}
+          </span>
+        </div>
+      </div>
+      <span className="relative inline-flex h-11 shrink-0 items-center self-start whitespace-nowrap rounded-full bg-white px-6 font-extrabold text-ink transition-colors group-hover:bg-brand group-hover:text-white md:self-auto">
+        לפרטים ולהצעת מחיר ←
+      </span>
+    </Link>
+  );
+}
+
+/** A side ad place with no campaign in it (AdSlot's fallback): a house promo for advertisers. */
 export function HousePromo() {
   return (
     <Link

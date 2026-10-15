@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { AdSlot } from '@/components/ad-slot';
 import { Sidebar } from '@/components/sidebar';
 import { ArticleImage, Byline, SectionHeader, wrap } from '@/components/ui';
 import { getCategoryPage, getMarkets } from '@/lib/api';
@@ -31,6 +32,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     <div className={`${wrap} flex flex-wrap gap-10 pb-8 pt-8`}>
       <div className="min-w-0 flex-[999_1_640px]">
         <SectionHeader as="h1" title={data.category.name} className="mb-6" />
+        <AdSlot slot="category_top" category={slug} sectionName={data.category.name} fallback="billboard" className="mb-8" />
         {!lead ? (
           <p className="py-10 text-lg text-muted">עדיין אין כתבות במדור הזה.</p>
         ) : (

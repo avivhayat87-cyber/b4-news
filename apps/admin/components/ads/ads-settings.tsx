@@ -1,12 +1,12 @@
 'use client';
 // The switches over all ads, the map of the places (fixed in code: few and calm), and where
 // Google comes in later: only in the places marked for it, only when nothing of ours runs there.
-import { AD_SLOT_FORMATS, AD_SLOTS, type AdSettings } from '@b4/shared';
+import { AD_SLOTS, type AdSettings } from '@b4/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
-import { AD_FORMAT, AD_SLOT } from '@/lib/labels';
 import { Button, Card, Field, inputClass, useToast } from '../ui';
+import { SiteSpotsLinks, SlotMap } from './slot-map';
 
 export function AdsSettings({ settings }: { settings: AdSettings }) {
   const qc = useQueryClient();
@@ -34,8 +34,8 @@ export function AdsSettings({ settings }: { settings: AdSettings }) {
           <label className="flex items-start gap-3">
             <input type="checkbox" checked={s.housePromo} onChange={(e) => setS({ ...s, housePromo: e.target.checked })} className="mt-1" />
             <span>
-              <span className="block font-bold">מקום ריק מציג &quot;רוצים לפרסם אצלנו?&quot;</span>
-              <span className="block text-sm text-muted">כבוי: מקום בלי קמפיין פשוט לא מופיע.</span>
+              <span className="block font-bold">מקום ריק מציג את הבאנר &quot;פרסמו אצלנו&quot;</span>
+              <span className="block text-sm text-muted">מוביל לעמוד הפרסום עם הטופס. כבוי: מקום בלי קמפיין פשוט לא מופיע.</span>
             </span>
           </label>
           <div className="max-w-xs">
@@ -50,18 +50,13 @@ export function AdsSettings({ settings }: { settings: AdSettings }) {
       </Card>
 
       <Card title="המקומות באתר ובאפליקציה">
-        <p className="mb-4 text-sm text-ink-2">
-          המקומות קבועים, מעטים ושקטים: אין חלונות קופצים, אין מודעה שצפה מעל התוכן ואין מסך מלא. בכל עמוד יש לכל היותר שתי מודעות. כל מודעה מסומנת &quot;פרסומת&quot; עם שם המפרסם, וזה לא ניתן לכיבוי.
-        </p>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {AD_SLOTS.map((slot) => (
-            <li key={slot} className="rounded-lg bg-stone p-3 text-sm">
-              <span className="block font-bold">{AD_SLOT[slot].name}</span>
-              <span className="block text-ink-2">{AD_SLOT[slot].where}</span>
-              <span className="block text-xs text-muted">{AD_SLOT_FORMATS[slot].map((f) => AD_FORMAT[f].name).join(' · ')}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-4">
+          <p className="text-sm text-ink-2">
+            המקומות קבועים, מעטים ושקטים: אין חלונות קופצים, אין מודעה שצפה מעל התוכן ואין מסך מלא. בכל עמוד יש לכל היותר שתי מודעות. כל מודעה מסומנת &quot;פרסומת&quot; עם שם המפרסם, וזה לא ניתן לכיבוי. מקום רחב בלי מודעה מציג את הבאנר &quot;פרסמו אצלנו&quot; (בעמוד מדור, בשם המדור).
+          </p>
+          <SlotMap selected={[...AD_SLOTS]} />
+          <SiteSpotsLinks />
+        </div>
       </Card>
 
       <Card title="Google AdSense (בשלב הבא)">

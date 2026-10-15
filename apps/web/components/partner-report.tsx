@@ -1,18 +1,10 @@
 'use client';
 // The advertiser's report: each campaign's numbers (views counted only when really seen, clicks,
 // leads), the newsroom's summary, the last days, and the leads with a file to download.
-import { AD_LEAD_FIELD_LABELS, type AdSlot, type AdStatus, type PartnerReportDto } from '@b4/shared';
+import { AD_LEAD_FIELD_LABELS, AD_SLOT_NAMES as SLOT, type AdStatus, type PartnerReportDto } from '@b4/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure, adsApi } from '@/lib/client-api';
 
-const SLOT: Record<AdSlot, string> = {
-  home_top: 'באנר בדף הבית',
-  sidebar: 'טור הצד',
-  article_side: 'ליד כתבות',
-  article_end: 'בסוף כתבות',
-  app_feed: 'פיד האפליקציה',
-  app_article: 'כתבות באפליקציה',
-};
 const STATUS: Record<AdStatus, string> = { draft: 'בהכנה', active: 'רץ עכשיו', paused: 'מושהה', ended: 'הסתיים' };
 const LABEL: Record<string, string> = { ...AD_LEAD_FIELD_LABELS, note: 'הערה' };
 const ORDER = ['name', 'phone', 'email', 'city', 'note'];

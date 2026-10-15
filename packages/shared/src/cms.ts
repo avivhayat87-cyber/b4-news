@@ -623,6 +623,8 @@ export const DashboardDto = z.object({
   takedowns: z.object({ open: z.number().int(), overdue: z.number().int() }),
   /** Articles the legal review stopped, waiting for a person's decision. */
   review: z.object({ waiting: z.number().int() }),
+  /** Ad leads and "advertise with us" inquiries nobody handled yet (the menu's badge, admins only). */
+  ads: z.object({ newLeads: z.number().int(), newInquiries: z.number().int() }),
   failedJobs: z.number().int(),
   ai: z.object({ text: z.string(), image: z.string(), live: z.boolean() }),
 });

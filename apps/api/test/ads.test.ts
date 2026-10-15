@@ -128,7 +128,9 @@ describe('advertising', () => {
     expect((await pub('POST', '/ads/view', { token: ad.token, kind: 'open' })).status).toBe(204);
     const send = (body: object) => pub('POST', '/ads/lead', { token: ad.token, ...body }, '10.9.0.7');
     expect((await send({ fields: { name: 'דנה כהן', phone: '050-1234567' } })).status).toBe(400);
-    expect((await send({ fields: { name: 'דנה כהן' }, consent: true })).status).toBe(400);
+    const missing = await send({ fields: { name: 'דנה כהן' }, consent: true });
+    expect(missing.status).toBe(400);
+    expect(missing.body.message).toBe('חסר: טלפון');
     const ok = await send({ fields: { name: 'דנה כהן', phone: '050-1234567', email: 'not asked' }, consent: true });
     expect(ok.status).toBe(201);
 
@@ -153,12 +155,23 @@ describe('advertising', () => {
     expect((await pub('GET', `/partners/${String(renewed.body.reportUrl).split('/partner/')[1]}`)).status).toBe(200);
   });
 
-  it('keeps businesses that ask to advertise as inquiries', async () => {
-    expect((await pub('POST', '/ads/inquiry', { name: 'יוסי', email: 'yossi@shop.example', consent: true, website: 'bot' }, '10.9.0.8')).status).toBe(400);
-    expect((await pub('POST', '/ads/inquiry', { name: 'יוסי', company: 'החנות', email: 'yossi@shop.example', consent: true }, '10.9.0.8')).status).toBe(204);
+  it('keeps businesses that ask to advertise as inquiries, with a phone and an optional email, and emails the admins', async () => {
+    const send = (body: object) => pub('POST', '/ads/inquiry', body, '10.9.0.8');
+    expect((await send({ name: 'יוסי', phone: '052-7654321', consent: true, website: 'bot' })).status).toBe(400);
+    const noPhone = await send({ name: 'יוסי', consent: true });
+    expect(noPhone.status).toBe(400);
+    const sent = await send({ name: 'יוסי', company: 'החנות', phone: '052-7654321', interests: ['section', 'lead_ads'], section: 'real-estate', message: 'חנות רהיטים בחיפה', consent: true });
+    expect(sent.status).toBe(204);
     const inquiries = (await admin.get('/ads/leads?kind=inquiry')).body;
-    expect(inquiries[0].fields).toMatchObject({ name: 'יוסי', company: 'החנות' });
+    expect(inquiries[0].fields).toMatchObject({ name: 'יוסי', company: 'החנות', phone: '052-7654321', email: '', section: 'נדל״ן', interests: 'פרסום במדור מסוים, מודעה עם טופס פניות' });
     expect((await admin.get('/ads')).body.newInquiries).toBe(1);
+    // Every admin is told, with the details and a link to the inquiries.
+    const mail = ctx.mailer.lastTo('admin@newsroom.test');
+    expect(mail?.subject).toBe('פנייה חדשה לפרסום: החנות');
+    expect(mail?.text).toContain('052-7654321');
+    expect(mail?.text).toContain('/ads?tab=inquiries');
+    expect((await admin.get('/dashboard')).body.ads).toEqual({ newLeads: 1, newInquiries: 1 });
+    expect((await editor.get('/dashboard')).body.ads).toEqual({ newLeads: 0, newInquiries: 0 });
   });
 
   it('takes a banner only in its own proportions, and sets one from words in every size', async () => {
@@ -213,6 +226,18 @@ describe('advertising', () => {
 
     const team = (await admin.get('/agents')).body;
     expect(team.agents.find((x: { id: string }) => x.id === 'ads').skills.map((x: { key: string }) => x.key)).toEqual(['ads.brief', 'ads.review', 'ads.report']);
+  });
+
+  it('shows a section banner only at the top of its sections, and the house banner where none runs', async () => {
+    const c = await admin.post('/ads/campaigns', campaign({ name: 'ראש מדור', slots: ['category_top'], categories: ['insurance'] }));
+    const set = await admin.post('/ads/compose', { format: 'billboard', headline: 'ביטוח דירה', sponsor: 'בנק הדוגמה' });
+    await admin.post(`/ads/campaigns/${c.body.id}/creatives`, { format: 'billboard', desktopImage: set.body.desktop.key, mobileImage: set.body.mobile.key });
+    expect((await admin.post(`/ads/campaigns/${c.body.id}/status`, { status: 'active' })).status).toBe(200);
+    expect((await pub('GET', '/ads/category_top?device=desktop&category=insurance')).body.ad.format).toBe('billboard');
+    const elsewhere = (await pub('GET', '/ads/category_top?device=desktop&category=health')).body;
+    expect(elsewhere.ad).toBeNull();
+    expect(elsewhere.housePromo).toBe(true);
+    await admin.post(`/ads/campaigns/${c.body.id}/status`, { status: 'ended' });
   });
 
   it('empties every place when ads are switched off', async () => {

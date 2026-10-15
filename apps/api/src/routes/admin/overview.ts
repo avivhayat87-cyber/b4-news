@@ -30,6 +30,7 @@ import { audit } from '../../lib/audit';
 import { newToken } from '../../lib/crypto';
 import { hashPassword, verifyPassword } from '../../lib/password';
 import { requireStaff } from '../../plugins/auth';
+import { waitingLeads } from '../../services/ads/leads';
 import type { Services } from '../../services/context';
 import { activateProfile, learningOverview, queueDistill, saveRules } from '../../services/learning';
 import { waitingCount } from '../../services/legal-review';
@@ -38,7 +39,7 @@ const params = z.object({ id: z.string().uuid() });
 const count = sql<number>`count(*)::int`;
 
 export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
-  app.get('/dashboard', { schema: { response: { 200: DashboardDto } } }, async () => {
+  app.get('/dashboard', { schema: { response: { 200: DashboardDto } } }, async (req) => {
     const draftCounts = await s.db.select({ status: articleDrafts.status, n: count }).from(articleDrafts).groupBy(articleDrafts.status);
     const by = (...st: string[]) => draftCounts.filter((d) => st.includes(d.status)).reduce((sum, d) => sum + d.n, 0);
     const [mags] = await s.db.select({ n: count }).from(magazines).where(inArray(magazines.status, ['draft', 'editing', 'ready', 'partially_failed']));
@@ -83,6 +84,8 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       comments: { toReview: toReview?.n ?? 0, reported: reported?.n ?? 0 },
       takedowns: { open: takedowns?.open ?? 0, overdue: takedowns?.overdue ?? 0 },
       review: { waiting: await waitingCount(s) },
+      // Leads are an admin's business: others see zeros.
+      ads: req.staff?.role === 'admin' ? await waitingLeads(s.db) : { newLeads: 0, newInquiries: 0 },
       failedJobs: failed?.n ?? 0,
       ai: await s.ai.status(),
     };

@@ -13,12 +13,23 @@ const iso = z.string();
 export const AD_LABEL = 'פרסומת';
 
 /**
- * Where ads appear. Site: a billboard under the top of the home page, the side column (home and
- * sections), beside an article and after it. App: in the home feed every few stories, and after
- * an article.
+ * Where ads appear. Site: a billboard under the top of the home page and at the top of each
+ * section, the side column (home and sections), beside an article and after it. App: in the home
+ * feed every few stories, and after an article.
  */
-export const AD_SLOTS = ['home_top', 'sidebar', 'article_side', 'article_end', 'app_feed', 'app_article'] as const;
+export const AD_SLOTS = ['home_top', 'category_top', 'sidebar', 'article_side', 'article_end', 'app_feed', 'app_article'] as const;
 export type AdSlot = (typeof AD_SLOTS)[number];
+
+/** Each place's name, as the CMS, the site's spot preview and the advertiser's page say it. */
+export const AD_SLOT_NAMES: Record<AdSlot, string> = {
+  home_top: 'באנר בדף הבית',
+  category_top: 'באנר בראש מדור',
+  sidebar: 'טור הצד',
+  article_side: 'ליד כתבה',
+  article_end: 'בסוף כתבה',
+  app_feed: 'פיד האפליקציה',
+  app_article: 'כתבה באפליקציה',
+};
 
 /** billboard: a wide banner; rectangle: the classic 300x250; native: a card with a picture, a headline and a line. */
 export const AD_FORMATS = ['billboard', 'rectangle', 'native'] as const;
@@ -27,6 +38,7 @@ export type AdFormat = (typeof AD_FORMATS)[number];
 /** Which formats fit each place. */
 export const AD_SLOT_FORMATS: Record<AdSlot, readonly AdFormat[]> = {
   home_top: ['billboard'],
+  category_top: ['billboard'],
   sidebar: ['rectangle', 'native'],
   article_side: ['rectangle', 'native'],
   article_end: ['native', 'rectangle'],
@@ -45,6 +57,9 @@ export const AD_SIZES: Record<AdFormat, { desktop: { width: number; height: numb
   rectangle: { desktop: { width: 300, height: 250 }, mobile: { width: 300, height: 250 } },
   native: { desktop: { width: 600, height: 338 }, mobile: { width: 600, height: 338 } },
 };
+
+/** "970×250" set apart, so a right-to-left line never shows it as "250×970". */
+export const adSize = (width: number, height: number) => `⁦${width}×${height}⁩`;
 
 export const AD_DEVICES = ['all', 'desktop', 'mobile'] as const;
 export type AdDevice = (typeof AD_DEVICES)[number];
@@ -76,6 +91,17 @@ export function adLeadConsent(sponsor: string): string {
 
 /** The consent on the "advertise with us" form. */
 export const AD_INQUIRY_CONSENT = "אני מסכים/ה שצוות B4 NEW'S ייצור איתי קשר בנושא פרסום.";
+
+/** What a business asking to advertise is interested in (the form's choices). */
+export const AD_INQUIRY_INTERESTS = ['banner', 'lead_ads', 'section', 'app', 'unsure'] as const;
+export type AdInquiryInterest = (typeof AD_INQUIRY_INTERESTS)[number];
+export const AD_INQUIRY_INTEREST_LABELS: Record<AdInquiryInterest, string> = {
+  banner: 'באנר באתר',
+  lead_ads: 'מודעה עם טופס פניות',
+  section: 'פרסום במדור מסוים',
+  app: 'פרסום באפליקציה',
+  unsure: 'עוד לא יודע/ת, אשמח להמלצה',
+};
 
 const text = (max: number) => z.string().trim().max(max);
 const optionalUrl = z.union([z.literal(''), z.string().trim().url('הכתובת לא תקינה').max(1000).refine((v) => /^https?:\/\//i.test(v), 'הכתובת צריכה להתחיל ב-https://')]);
@@ -385,11 +411,15 @@ export const AdLeadInput = z.object({
 });
 export type AdLeadInput = z.infer<typeof AdLeadInput>;
 
+/** "Advertise with us": a name and a phone are enough; the email and the rest are optional. */
 export const AdInquiryInput = z.object({
   name: text(120).min(2, 'כתבו שם'),
   company: text(120).default(''),
-  phone: text(40).default(''),
-  email: z.string().trim().email('כתובת מייל לא תקינה').max(254),
+  phone: z.string().trim().regex(/^[0-9+\-\s()]{7,20}$/, 'מספר הטלפון לא תקין'),
+  email: z.union([z.literal(''), z.string().trim().email('כתובת מייל לא תקינה').max(254)]).default(''),
+  interests: z.array(z.enum(AD_INQUIRY_INTERESTS)).max(AD_INQUIRY_INTERESTS.length).default([]),
+  /** The section the reader came from (a section's "advertise here" banner), if any. */
+  section: z.enum(CATEGORY_SLUGS).optional(),
   message: text(2000).default(''),
   consent: z.literal(true, { errorMap: () => ({ message: 'צריך לאשר שניצור איתך קשר' }) }),
   website: z.string().max(0).optional(),

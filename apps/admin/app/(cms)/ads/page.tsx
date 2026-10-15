@@ -10,10 +10,10 @@ import { AgentTab } from '@/components/ads/agent-tab';
 import { Archive, CampaignCards } from '@/components/ads/campaign-list';
 import { LeadsTable } from '@/components/ads/leads';
 import { Badge, Empty, ErrorBox, LinkButton, Loading, PageHeader, cx } from '@/components/ui';
-import { admin } from '@/lib/api';
+import { SITE_URL, admin } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 
-const TABS = ['campaigns', 'archive', 'leads', 'advertisers', 'agent', 'settings'] as const;
+const TABS = ['campaigns', 'inquiries', 'leads', 'archive', 'advertisers', 'agent', 'settings'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function AdsPage() {
@@ -32,12 +32,17 @@ export default function AdsPage() {
   const o = query.data;
   const labels: Record<Tab, ReactNode> = {
     campaigns: `קמפיינים (${o.campaigns.length})`,
-    archive: `ארכיון (${o.archive.length})`,
-    leads: (
+    inquiries: (
       <>
-        לידים ופניות {o.newLeads + o.newInquiries > 0 && <Badge tone="danger">{o.newLeads + o.newInquiries}</Badge>}
+        פניות מפרסמים {o.newInquiries > 0 && <Badge tone="danger">{o.newInquiries}</Badge>}
       </>
     ),
+    leads: (
+      <>
+        לידים מהמודעות {o.newLeads > 0 && <Badge tone="danger">{o.newLeads}</Badge>}
+      </>
+    ),
+    archive: `ארכיון (${o.archive.length})`,
     advertisers: `מפרסמים (${o.advertisers.length})`,
     agent: 'סוכן הפרסום',
     settings: 'הגדרות',
@@ -50,7 +55,7 @@ export default function AdsPage() {
         subtitle={o.settings.enabled ? 'מודעות של לקוחות באתר ובאפליקציה: קמפיינים, לידים, ודוח לכל מפרסם.' : 'המודעות כבויות כרגע בכל האתר (הגדרות).'}
         actions={
           <LinkButton href="/ads/new" variant="primary">
-            קמפיין חדש
+            מודעה חדשה
           </LinkButton>
         }
       />
@@ -63,12 +68,18 @@ export default function AdsPage() {
       </div>
       {tab === 'campaigns' && <CampaignCards campaigns={o.campaigns} />}
       {tab === 'archive' && <Archive campaigns={o.archive} />}
-      {tab === 'leads' && (
-        <div className="space-y-8">
-          <LeadsTable kind="lead" title="לידים מהמודעות" />
-          <LeadsTable kind="inquiry" title='פניות מעמוד "פרסום באתר"' />
+      {tab === 'inquiries' && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            עסקים שהשאירו פרטים בעמוד &quot;פרסמו אצלנו&quot; (מהבאנרים באתר). כל מנהל מקבל מייל על פנייה חדשה.{' '}
+            <a href={`${SITE_URL}/advertise`} target="_blank" rel="noopener noreferrer" className="font-bold text-info underline">
+              לעמוד באתר
+            </a>
+          </p>
+          <LeadsTable kind="inquiry" title="פניות מפרסמים" />
         </div>
       )}
+      {tab === 'leads' && <LeadsTable kind="lead" title="לידים מהמודעות" />}
       {tab === 'advertisers' && <Advertisers advertisers={o.advertisers} />}
       {tab === 'agent' && <AgentTab advertisers={o.advertisers} />}
       {tab === 'settings' && <AdsSettings settings={o.settings} />}

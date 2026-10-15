@@ -1,25 +1,41 @@
 'use client';
-// "Advertise with us": a business leaves its details, the newsroom gets an email and sees the
-// inquiry in the CMS ("פרסום" > "לידים ופניות"). Consent to be contacted is asked explicitly.
-import { AD_INQUIRY_CONSENT } from '@b4/shared';
-import { useState, type FormEvent } from 'react';
+// "Advertise with us": a business leaves a name and a phone (the rest is optional), what it is
+// interested in and a few words about itself. The inquiry lands in the CMS ("פרסום" > "פניות
+// מפרסמים") and every admin gets an email. Consent to be contacted is asked explicitly. A reader who
+// came from a section's banner has that section filled in.
+import { AD_INQUIRY_CONSENT, AD_INQUIRY_INTEREST_LABELS, AD_INQUIRY_INTERESTS, CATEGORIES, type AdInquiryInterest } from '@b4/shared';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ApiFailure, adsApi } from '@/lib/client-api';
 
-const INPUT = 'mt-1 block w-full rounded-md border border-line bg-white px-3 py-2.5 text-[16px] focus:border-ink focus:outline-none';
+const INPUT = 'mt-1.5 block w-full rounded-[8px] border border-line bg-white px-3.5 py-3 text-[16px] focus:border-ink focus:outline-none';
+const LABEL = 'block text-[15px] font-bold';
 
 export function AdvertiseForm() {
-  const [f, setF] = useState({ name: '', company: '', phone: '', email: '', message: '' });
+  const [f, setF] = useState({ name: '', phone: '', email: '', company: '', message: '' });
+  const [interests, setInterests] = useState<AdInquiryInterest[]>([]);
+  const [section, setSection] = useState<(typeof CATEGORIES)[number] | null>(null);
   const [consent, setConsent] = useState(false);
   const [trap, setTrap] = useState('');
   const [state, setState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const slug = new URLSearchParams(window.location.search).get('section');
+    const found = CATEGORIES.find((c) => c.slug === slug) ?? null;
+    if (found) {
+      setSection(found);
+      setInterests(['section']);
+    }
+  }, []);
+
+  const toggle = (i: AdInquiryInterest) => setInterests((list) => (list.includes(i) ? list.filter((x) => x !== i) : [...list, i]));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setState('busy');
     setError(null);
     try {
-      await adsApi.inquiry({ ...f, consent: consent as true, ...(trap ? { website: trap } : {}) });
+      await adsApi.inquiry({ ...f, interests, ...(section ? { section: section.slug } : {}), consent: consent as true, ...(trap ? { website: trap } : {}) });
       setState('done');
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : 'השליחה נכשלה. נסו שוב.');
@@ -29,36 +45,74 @@ export function AdvertiseForm() {
 
   if (state === 'done') {
     return (
-      <p role="status" className="mt-8 rounded-[10px] bg-stone p-5 text-[17px] font-bold">
-        תודה! קיבלנו את הפרטים, ונחזור אליכם בהקדם.
-      </p>
+      <div role="status" className="flex flex-col items-start gap-3 rounded-[14px] bg-stone p-8">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl text-white" aria-hidden="true">
+          ✓
+        </span>
+        <p className="font-display text-[26px] font-extrabold">תודה, קיבלנו!</p>
+        <p className="text-[17px] leading-relaxed text-ink-2">הפרטים הגיעו לצוות הפרסום שלנו, ונחזור אליכם בהקדם עם הצעה שמתאימה לכם.</p>
+      </div>
     );
   }
-  const field = (k: keyof typeof f, label: string, opts: { type?: string; required?: boolean; ltr?: boolean; auto?: string } = {}) => (
-    <label className="block text-[15px] font-bold">
-      {label}
-      <input type={opts.type ?? 'text'} required={opts.required} dir={opts.ltr ? 'ltr' : undefined} autoComplete={opts.auto} maxLength={k === 'email' ? 254 : 120} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={INPUT} />
-    </label>
-  );
+
   return (
-    <form onSubmit={submit} className="mt-8 space-y-4 rounded-[10px] border border-line p-5" aria-labelledby="advertise-form-title">
-      <h2 id="advertise-form-title" className="text-[22px] font-extrabold">
-        השאירו פרטים ונחזור אליכם
-      </h2>
+    <form onSubmit={submit} className="space-y-5" aria-label="השארת פרטים לפרסום">
       <div className="grid gap-4 sm:grid-cols-2">
-        {field('name', 'שם', { required: true, auto: 'name' })}
-        {field('company', 'העסק', { auto: 'organization' })}
-        {field('phone', 'טלפון', { type: 'tel', ltr: true, auto: 'tel' })}
-        {field('email', 'אימייל', { type: 'email', required: true, ltr: true, auto: 'email' })}
+        <label className={LABEL}>
+          שם מלא <span className="text-brand">*</span>
+          <input required autoComplete="name" maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={INPUT} />
+        </label>
+        <label className={LABEL}>
+          טלפון <span className="text-brand">*</span>
+          <input required type="tel" dir="ltr" autoComplete="tel" maxLength={20} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} className={`${INPUT} text-right`} />
+        </label>
+        <label className={LABEL}>
+          אימייל <span className="font-normal text-muted">(לא חובה)</span>
+          <input type="email" dir="ltr" autoComplete="email" maxLength={254} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className={`${INPUT} text-right`} />
+        </label>
+        <label className={LABEL}>
+          שם העסק <span className="font-normal text-muted">(לא חובה)</span>
+          <input autoComplete="organization" maxLength={120} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} className={INPUT} />
+        </label>
       </div>
-      <label className="block text-[15px] font-bold">
-        במה מדובר (לא חובה)
-        <textarea rows={4} maxLength={2000} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} className={INPUT} />
+
+      <fieldset>
+        <legend className={LABEL}>
+          מה מעניין אתכם? <span className="font-normal text-muted">(אפשר לבחור כמה)</span>
+        </legend>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {AD_INQUIRY_INTERESTS.map((i) => (
+            <button
+              key={i}
+              type="button"
+              aria-pressed={interests.includes(i)}
+              onClick={() => toggle(i)}
+              className={`rounded-full px-4 py-2 text-[15px] font-bold ring-1 transition-colors ${interests.includes(i) ? 'bg-ink text-white ring-ink' : 'bg-white text-ink-2 ring-line hover:ring-ink'}`}
+            >
+              {AD_INQUIRY_INTEREST_LABELS[i]}
+              {i === 'section' && section ? `: ${section.name}` : ''}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <label className={LABEL}>
+        ספרו לנו על העסק <span className="font-normal text-muted">(לא חובה)</span>
+        <textarea
+          rows={4}
+          maxLength={2000}
+          value={f.message}
+          onChange={(e) => setF({ ...f, message: e.target.value })}
+          placeholder="מה העסק עושה, למי הוא פונה, ומה הייתם רוצים שהפרסום ישיג"
+          className={INPUT}
+        />
       </label>
+
       {/* Left empty by people; bots fill it. */}
       <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={trap} onChange={(e) => setTrap(e.target.value)} className="hidden" />
-      <label className="flex items-start gap-2 text-[15px]">
-        <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
+
+      <label className="flex items-start gap-2.5 text-[15px] leading-relaxed">
+        <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 h-4 w-4" />
         <span>{AD_INQUIRY_CONSENT}</span>
       </label>
       {error ? (
@@ -66,8 +120,8 @@ export function AdvertiseForm() {
           {error}
         </p>
       ) : null}
-      <button type="submit" disabled={state === 'busy'} className="inline-flex h-12 items-center rounded-full bg-ink px-8 font-extrabold text-white hover:bg-brand disabled:opacity-60">
-        {state === 'busy' ? 'שולח…' : 'שליחה'}
+      <button type="submit" disabled={state === 'busy'} className="inline-flex h-13 items-center rounded-full bg-brand px-10 py-3.5 text-[17px] font-extrabold text-white hover:bg-brand-deep disabled:opacity-60">
+        {state === 'busy' ? 'שולח…' : 'שליחה, ונחזור אליכם'}
       </button>
     </form>
   );

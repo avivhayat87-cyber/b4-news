@@ -3,7 +3,7 @@
 // here from words in the brand fonts, in every size at once; an article-style ad has a picture
 // (uploaded, or drawn by the image model from a description), a headline, a line and a button.
 // Before it runs, the ads agent can check it; a changed ad is checked again.
-import { AD_SLOT_FORMATS, BANNER_THEMES, type AdComposeDto, type AdFormat, type AdImageDto, type AdTaskDto, type BannerTheme, type CampaignDto, type CreativeDto, type CreativeInput } from '@b4/shared';
+import { AD_SLOT_FORMATS, BANNER_THEMES, adSize, type AdComposeDto, type AdFormat, type AdImageDto, type AdTaskDto, type BannerTheme, type CampaignDto, type CreativeDto, type CreativeInput } from '@b4/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { admin, errorMessage } from '@/lib/api';
@@ -169,8 +169,8 @@ function Editor({ campaign, creative, onDone }: { campaign: CampaignDto; creativ
           {banner && mode === 'upload' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <PickImage use={format === 'billboard' ? 'billboard-desktop' : 'rectangle'} label={format === 'billboard' ? 'באנר למחשב (970×250)' : 'הבאנר (300×250)'} onPicked={(p) => setDesktop({ key: p.key, url: p.url })} />
-                {format === 'billboard' && <PickImage use="billboard-mobile" label="באנר לנייד (320×100)" onPicked={(p) => setMobile({ key: p.key, url: p.url })} />}
+                <PickImage use={format === 'billboard' ? 'billboard-desktop' : 'rectangle'} label={format === 'billboard' ? `באנר למחשב: ${adSize(970, 250)}` : `הבאנר: ${adSize(300, 250)}`} onPicked={(p) => setDesktop({ key: p.key, url: p.url })} />
+                {format === 'billboard' && <PickImage use="billboard-mobile" label={`באנר לנייד: ${adSize(320, 100)}`} onPicked={(p) => setMobile({ key: p.key, url: p.url })} />}
               </div>
               <p className="text-xs text-muted">בדיוק בגודל הזה, או כפול (למסכים חדים). בלי אנימציה. {format === 'billboard' && 'בלי באנר לנייד, המודעה לא תוצג בטלפונים.'}</p>
               {textField('sponsor', 'בחסות', 60)}

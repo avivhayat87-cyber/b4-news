@@ -16,7 +16,7 @@ export default function NewCampaignPage() {
     mutationFn: (input: ReturnType<typeof toInput>) => admin.post<CampaignDto>('/ads/campaigns', input),
     onSuccess: (c) => {
       void qc.invalidateQueries({ queryKey: ['ads'] });
-      toast('הקמפיין נשמר כטיוטה. עכשיו מוסיפים לו מודעה.');
+      toast('נשמר כטיוטה. עכשיו מעצבים את המודעה.');
       router.push(`/ads/${c.id}`);
     },
     onError: (e) => toast(errorMessage(e), 'danger'),
@@ -26,9 +26,9 @@ export default function NewCampaignPage() {
   const preset = typeof window === 'undefined' ? '' : (new URLSearchParams(window.location.search).get('advertiser') ?? '');
   return (
     <>
-      <PageHeader title="קמפיין חדש" subtitle="הקמפיין נשמר כטיוטה ולא מופיע באתר עד שמנהל מאשר אותו." />
+      <PageHeader title="מודעה חדשה" subtitle="בוחרים איפה היא תופיע, למי ומתי, ומה קורה בלחיצה. אחר כך מעצבים אותה. שום דבר לא עולה לאתר עד שמנהל מאשר." />
       <Card>
-        <CampaignForm initial={draftFrom(null, preset)} advertisers={query.data.advertisers} busy={create.isPending} submitLabel="שמירה והוספת מודעה" onSubmit={(d) => create.mutate(toInput(d))} />
+        <CampaignForm initial={draftFrom(null, preset)} advertisers={query.data.advertisers} busy={create.isPending} submitLabel="המשך: עיצוב המודעה" onSubmit={(d) => create.mutate(toInput(d))} />
       </Card>
     </>
   );
