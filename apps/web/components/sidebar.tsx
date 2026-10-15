@@ -6,7 +6,7 @@ import type { MarketQuote } from '@/lib/types';
 import { SocialIcon } from './icons';
 import { NewsletterForm } from './newsletter-form';
 import { MarketOverview } from './tradingview';
-import { HousePromo, SectionHeader } from './ui';
+import { HousePromo, NEW_WINDOW, SectionHeader } from './ui';
 
 const changeStyle: Record<MarketQuote['direction'], string> = {
   up: 'bg-[#E7F6EC] text-[#11743A]',
@@ -60,7 +60,7 @@ export function SocialLinks({ variant, links }: { variant: 'solid' | 'outline'; 
             href={s.href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={s.label}
+            aria-label={`${s.label}${NEW_WINDOW}`}
             className={
               variant === 'solid'
                 ? 'flex h-11 w-11 items-center justify-center rounded-full bg-ink text-white hover:bg-brand'

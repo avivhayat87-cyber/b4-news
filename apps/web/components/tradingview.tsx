@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CHART_SYMBOLS, MARKET_GROUPS, TICKER_SYMBOLS } from '@/lib/markets';
+import { NEW_WINDOW } from './ui';
 
 type Kind = 'ticker-tape' | 'market-overview' | 'market-quotes' | 'stock-heatmap' | 'screener' | 'advanced-chart' | 'events';
 
@@ -69,7 +70,10 @@ export function TradingViewWidget({
       const text = document.createElement('span');
       text.className = 'blue-text';
       text.append(label, 'TradingView');
-      link.append(text);
+      const hint = document.createElement('span');
+      hint.className = 'sr-only';
+      hint.textContent = NEW_WINDOW;
+      link.append(text, hint);
       credit.append(link);
       const script = document.createElement('script');
       script.src = `https://s3.tradingview.com/external-embedding/embed-widget-${kind}.js`;

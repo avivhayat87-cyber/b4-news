@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ArticleCard } from '@/lib/types';
 import { articleHref, toneBackground } from '@/lib/site';
 import { HeroCarousel } from './hero-carousel';
+import { TickerMotion } from './ticker-motion';
 import { CategoryTag, PublishedTime, wrap } from './ui';
 
 /**
@@ -82,13 +83,11 @@ function BreakingTicker({ items }: { items: ArticleCard[] }) {
         <span aria-hidden="true" className="h-2 w-2 rounded-full bg-white" />
         מבזקים
       </span>
-      <div className="group min-w-0 flex-1 overflow-hidden">
-        {/* Two copies so the loop is seamless; the copy is hidden from screen readers. */}
-        <div className="flex w-max gap-10 animate-ticker group-hover:[animation-play-state:paused] motion-reduce:animate-none">
-          {row(false)}
-          {row(true)}
-        </div>
-      </div>
+      {/* Two copies so the loop is seamless; the copy is hidden from screen readers. */}
+      <TickerMotion>
+        {row(false)}
+        {row(true)}
+      </TickerMotion>
     </div>
   );
 }

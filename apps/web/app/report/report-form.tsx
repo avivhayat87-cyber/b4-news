@@ -3,6 +3,7 @@
 import { TAKEDOWN_KINDS, TAKEDOWN_KIND_LABELS, TAKEDOWN_RESPONSE_HOURS, type TakedownKind } from '@b4/shared';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
+import { NewWindowHint } from '@/components/ui';
 import { ApiFailure, takedownApi } from '@/lib/client-api';
 
 const field = 'w-full rounded-xl border-[1.5px] border-line bg-white px-4 py-2.5 text-base focus:border-ink focus:outline-none';
@@ -120,6 +121,7 @@ export function ReportForm({ url: initialUrl, commentId }: { url: string; commen
           הפרטים שמסרתי נכונים, ואני מסכים/ה ששמי ופרטי הפנייה יישמרו לצורך הטיפול בה, לפי{' '}
           <Link href="/privacy" target="_blank" className="font-bold text-brand underline underline-offset-2">
             מדיניות הפרטיות
+            <NewWindowHint />
           </Link>
           .
         </label>

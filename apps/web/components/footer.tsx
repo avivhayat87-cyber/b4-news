@@ -4,7 +4,7 @@ import { CATEGORIES, SITE, categoryHref, socialLinks } from '@/lib/site';
 import { ManageConsentButton } from './consent-banner';
 import { NewsletterForm } from './newsletter-form';
 import { SocialLinks } from './sidebar';
-import { wrap } from './ui';
+import { NewWindowHint, wrap } from './ui';
 
 const outlineButton =
   'inline-flex h-12 items-center rounded-full border-2 border-white px-[22px] text-[15px] font-extrabold text-white hover:bg-white/10 focus-visible:outline-white';
@@ -36,21 +36,25 @@ export async function SiteFooter() {
             {links.appStore ? (
               <a href={links.appStore} target="_blank" rel="noopener noreferrer" className="inline-flex h-12 items-center rounded-full bg-white px-[22px] text-[15px] font-extrabold text-ink hover:bg-brand-soft">
                 {links.googlePlay ? 'App Store' : 'הורדת האפליקציה'}
+                <NewWindowHint />
               </a>
             ) : null}
             {links.googlePlay ? (
               <a href={links.googlePlay} target="_blank" rel="noopener noreferrer" className="inline-flex h-12 items-center rounded-full bg-white px-[22px] text-[15px] font-extrabold text-ink hover:bg-brand-soft">
                 {links.appStore ? 'Google Play' : 'הורדת האפליקציה'}
+                <NewWindowHint />
               </a>
             ) : null}
             {links.telegram ? (
               <a href={links.telegram} target="_blank" rel="noopener noreferrer" className={outlineButton}>
                 ערוץ הטלגרם
+                <NewWindowHint />
               </a>
             ) : null}
             {links.whatsapp ? (
               <a href={links.whatsapp} target="_blank" rel="noopener noreferrer" className={outlineButton}>
                 ערוץ הוואטסאפ
+                <NewWindowHint />
               </a>
             ) : null}
             {!appLink && !links.telegram && !links.whatsapp ? (

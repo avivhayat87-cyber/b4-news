@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import { MarketsPage } from '@/components/markets-page';
 import { MARKET_TABS, marketsHref } from '@/lib/markets';
 
-export const dynamicParams = false;
-
+// Not `dynamicParams = false`: under it Next 15 turns a page into "not found" the first time it
+// refreshes (NoFallbackError). Other tabs get notFound() below instead.
 const TABS = MARKET_TABS.filter((t) => t.slug !== '');
 
 export function generateStaticParams() {

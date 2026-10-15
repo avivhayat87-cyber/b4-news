@@ -356,10 +356,11 @@ const SMOKE_ARTICLES = 100;
 
 /**
  * The pages readers and editors depend on, each rendered by the running version from its data:
- * every recent article with its comments, every section, search, markets, the sitemap and the CMS.
+ * every recent article with its comments, every section, search, markets, the info pages from the
+ * sitemap (again after a refresh) and the CMS.
  * On the rehearsal that data is a copy of the live site, so one article that breaks stops the release.
  */
-async function smoke(which) {
+async function smoke(which, keys) {
   const p = PORTS[which];
   const api = `http://127.0.0.1:${p.api}`;
   const web = `http://127.0.0.1:${p.web}`;
@@ -395,9 +396,32 @@ async function smoke(which) {
   for (const c of cats) await check(`section ${c.slug}`, `${web}/category/${encodeURIComponent(c.slug)}`, page);
   await check('search', `${web}/search?q=${encodeURIComponent('כלכלה')}`, page);
   await check('markets', `${web}/markets`, page);
-  await check('sitemap', `${web}/sitemap.xml`);
+  const sitemap = await check('sitemap', `${web}/sitemap.xml`);
+  // The rest of the sitemap: the market tabs and the info pages (terms, privacy, accessibility…).
+  const others = [...new Set([...(sitemap?.text ?? '').matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1]).pathname))].filter(
+    (path) => path !== '/' && path !== '/markets' && !path.startsWith('/article/') && !path.startsWith('/category/'),
+  );
+  for (const path of others) await check(path, `${web}${path}`, page);
+  // Pages built ahead of time refresh in place, and a refresh that goes wrong can leave a page
+  // "not found" until a restart (it happened to the info pages), so they are asked for again
+  // after one: the first request starts the refresh, the second gets its result.
+  if (keys?.REVALIDATE_SECRET && others.length) {
+    try {
+      await fetch(`${web}/api/revalidate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-revalidate-secret': keys.REVALIDATE_SECRET },
+        body: JSON.stringify({ tags: ['site'] }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      for (const path of others) await get(`${web}${path}`, 90_000).catch(() => null);
+      await sleep(3000);
+      for (const path of others) await check(`${path} after a refresh`, `${web}${path}`, page);
+    } catch (e) {
+      problems.push(`refreshing the site: ${e.message}`);
+    }
+  }
   await check('CMS sign-in page', `http://127.0.0.1:${p.cms}/login`);
-  say(`   checked ${feed?.items?.length ?? 0} articles with their comments, ${cats.length} sections, search, markets, the sitemap and the CMS`);
+  say(`   checked ${feed?.items?.length ?? 0} articles with their comments, ${cats.length} sections, search, markets, ${others.length} more pages (also after a refresh), the sitemap and the CMS`);
   return problems;
 }
 
@@ -590,7 +614,7 @@ async function release(ref = 'HEAD') {
     await startService(R, 'staging', 'web', keys);
     await startService(R, 'staging', 'cms', keys);
     for (const name of ['web', 'cms']) await until(() => answering(PORTS.staging[name]), 90_000);
-    const rehearsal = await smoke('staging');
+    const rehearsal = await smoke('staging', keys);
     await stopAll('staging');
     if (rehearsal.length) fail(`The new version failed on the copy of the live data:\n  - ${rehearsal.join('\n  - ')}`);
 
@@ -610,7 +634,7 @@ async function release(ref = 'HEAD') {
     try {
       await startAll(R, 'live', keys);
       say('7/7 Testing the live site...');
-      const problems = await smoke('live');
+      const problems = await smoke('live', keys);
       if (problems.length) fail(`The new version failed live:\n  - ${problems.join('\n  - ')}`);
     } catch (e) {
       say(`${e.message}\nRolling back...`);

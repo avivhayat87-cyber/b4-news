@@ -487,9 +487,12 @@ type Step = 'email' | 'code' | 'name';
 export function SignIn({
   onSignedIn,
   title = 'רוצים להגיב?',
+  heading: Heading = 'h3',
 }: {
   onSignedIn: (reader: ReaderDto) => void;
   title?: string;
+  /** h2 where the sign-in is the page's first section (account, my feed). */
+  heading?: 'h2' | 'h3';
 }) {
   const id = useId();
   const [step, setStep] = useState<Step>('email');
@@ -547,7 +550,7 @@ export function SignIn({
 
   return (
     <div className="rounded-xl bg-stone p-5">
-      <h3 className="text-lg font-extrabold">{title}</h3>
+      <Heading className="text-lg font-extrabold">{title}</Heading>
       <p className="mt-1 text-[15px] text-ink-2">
         {step === 'email'
           ? 'נשלח אליכם קוד חד-פעמי למייל. בלי סיסמאות.'

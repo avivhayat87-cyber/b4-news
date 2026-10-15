@@ -1,29 +1,33 @@
 // Info pages edited in the CMS (Settings > site details): about, contact,
 // advertise, accessibility, privacy, terms. Any other top-level path is a 404.
-import { PAGE_SLUGS } from '@b4/shared';
+import { PAGE_SLUGS, type PageSlug } from '@b4/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { wrap } from '@/components/ui';
 import { getPage, getSite } from '@/lib/api';
 
-export const dynamicParams = false;
+// Not `dynamicParams = false`: under it Next 15 turns a page into "not found" the first time it
+// refreshes (NoFallbackError). Other paths are turned away by isPage() instead.
 export const revalidate = 600;
 
 export function generateStaticParams() {
   return PAGE_SLUGS.map((page) => ({ page }));
 }
 
+const isPage = (page: string): page is PageSlug => (PAGE_SLUGS as readonly string[]).includes(page);
+
 type Props = { params: Promise<{ page: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { page } = await params;
-  const data = await getPage(page);
+  const data = isPage(page) ? await getPage(page) : null;
   return data ? { title: data.title, alternates: { canonical: `/${page}` } } : {};
 }
 
 export default async function InfoPage({ params }: Props) {
   const { page } = await params;
+  if (!isPage(page)) notFound();
   const [data, site] = await Promise.all([getPage(page), getSite()]);
   if (!data) notFound();
   const showContact = page === 'contact' || page === 'advertise';

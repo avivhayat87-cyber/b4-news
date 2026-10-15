@@ -39,7 +39,7 @@ export function AccountPanel() {
     return (
       <div className="flex flex-col gap-4">
         <p className="text-lg text-ink-2">כדי לנהל את החשבון, להחליף את שם התצוגה או למחוק את החשבון, התחברו עם קוד חד-פעמי למייל.</p>
-        <SignIn title="התחברות לחשבון" onSignedIn={(reader) => setState({ kind: 'signed-in', reader })} />
+        <SignIn title="התחברות לחשבון" heading="h2" onSignedIn={(reader) => setState({ kind: 'signed-in', reader })} />
       </div>
     );
   }

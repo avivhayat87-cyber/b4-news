@@ -63,7 +63,7 @@ export function MyFeed() {
     return (
       <div className="flex flex-col gap-4">
         <p className="text-lg text-ink-2">כתבות מהתחומים שבחרת, עם התגובות המובילות והשיחות סביבן. התחברו כדי לראות את הפיד שלכם.</p>
-        <SignIn title="התחברות לפיד שלי" onSignedIn={setReader} />
+        <SignIn title="התחברות לפיד שלי" heading="h2" onSignedIn={setReader} />
       </div>
     );
   }

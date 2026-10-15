@@ -14,7 +14,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-[960px] px-4 pb-10 pt-8 md:px-6">
-      <SectionHeader title="חיפוש" className="mb-6" />
+      <SectionHeader as="h1" title="חיפוש" className="mb-6" />
       <form action="/search" role="search" className="mb-8 flex gap-2">
         <label htmlFor="search-page-q" className="sr-only">
           מה לחפש

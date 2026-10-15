@@ -1,6 +1,7 @@
 import type { SocialKey } from '@/lib/site';
 import { CopyLinkButton } from './copy-link-button';
 import { SocialIcon } from './icons';
+import { NEW_WINDOW } from './ui';
 
 export function ShareBar({ url, title }: { url: string; title: string }) {
   const u = encodeURIComponent(url);
@@ -20,7 +21,7 @@ export function ShareBar({ url, title }: { url: string; title: string }) {
             href={s.href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={s.label}
+            aria-label={`${s.label}${NEW_WINDOW}`}
             className="flex h-10 w-10 items-center justify-center rounded-full border-[1.5px] border-line text-ink hover:border-brand hover:text-brand"
           >
             <SocialIcon name={s.key} size={18} />

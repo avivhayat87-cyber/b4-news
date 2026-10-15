@@ -30,7 +30,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   return (
     <div className={`${wrap} flex flex-wrap gap-10 pb-8 pt-8`}>
       <div className="min-w-0 flex-[999_1_640px]">
-        <SectionHeader title={data.category.name} className="mb-6" />
+        <SectionHeader as="h1" title={data.category.name} className="mb-6" />
         {!lead ? (
           <p className="py-10 text-lg text-muted">עדיין אין כתבות במדור הזה.</p>
         ) : (

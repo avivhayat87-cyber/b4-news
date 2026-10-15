@@ -1,3 +1,4 @@
+import { PAGE_SLUGS } from '@b4/shared';
 import type { MetadataRoute } from 'next';
 import { listRecentForSitemap } from '@/lib/api';
 import { MARKET_TABS, marketsHref } from '@/lib/markets';
@@ -12,6 +13,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: abs('/'), changeFrequency: 'always', priority: 1 },
     ...CATEGORIES.map((c) => ({ url: abs(categoryHref(c.slug)), changeFrequency: 'hourly' as const, priority: 0.7 })),
     ...MARKET_TABS.map((t) => ({ url: abs(marketsHref(t.slug)), changeFrequency: 'daily' as const, priority: 0.5 })),
+    ...PAGE_SLUGS.map((p) => ({ url: abs(`/${p}`), changeFrequency: 'monthly' as const, priority: 0.3 })),
     ...articles.map((a) => ({ url: abs(articleHref(a)), lastModified: a.publishedAt, priority: 0.6 })),
   ];
 }

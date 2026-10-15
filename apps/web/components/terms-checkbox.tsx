@@ -2,6 +2,7 @@
 
 import { MIN_READER_AGE } from '@b4/shared';
 import Link from 'next/link';
+import { NewWindowHint } from './ui';
 
 /** The checkbox every sign-up form carries (comments, newsletter). Required by the API too. */
 export function TermsCheckbox({
@@ -30,10 +31,12 @@ export function TermsCheckbox({
         אני בן/בת {MIN_READER_AGE} ומעלה ומסכים/ה ל
         <Link href="/terms" target="_blank" className={link}>
           תנאי השימוש
+          <NewWindowHint />
         </Link>{' '}
         ול
         <Link href="/privacy" target="_blank" className={link}>
           מדיניות הפרטיות
+          <NewWindowHint />
         </Link>
       </label>
     </div>

@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
-import { ArticleImage, HousePromo, RankBadge, SectionHeader, wrap } from '@/components/ui';
+import { ArticleImage, HousePromo, NewWindowHint, RankBadge, SectionHeader, wrap } from '@/components/ui';
 import { getArticle, getHome, getRelated, getSite } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { SITE, articleHref, categoryHref } from '@/lib/site';
@@ -154,6 +154,7 @@ export default async function ArticlePage({ params }: Props) {
                 על בסיס דיווח ב-
                 <a href={article.source.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-brand">
                   {article.source.name}
+                  <NewWindowHint />
                 </a>
               </p>
             ) : null}

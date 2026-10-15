@@ -37,6 +37,13 @@ const headerSizes = {
   sm: { seal: 18, title: 'text-[20px] md:text-[22px]' },
 } as const;
 
+/** Said after a link that opens a new window, for screen readers (in aria-label, or via NewWindowHint). */
+export const NEW_WINDOW = ' (נפתח בחלון חדש)';
+
+export function NewWindowHint() {
+  return <span className="sr-only">{NEW_WINDOW}</span>;
+}
+
 /** Section title, opened by the seal mark. */
 export function SectionHeader({
   title,
@@ -45,11 +52,14 @@ export function SectionHeader({
   href,
   subtitle,
   rule = true,
+  as: Heading = 'h2',
   children,
   className = '',
 }: {
   title: string;
   id?: string;
+  /** h1 where the section is the page itself (a category, search). */
+  as?: 'h1' | 'h2';
   size?: keyof typeof headerSizes;
   href?: string;
   subtitle?: string;
@@ -62,9 +72,9 @@ export function SectionHeader({
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
       <SealDot size={s.seal} />
-      <h2 id={id} className={`font-display font-extrabold leading-none ${s.title}`}>
+      <Heading id={id} className={`font-display font-extrabold leading-none ${s.title}`}>
         {title}
-      </h2>
+      </Heading>
       {subtitle ? <span className="hidden text-sm text-muted md:inline">{subtitle}</span> : null}
       {rule ? <span aria-hidden="true" className="h-0.5 flex-1 bg-ink" /> : null}
       {href ? (

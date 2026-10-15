@@ -37,9 +37,12 @@ npm run release -- <commit>  # or a specific commit, tag or branch
    articles, comments, readers, drafts, media and the rest must not go down.
 4. **Build** the site and the CMS. The site's first pages are rendered from the rehearsal.
 5. **Test the rehearsal.** On the copy of the live data, the home page, every one of the latest
-   100 articles with its comments, every section, search, the markets page, the sitemap and the
-   CMS sign-in page must all load. One article that breaks stops the release. The rehearsal
-   never runs scans, AI, publishing or social posts.
+   100 articles with its comments, every section, search, the markets page, the sitemap, every
+   other page in the sitemap (the market tabs and the info pages: terms, privacy, accessibility…)
+   and the CMS sign-in page must all load. Pages built ahead of time are asked for again after a
+   refresh of the site, because a refresh that goes wrong can leave a page "not found" until the
+   next restart. One article that breaks stops the release. The rehearsal never runs scans, AI,
+   publishing or social posts.
 6. **Switch over.** The live environment stops, the data is backed up, and the new version
    starts. Its database changes run on the real data.
 7. **Test live.** The same pages are checked again. If anything fails, the release **rolls
