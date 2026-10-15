@@ -54,8 +54,11 @@ export function TradingViewWidget({
       setLoaded(true);
     };
     el.addEventListener('load', onLoad, true);
-    // Deferred so React's development double-mount doesn't inject the script twice.
-    const timer = setTimeout(() => {
+    // After the page itself has loaded, when the browser is idle: the widget brings dozens of
+    // third-party files, and they must not compete with the page's own picture and text.
+    // (Deferred anyway, so React's development double-mount doesn't inject the script twice.)
+    let idle = 0;
+    const inject = () => {
       const widget = document.createElement('div');
       widget.className = 'tradingview-widget-container__widget';
       const credit = document.createElement('div');
@@ -80,9 +83,16 @@ export function TradingViewWidget({
       script.async = true;
       script.text = settings;
       el.replaceChildren(widget, credit, script);
-    }, 0);
+    };
+    const whenIdle = () => {
+      idle = typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(inject, { timeout: 2000 }) : window.setTimeout(inject, 200);
+    };
+    if (document.readyState === 'complete') whenIdle();
+    else window.addEventListener('load', whenIdle, { once: true });
     return () => {
-      clearTimeout(timer);
+      window.removeEventListener('load', whenIdle);
+      if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle);
+      window.clearTimeout(idle);
       el.removeEventListener('load', onLoad, true);
       el.replaceChildren();
     };

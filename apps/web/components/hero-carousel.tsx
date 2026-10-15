@@ -180,7 +180,9 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
                     src={a.image.url}
                     alt={a.image.alt}
                     fill
-                    priority={i === 0}
+                    // The first slide is the page's main picture: fetched first (Next 16's `priority` only preloads, at low priority).
+                    loading={i === 0 ? 'eager' : undefined}
+                    fetchPriority={i === 0 ? 'high' : undefined}
                     sizes="(min-width: 1280px) 830px, (min-width: 1024px) 66vw, 100vw"
                     draggable={false}
                     className={`object-cover transition-transform ease-out ${active && !reduced ? 'scale-[1.07] duration-[7000ms]' : 'scale-100 duration-700'}`}

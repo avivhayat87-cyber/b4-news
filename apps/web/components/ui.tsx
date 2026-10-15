@@ -143,7 +143,9 @@ export function ArticleImage({
           alt={article.image.alt}
           fill
           sizes={sizes}
-          priority={priority}
+          // The page's main picture: fetched first (Next 16's `priority` only preloads, at low priority).
+          loading={priority ? 'eager' : undefined}
+          fetchPriority={priority ? 'high' : undefined}
           className="object-cover"
         />
       ) : (
