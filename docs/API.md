@@ -95,11 +95,11 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 
 | Method | Path | |
 | --- | --- | --- |
-| GET | `/admin/integrations` | `IntegrationStatus[]` (Claude, Gemini, SMTP): configured or not, last 4 characters, source (CMS / environment) |
+| GET | `/admin/integrations` | `IntegrationStatus[]` (Claude, Gemini, SMTP, the Meta app): configured or not, last 4 characters, source (CMS / environment) |
 | PUT | `/admin/integrations/:id` | `UpdateIntegrationInput` (`null` removes a value); secrets stored encrypted |
 | POST | `/admin/integrations/:id/test` | `ConnectionTest` |
-| PUT | `/admin/social-accounts/:id/token` | `SetTokenInput` (`null` removes) → `SocialAccountDto` |
-| POST | `/admin/social-accounts/:id/test` | `ConnectionTest` (Telegram, Facebook, Instagram) |
+| PUT | `/admin/social-accounts/:id/token` | `SetTokenInput` (`null` removes) → `SocialAccountDto`. Facebook and Instagram: a personal token is made into the page's own, which never expires (needs the Meta app's secret when it is short-lived); a page token that expires is refused (`422`, with what to paste); rate-limited |
+| POST | `/admin/social-accounts/:id/test` | `ConnectionTest` (Telegram, Facebook, Instagram; for Meta also that the page token never expires) |
 | GET / PUT | `/admin/site` | `SiteSettings` (read: any staff; write: admin; the terms version is never changed by a PUT); revalidates the site's `site` tag |
 | GET | `/admin/site/defaults` | the built-in text of every info page ("restore the default text") |
 | POST | `/admin/site/legal-version` | publishes a new terms version (today's date): every reader is asked to accept again |

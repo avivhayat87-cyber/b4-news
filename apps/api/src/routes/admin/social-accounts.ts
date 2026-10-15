@@ -31,7 +31,8 @@ export const socialAccountRoutes: FastifyPluginAsyncZod<{ s: Services }> = async
     return reply.status(204).send();
   });
 
-  app.put('/social-accounts/:id/token', { schema: { params, body: SetTokenInput, response: { 200: SocialAccountDto } } }, async (req) => {
+  // A Facebook or Instagram token is checked with Meta and made into the page's own before it is kept.
+  app.put('/social-accounts/:id/token', { schema: { params, body: SetTokenInput, response: { 200: SocialAccountDto } }, config: testLimit }, async (req) => {
     const staff = requireStaff(req, 'admin');
     return accounts.setAccountToken(s, staff, req.params.id, req.body.token);
   });

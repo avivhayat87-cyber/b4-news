@@ -130,11 +130,17 @@ function IntegrationCard({ status }: { status: IntegrationStatus }) {
   );
 }
 
+// Facebook and Instagram: the personal token is enough; the server makes the page's permanent one from it.
 const TOKEN_HELP: Record<SocialPlatform, { id: string; token: string }> = {
-  facebook: { id: 'מזהה העמוד (Page ID, מספר)', token: 'Page Access Token קבוע, עם pages_show_list, pages_read_engagement, pages_manage_posts ו-pages_manage_engagement (לתגובה עם הקישור)' },
+  facebook: {
+    id: 'מזהה העמוד (Page ID, מספר)',
+    token:
+      'מדביקים את הטוקן האישי מ-Graph API Explorer (ב-"User or Page" בוחרים User Token), עם ההרשאות pages_show_list, pages_read_engagement, pages_manage_posts ו-pages_manage_engagement (לתגובה עם הקישור). המערכת הופכת אותו לטוקן הקבוע של העמוד. צריך שסוד האפליקציה יהיה מוזן בכרטיס "Meta" שלמעלה.',
+  },
   instagram: {
     id: 'מזהה האינסטגרם (IG User ID, מספר; לא @שם)',
-    token: 'ה-Page Access Token של עמוד הפייסבוק המקושר, עם instagram_basic, instagram_content_publish ו-instagram_manage_comments (לתגובה עם הקישור)',
+    token:
+      'מדביקים את הטוקן האישי מ-Graph API Explorer (אפשר את אותו אחד של פייסבוק), עם ההרשאות instagram_basic, instagram_content_publish, instagram_manage_comments (לתגובה עם הקישור), pages_show_list ו-pages_read_engagement. המערכת מוצאת את העמוד שהאינסטגרם מקושר אליו ושומרת את הטוקן הקבוע שלו.',
   },
   telegram: { id: 'שם הערוץ (@channel) או מזהה הצ׳אט', token: 'טוקן של בוט מ-@BotFather. הבוט צריך להיות מנהל בערוץ' },
   whatsapp: { id: 'שם או קישור הערוץ', token: 'לערוצי וואטסאפ אין API לפרסום; הפוסטים יוכנו לפרסום ידני' },
@@ -151,16 +157,19 @@ function AccountRow({ account, duplicate }: { account: SocialAccountDto; duplica
   const [token, setToken] = useState('');
   const [test, setTest] = useState<ConnectionTest | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['social-accounts'] });
+  const check = useMutation({ mutationFn: () => admin.post<ConnectionTest>(`/social-accounts/${account.id}/test`), onSuccess: setTest, onError: (e) => toast(errorMessage(e), 'danger') });
   const saveToken = useMutation({
     mutationFn: (t: string | null) => admin.put(`/social-accounts/${account.id}/token`, { token: t }),
-    onSuccess: () => {
+    onSuccess: (_, t) => {
       setToken('');
       setTest(null);
       refresh();
+      // A new token is tested right away, so it's clear at once whether posting will work.
+      if (t) check.mutate();
     },
-    onError: (e) => toast(errorMessage(e), 'danger'),
+    // Why Meta's token wasn't kept can take a few sentences: shown in place, not in a passing toast.
+    onError: (e) => setTest({ ok: false, message: errorMessage(e) }),
   });
-  const check = useMutation({ mutationFn: () => admin.post<ConnectionTest>(`/social-accounts/${account.id}/test`), onSuccess: setTest, onError: (e) => toast(errorMessage(e), 'danger') });
   const toggle = useMutation({ mutationFn: () => admin.patch(`/social-accounts/${account.id}`, { isActive: !account.isActive }), onSuccess: refresh, onError: (e) => toast(errorMessage(e), 'danger') });
   // Correcting the ID keeps the account's token.
   const changeId = useMutation({

@@ -1,7 +1,7 @@
 // Settings > connections and site details: write-only secrets, encrypted at
 // rest, admin-only, applied without a restart.
 import { articleDrafts, eq, secrets, socialAccounts, socialPackages, socialPosts, users } from '@b4/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SecretBox } from '../src/lib/secret-box';
 import { createAiHub } from '../src/services/ai';
 import { SettingsStore } from '../src/services/settings';
@@ -98,7 +98,10 @@ describe('connections', () => {
 
     // An account saved with a wrong ID before this check existed.
     const [ig] = await ctx.db.insert(socialAccounts).values({ platform: 'instagram', displayName: 'אינסטגרם', externalId: '@B4newsB4', secretRef: 'IG_OLD', linkInFirstComment: true }).returning();
-    await admin.put(`/social-accounts/${ig!.id}/token`, { token: 'EAAG-test-page-token-0123456789' });
+    // Meta, asked about the token, says it is the page's own and never expires.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { is_valid: true, type: 'PAGE', expires_at: 0 } })));
+    expect((await admin.put(`/social-accounts/${ig!.id}/token`, { token: 'EAAG-test-page-token-0123456789' })).status).toBe(200);
+    vi.unstubAllGlobals();
     expect((await admin.patch(`/social-accounts/${ig!.id}`, { externalId: 'B4newsB4' })).status).toBe(422);
     const fixed = await admin.patch(`/social-accounts/${ig!.id}`, { externalId: '17841400000000001' });
     expect(fixed.status).toBe(200);

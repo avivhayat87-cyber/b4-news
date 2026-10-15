@@ -21,7 +21,7 @@ export type IntegrationField = {
 
 export type IntegrationDef = { title: string; description: string; docsUrl: string; fields: IntegrationField[] };
 
-export const INTEGRATION_IDS = ['anthropic', 'gemini', 'smtp'] as const;
+export const INTEGRATION_IDS = ['anthropic', 'gemini', 'smtp', 'meta'] as const;
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 
 export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
@@ -91,6 +91,25 @@ export const INTEGRATIONS: Record<IntegrationId, IntegrationDef> = {
     fields: [
       { key: 'url', label: 'כתובת SMTP', secret: true, placeholder: 'smtps://user:password@smtp.example.com:465', pattern: '^smtps?://.+' },
       { key: 'from', label: 'שולח', secret: false, defaultValue: "B4 NEW'S <no-reply@example.co.il>" },
+    ],
+  },
+  // The app the posts go out through ("B4 NEWS Publisher"). Its secret lets the server turn the
+  // personal token pasted for Facebook or Instagram into the page's token that never expires.
+  meta: {
+    title: 'Meta: פייסבוק ואינסטגרם',
+    description:
+      'האפליקציה שדרכה המערכת מפרסמת לעמוד הפייסבוק ולאינסטגרם. עם הסוד שלה מספיק להדביק בחשבונות פייסבוק ואינסטגרם (למטה) את הטוקן האישי מ-Graph API Explorer, והמערכת הופכת אותו לטוקן הקבוע של העמוד.',
+    docsUrl: 'https://developers.facebook.com/apps/1665664261787346/settings/basic/',
+    fields: [
+      { key: 'appId', label: 'מזהה האפליקציה (App ID)', secret: false, defaultValue: '1665664261787346', pattern: '^\\d{5,25}$', help: 'המספר שמופיע למעלה במסך האפליקציה ב-developers.facebook.com.' },
+      {
+        key: 'appSecret',
+        label: 'סוד האפליקציה (App Secret)',
+        secret: true,
+        placeholder: 'a1b2c3d4…',
+        pattern: '^[A-Fa-f0-9]{32}$',
+        help: 'במסך האפליקציה: App settings > Basic > App secret > Show. מזינים פעם אחת.',
+      },
     ],
   },
 };

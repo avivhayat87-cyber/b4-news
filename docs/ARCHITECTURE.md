@@ -44,7 +44,8 @@ services/
   context.ts      Services = { db, config, settings, ai, storage, fetch, mailer, capture, log }, built once (createServices)
   settings.ts     SettingsStore: CMS-managed settings and encrypted secrets (30 s cache); integration values = CMS, then env
   site-settings.ts public links, contact details and info pages (defaults included)
-  connection-tests.ts  the "test connection" calls (Anthropic, Gemini, SMTP, Telegram, Meta)
+  connection-tests.ts  the "test connection" calls (Anthropic, Gemini, SMTP, the Meta app, Telegram, Facebook/Instagram incl. the token's expiry)
+  social-accounts.ts   the accounts posts go to; a pasted personal Meta token → long-lived (the app's secret) → the page's own token from me/accounts, which never expires
   scraper/        parse (RSS/Atom, sitemap, HTML, article incl. JSON-LD), collect (delta, canonical URLs, sitemap indexes),
                   robots (robots.txt), autodetect + setup (feed discovery from a link), run, test-source
   drafts.ts       selections → drafts, AI rewrite/refine/images, autosave, finalize/skip, reading models

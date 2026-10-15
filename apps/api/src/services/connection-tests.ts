@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { ConnectionTest, IntegrationId } from '@b4/shared';
 import nodemailer from 'nodemailer';
 import type { Services } from './context';
+import { META_TOKEN_HOW, inspectMetaToken, metaExpiryProblem } from './social-accounts';
 import { LOCAL_MEDIA_ERROR, publiclyReachable } from './social-adapters';
 
 const ok = (message: string): ConnectionTest => ({ ok: true, message });
@@ -56,6 +57,15 @@ export async function testIntegration(s: Services, id: IntegrationId): Promise<C
       if (r.status === 400 || r.status === 401 || r.status === 403) return fail(`המפתח לא התקבל.${reason}`);
       return fail(`Gemini החזיר שגיאה (${r.status}).${reason}`);
     }
+    if (id === 'meta') {
+      if (!v.appSecret) return fail('לא הוזן סוד האפליקציה.');
+      // The app's own key reads the app itself: a wrong ID or secret is refused here.
+      const app = await getJson(`https://graph.facebook.com/${s.config.metaGraphVersion}/${encodeURIComponent(v.appId!)}?fields=name&access_token=${encodeURIComponent(`${v.appId}|${v.appSecret}`)}`);
+      if (app.status === 200) return ok(`מחובר לאפליקציה "${app.body.name ?? v.appId}".`);
+      const reason = typeof app.body.error?.message === 'string' ? ` Meta: ${app.body.error.message.slice(0, 200)}` : '';
+      if (app.status === 400 || app.status === 401 || app.status === 403) return fail(`מזהה האפליקציה או הסוד שלה לא נכונים.${reason}`);
+      return fail(`Meta החזיר שגיאה (${app.status}).${reason}`);
+    }
     if (!v.url) return fail('לא הוזנה כתובת SMTP.');
     await nodemailer.createTransport(v.url).verify();
     return ok('שרת הדואר מחובר ומקבל הודעות.');
@@ -64,42 +74,49 @@ export async function testIntegration(s: Services, id: IntegrationId): Promise<C
   }
 }
 
-const PAGE_TOKEN_HOW = 'מוציאים טוקן עמוד ב-Graph API Explorer: מריצים me/accounts?fields=id,name,access_token ומעתיקים את ה-access_token שליד העמוד.';
-
 /**
  * Facebook and Instagram post with the Page's own token. A personal token reads the page
- * fine but can't publish as it, and the Explorer's one expires within hours, so both are
- * refused here rather than shown as connected. Instagram must be the account linked to that page.
+ * fine but can't publish as it, and a page token that expires (the Explorer's page picker
+ * makes one that lasts an hour) would stop posting soon, so both are refused here rather than
+ * shown as connected. Instagram must be the account linked to that page.
  */
-async function testMeta(graph: string, token: string, platform: 'facebook' | 'instagram', externalId: string): Promise<ConnectionTest> {
+async function testMeta(s: Services, token: string, platform: 'facebook' | 'instagram', externalId: string): Promise<ConnectionTest> {
+  const graph = `https://graph.facebook.com/${s.config.metaGraphVersion}`;
   const get = (path: string) => getJson(`${graph}/${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`);
   const me = await get(`me?fields=id,name${platform === 'instagram' ? ',instagram_business_account' : ''}`);
   if (me.status !== 200) {
     const err = (me.body.error ?? {}) as { code?: number; message?: string };
-    if (err.code === 190) return fail(`הטוקן פג תוקף או בוטל (כנראה טוקן אישי זמני). ${PAGE_TOKEN_HOW}`);
+    if (err.code === 190) return fail(`הטוקן פג תוקף או בוטל. ${META_TOKEN_HOW}`);
     // A personal token has no instagram_business_account: Meta answers that the field doesn't exist on a User.
-    if (/node type \(User\)/.test(err.message ?? '')) return fail(`זה טוקן אישי ולא טוקן של העמוד: הוא לא יכול לפרסם בשם העמוד, ופג תוקף תוך שעות. ${PAGE_TOKEN_HOW}`);
+    if (/node type \(User\)/.test(err.message ?? '')) return fail(`זה טוקן אישי ולא טוקן של העמוד, והוא לא יכול לפרסם בשם העמוד. ${META_TOKEN_HOW}`);
     return fail(`Meta: ${err.message ?? `שגיאה ${me.status}`}`);
   }
   const name = String(me.body.name ?? '');
+  let connected: string;
   if (platform === 'facebook') {
     if (String(me.body.id) !== externalId) {
-      return fail(`הטוקן שייך ל-"${name}" (${me.body.id}) ולא לעמוד ${externalId}. אם זה השם שלך, זה טוקן אישי ולא טוקן העמוד. ${PAGE_TOKEN_HOW}`);
+      return fail(`הטוקן שייך ל-"${name}" (${me.body.id}) ולא לעמוד ${externalId}. אם זה השם שלך, זה טוקן אישי ולא טוקן העמוד. ${META_TOKEN_HOW}`);
     }
-    return ok(`מחובר לעמוד "${name}".`);
+    connected = `מחובר לעמוד "${name}".`;
+  } else {
+    const ig = me.body.instagram_business_account?.id ? String(me.body.instagram_business_account.id) : null;
+    if (!ig) return fail(`לעמוד "${name}" אין חשבון אינסטגרם מקצועי מקושר. מקשרים אותו בהגדרות העמוד (חשבונות מקושרים), ומדביקים שוב את הטוקן האישי.`);
+    if (ig !== externalId) return fail(`העמוד "${name}" מקושר לחשבון האינסטגרם ${ig}, ולא למזהה ${externalId}. לחצו "שינוי מזהה" והזינו ${ig}.`);
+    const user = await get(`${encodeURIComponent(ig)}?fields=username`);
+    if (user.status !== 200) return fail(`Meta: ${user.body.error?.message ?? `שגיאה ${user.status}`}`);
+    connected = `מחובר לאינסטגרם @${user.body.username} (דרך העמוד "${name}").`;
   }
-  const ig = me.body.instagram_business_account?.id ? String(me.body.instagram_business_account.id) : null;
-  if (!ig) return fail(`לעמוד "${name}" אין חשבון אינסטגרם מקצועי מקושר. מקשרים אותו בהגדרות העמוד (חשבונות מקושרים), ומוציאים טוקן עמוד חדש.`);
-  if (ig !== externalId) return fail(`העמוד "${name}" מקושר לחשבון האינסטגרם ${ig}, ולא למזהה ${externalId}. לחצו "שינוי מזהה" והזינו ${ig}.`);
-  const user = await get(`${encodeURIComponent(ig)}?fields=username`);
-  if (user.status !== 200) return fail(`Meta: ${user.body.error?.message ?? `שגיאה ${user.status}`}`);
-  return ok(`מחובר לאינסטגרם @${user.body.username} (דרך העמוד "${name}").`);
+  // The right page; now that the token won't stop working.
+  const seen = await inspectMetaToken(s, token);
+  if ('problem' in seen) return fail(`${connected} אבל: ${seen.problem}`);
+  const expiry = metaExpiryProblem(seen.info);
+  if (expiry) return fail(`${connected} אבל ${expiry} ${META_TOKEN_HOW}`);
+  return ok(`${connected} הטוקן קבוע ולא יפוג.`);
 }
 
 export async function testSocialAccount(s: Services, account: { id: string; platform: string; externalId: string; secretRef: string }): Promise<ConnectionTest> {
   const token = await s.settings.socialToken(account);
   if (!token) return fail('לא הוזן טוקן לחשבון הזה.');
-  const graph = `https://graph.facebook.com/${s.config.metaGraphVersion}`;
   let result: ConnectionTest;
   try {
     switch (account.platform) {
@@ -111,7 +128,7 @@ export async function testSocialAccount(s: Services, account: { id: string; plat
       }
       case 'facebook':
       case 'instagram':
-        result = await testMeta(graph, token, account.platform, account.externalId);
+        result = await testMeta(s, token, account.platform, account.externalId);
         if (!result.ok) return result;
         break;
       default:

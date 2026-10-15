@@ -1,28 +1,46 @@
 // The social networks against stand-ins for Meta and Telegram: "test connection" is
-// green only when the account can really publish, and publishing uploads our own
-// files rather than handing the network a link it can't reach (a local media
-// address). Instagram images, which go by link only, say so plainly.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+// green only when the account can really publish, with a page token that never
+// expires; the personal token an editor pastes is turned into that page token; and
+// publishing uploads our own files rather than handing the network a link it can't
+// reach (a local media address). Instagram images, which go by link only, say so plainly.
+import { auditLog, eq } from '@b4/db';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { testSocialAccount } from '../src/services/connection-tests';
 import type { Services } from '../src/services/context';
+import { SettingsStore } from '../src/services/settings';
 import { LOCAL_MEDIA_ERROR, type SocialPayload, publiclyReachable, publishToNetwork } from '../src/services/social-adapters';
+import { setup, signInStaff, staffClient } from './helpers';
 
 const PAGE = '1424305327424928';
 const IG = '17841449972058596';
+const APP_ID = '1665664261787346';
+const APP_SECRET = 'a1b2c3d4'.repeat(4);
 const GRAPH = 'https://graph.facebook.com/v26.0';
 
-/** Services with just what the tests need: a token, and where the media and the site are served from. */
-function services(mediaBaseUrl = 'https://media.b4news.co.il', publicSiteUrl = 'https://b4news.co.il'): Services {
-  return { settings: { socialToken: async () => 'EAA-token' }, config: { metaGraphVersion: 'v26.0', mediaBaseUrl, publicSiteUrl } } as unknown as Services;
+/** Services with just what the tests need: a token, the Meta app, and where the media and the site are served from. */
+function services(mediaBaseUrl = 'https://media.b4news.co.il', publicSiteUrl = 'https://b4news.co.il', app: Record<string, string> = { appId: APP_ID, appSecret: APP_SECRET }): Services {
+  return {
+    settings: { socialToken: async () => 'EAA-token', integration: async () => ({ ...app, source: 'cms' }) },
+    config: { metaGraphVersion: 'v26.0', mediaBaseUrl, publicSiteUrl },
+  } as unknown as Services;
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-/** Meta's answers by path: me (who the token belongs to) and the account itself. */
-function meta(me: { status?: number; body: unknown }, account: unknown = { username: 'b4news' }) {
+/** What debug_token says about the page's own token that never expires. */
+const FOREVER = { is_valid: true, type: 'PAGE', app_id: APP_ID, expires_at: 0, data_access_expires_at: 0 };
+const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
+
+/** Meta's answers by path: me (who the token belongs to), debug_token (when it expires) and the account itself. */
+function meta(me: { status?: number; body: unknown }, account: unknown = { username: 'b4news' }, debug: { status?: number; body: unknown } = { body: { data: FOREVER } }) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => (new URL(url).pathname.endsWith('/me') ? json(me.body, me.status) : json(account))),
+    vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/me')) return json(me.body, me.status);
+      if (path.endsWith('/debug_token')) return json(debug.body, debug.status);
+      return json(account);
+    }),
   );
 }
 
@@ -32,11 +50,32 @@ const instagram = { id: 'b', platform: 'instagram', externalId: IG, secretRef: '
 afterEach(() => vi.unstubAllGlobals());
 
 describe('connection test for Facebook and Instagram', () => {
-  it('is green with the page’s own token', async () => {
+  it('is green with the page’s own token, which never expires', async () => {
     meta({ body: { id: PAGE, name: 'B4 - חדשות' } });
-    expect(await testSocialAccount(services(), facebook)).toEqual({ ok: true, message: 'מחובר לעמוד "B4 - חדשות".' });
+    expect(await testSocialAccount(services(), facebook)).toEqual({ ok: true, message: 'מחובר לעמוד "B4 - חדשות". הטוקן קבוע ולא יפוג.' });
     meta({ body: { id: PAGE, name: 'B4 - חדשות', instagram_business_account: { id: IG } } });
     expect(await testSocialAccount(services(), instagram)).toMatchObject({ ok: true, message: expect.stringContaining('@b4news') });
+  });
+
+  it('refuses a page token that expires, like the one the Explorer’s page picker makes, and says what to paste', async () => {
+    meta({ body: { id: PAGE, name: 'B4 - חדשות' } }, undefined, { body: { data: { ...FOREVER, expires_at: inAnHour() } } });
+    const hour = await testSocialAccount(services(), facebook);
+    expect(hour.ok).toBe(false);
+    expect(hour.message).toContain('טוקן זמני');
+    expect(hour.message).toContain('User Token');
+
+    // Meta stopped its access to the data: the same, though the token itself never expires.
+    meta({ body: { id: PAGE, name: 'B4 - חדשות', instagram_business_account: { id: IG } } }, undefined, { body: { data: { ...FOREVER, data_access_expires_at: 1_700_000_000 } } });
+    const stopped = await testSocialAccount(services(), instagram);
+    expect(stopped.ok).toBe(false);
+    expect(stopped.message).toContain('לאשר אותה מחדש');
+  });
+
+  it('asks for the app’s secret when Meta won’t say when a page token expires without it', async () => {
+    meta({ body: { id: PAGE, name: 'B4 - חדשות' } }, undefined, { status: 400, body: { error: { code: 100, message: 'You must provide an app access token, or a user access token that is an owner or developer of the app' } } });
+    const result = await testSocialAccount(services(undefined, undefined, {}), facebook);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('סוד האפליקציה');
   });
 
   it('refuses a personal token, which reads the page but cannot publish as it', async () => {
@@ -68,6 +107,123 @@ describe('connection test for Facebook and Instagram', () => {
     expect(fb.message).not.toContain('אינסטגרם מקבל תמונות'); // Facebook gets the file itself
     meta({ body: { id: PAGE, name: 'B4 - חדשות', instagram_business_account: { id: IG } } });
     expect((await testSocialAccount(services('http://localhost:4000/media'), instagram)).message).toContain('אינסטגרם מקבל תמונות');
+  });
+});
+
+// --- Saving a token ----------------------------------------------------------------------
+/**
+ * Meta for saving: what debug_token says about each token, the long-lived token a personal one
+ * is exchanged for (only with the app's id and secret), and the pages each personal token reaches.
+ */
+function metaTokens(known: Record<string, Record<string, unknown>>, pages: Record<string, unknown[]>) {
+  const calls: URL[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const u = new URL(url);
+      calls.push(u);
+      const q = u.searchParams;
+      if (u.pathname === '/v23.0/debug_token') return json({ data: known[q.get('input_token')!] ?? { is_valid: false, error: { code: 190, message: 'Invalid OAuth access token' } } });
+      if (u.pathname === '/v23.0/oauth/access_token') {
+        if (q.get('grant_type') !== 'fb_exchange_token' || q.get('client_id') !== APP_ID || q.get('client_secret') !== APP_SECRET) return json({ error: { code: 101, message: 'Error validating application' } }, 400);
+        return json({ access_token: `${q.get('fb_exchange_token')}-long`, token_type: 'bearer', expires_in: 5_184_000 });
+      }
+      if (u.pathname === '/v23.0/me/accounts') return json({ data: pages[q.get('access_token')!] ?? [] });
+      return json({ error: { message: `unexpected ${u.pathname}` } }, 400);
+    }),
+  );
+  return calls;
+}
+
+describe('saving a Facebook or Instagram token', () => {
+  let ctx: Awaited<ReturnType<typeof setup>>;
+  let admin: ReturnType<typeof staffClient>;
+  let fbId: string;
+  let igId: string;
+  const PERSONAL = 'EAA-personal-from-explorer';
+  const known = {
+    [PERSONAL]: { is_valid: true, type: 'USER', app_id: APP_ID, expires_at: inAnHour(), data_access_expires_at: inAnHour() + 90 * 86_400 },
+    'EAA-page-from-the-picker': { is_valid: true, type: 'PAGE', app_id: APP_ID, expires_at: inAnHour() },
+    'EAA-page-forever': FOREVER,
+  };
+  const ourPage = { id: PAGE, name: 'B4 - חדשות', instagram_business_account: { id: IG } };
+  const pages = {
+    // With the long-lived token, the page's token never expires; with the Explorer's own, it would die within the hour.
+    [`${PERSONAL}-long`]: [{ ...ourPage, access_token: 'EAA-page-forever' }, { id: '555', name: 'עמוד אחר', access_token: 'EAA-other-page' }],
+    [PERSONAL]: [{ ...ourPage, access_token: 'EAA-page-for-an-hour' }],
+  };
+  const stored = (id: string) => new SettingsStore(ctx.db, ctx.config).socialToken({ id, secretRef: 'NONE' });
+
+  beforeAll(async () => {
+    ctx = await setup();
+    admin = staffClient(ctx, await signInStaff(ctx, 'admin'));
+    fbId = (await admin.post('/social-accounts', { platform: 'facebook', displayName: 'פייסבוק', externalId: PAGE, secretRef: 'FB_T' })).body.id;
+    igId = (await admin.post('/social-accounts', { platform: 'instagram', displayName: 'אינסטגרם', externalId: IG, secretRef: 'IG_T' })).body.id;
+    expect((await admin.put('/integrations/meta', { values: { appSecret: APP_SECRET } })).body.connected).toBe(true);
+  });
+  afterAll(() => ctx.close());
+
+  it('turns the pasted personal token into the page’s own, which never expires, for Facebook and Instagram', async () => {
+    const calls = metaTokens(known, pages);
+    const res = await admin.put(`/social-accounts/${fbId}/token`, { token: PERSONAL });
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(true);
+    expect(await stored(fbId)).toBe('EAA-page-forever');
+    // Asked with the app's own key, and nothing went anywhere but Meta's Graph API.
+    expect(calls.find((c) => c.pathname.endsWith('/debug_token'))!.searchParams.get('access_token')).toBe(`${APP_ID}|${APP_SECRET}`);
+    expect(calls.every((c) => c.origin === 'https://graph.facebook.com')).toBe(true);
+
+    // Instagram: the same personal token, and the page it is linked to.
+    expect((await admin.put(`/social-accounts/${igId}/token`, { token: PERSONAL })).status).toBe(200);
+    expect(await stored(igId)).toBe('EAA-page-forever');
+
+    // No token in the answers or the audit log.
+    const audit = await ctx.db.select().from(auditLog).where(eq(auditLog.entityId, fbId));
+    expect(audit.filter((a) => a.action === 'set_token').map((a) => a.details)).toEqual([{ madeFrom: 'personal_token' }]);
+    expect(JSON.stringify([res.body, audit, (await admin.get('/social-accounts')).body])).not.toContain('EAA');
+  });
+
+  it('keeps a page token that never expires as it is', async () => {
+    const calls = metaTokens(known, pages);
+    expect((await admin.put(`/social-accounts/${fbId}/token`, { token: 'EAA-page-forever' })).status).toBe(200);
+    expect(await stored(fbId)).toBe('EAA-page-forever');
+    expect(calls.map((c) => c.pathname)).toEqual(['/v23.0/debug_token']);
+  });
+
+  it('refuses what would stop working, says what to do, and keeps the token it had', async () => {
+    metaTokens(known, pages);
+    // The Explorer's page picker: a page token for an hour.
+    const picker = await admin.put(`/social-accounts/${fbId}/token`, { token: 'EAA-page-from-the-picker' });
+    expect(picker.status).toBe(422);
+    expect(picker.body.message).toContain('טוקן זמני');
+    expect(picker.body.message).toContain('User Token');
+    expect(picker.body.message).not.toContain('EAA');
+
+    // A token Meta doesn't know (expired or revoked).
+    expect((await admin.put(`/social-accounts/${fbId}/token`, { token: 'EAA-expired-long-ago' })).body.message).toContain('פג תוקף');
+    expect(await stored(fbId)).toBe('EAA-page-forever');
+  });
+
+  it('names the pages the personal token reaches when the account’s page isn’t one of them', async () => {
+    metaTokens(known, { [`${PERSONAL}-long`]: [{ id: '555', name: 'עמוד אחר', access_token: 'EAA-other-page', instagram_business_account: { id: '17841400000000777' } }] });
+    const fb = await admin.put(`/social-accounts/${fbId}/token`, { token: PERSONAL });
+    expect(fb.status).toBe(422);
+    expect(fb.body.message).toContain('"עמוד אחר" (555)');
+    const ig = await admin.put(`/social-accounts/${igId}/token`, { token: PERSONAL });
+    expect(ig.status).toBe(422);
+    expect(ig.body.message).toContain('17841400000000777');
+    expect(await stored(igId)).toBe('EAA-page-forever');
+  });
+
+  it('asks for the app’s secret before it can make a short-lived personal token permanent', async () => {
+    expect((await admin.put('/integrations/meta', { values: { appSecret: null } })).body.connected).toBe(false);
+    const calls = metaTokens(known, pages);
+    const res = await admin.put(`/social-accounts/${fbId}/token`, { token: PERSONAL });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain('סוד האפליקציה');
+    // Without the app, the token was asked about itself, and never used to read a page token that dies within the hour.
+    expect(calls.map((c) => c.pathname)).toEqual(['/v23.0/debug_token']);
+    expect(await stored(fbId)).toBe('EAA-page-forever');
   });
 });
 
