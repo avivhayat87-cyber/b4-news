@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { CHART_SYMBOLS, MARKET_GROUPS, TICKER_SYMBOLS } from '@/lib/markets';
+import { RowArrows } from './row-arrows';
 import { NEW_WINDOW } from './ui';
+import { useDragScroll } from './use-drag-scroll';
 
-type Kind = 'ticker-tape' | 'market-overview' | 'market-quotes' | 'stock-heatmap' | 'screener' | 'advanced-chart' | 'events';
+type Kind = 'tickers' | 'market-overview' | 'market-quotes' | 'stock-heatmap' | 'screener' | 'advanced-chart' | 'events';
 
 const UP = '#11743A';
 const DOWN = '#D9121F';
@@ -20,6 +22,7 @@ export function TradingViewWidget({
   title,
   lazy = true,
   className = '',
+  style,
 }: {
   kind: Kind;
   config: Record<string, unknown>;
@@ -29,6 +32,8 @@ export function TradingViewWidget({
   lazy?: boolean;
   /** Sizes the box; the widget fills it. */
   className?: string;
+  /** For a size computed in code. */
+  style?: CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(!lazy);
@@ -99,7 +104,7 @@ export function TradingViewWidget({
   }, [near, kind, settings, title]);
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} style={style}>
       <div ref={ref} className="tradingview-widget-container h-full w-full" />
       {loaded ? null : (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white text-sm text-muted">טוען נתונים…</p>
@@ -121,32 +126,29 @@ const lineColors = {
 };
 
 /**
- * The headline numbers, scrolling across the top of the homepage: one line on wider screens;
- * on phones the compact layout stacks name, price and change (76px, measured).
+ * The headline numbers across the top of the homepage, in one row that stands still and is
+ * pulled sideways: a finger swipe, a trackpad swipe or the arrows. (TradingView's moving tape
+ * couldn't be swiped: its frame takes the touch.) The frame is wider than the screen, about 210px
+ * per symbol, since TradingView leaves out the symbols that get less than about 200px (measured,
+ * as is the 72px height). The attribution is a small link in the row's top corner (globals.css).
  */
 export function MarketTicker() {
-  const [wide, setWide] = useState<boolean | null>(null);
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const update = () => setWide(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  // Wait for the screen size so the widget loads once, in the right layout.
-  if (wide === null) return <div className="h-[76px] md:h-[46px]" />;
+  const track = useRef<HTMLDivElement>(null);
+  const edges = useDragScroll(track);
   return (
-    <TradingViewWidget
-      kind="ticker-tape"
-      lazy={false}
-      title="מדדים מובילים"
-      className="tv-inline-credit h-[76px] md:h-[46px]"
-      config={{
-        symbols: TICKER_SYMBOLS.map((s) => ({ proName: s.symbol, title: s.label })),
-        showSymbolLogo: true,
-        displayMode: wide ? 'adaptive' : 'compact',
-      }}
-    />
+    <div className="relative">
+      <div ref={track} className="tv-scroll-row scrollbar-none overflow-x-auto overscroll-x-contain">
+        <TradingViewWidget
+          kind="tickers"
+          lazy={false}
+          title="מדדים מובילים"
+          className="h-[72px]"
+          style={{ minWidth: TICKER_SYMBOLS.length * 210 }}
+          config={{ symbols: TICKER_SYMBOLS.map((s) => ({ proName: s.symbol, title: s.label })), showSymbolLogo: true }}
+        />
+      </div>
+      <RowArrows track={track} atStart={edges.atStart} atEnd={edges.atEnd} name="מדדים" />
+    </div>
   );
 }
 

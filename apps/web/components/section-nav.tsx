@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { marketsHref } from '@/lib/markets';
 import { CATEGORIES, categoryHref } from '@/lib/site';
+import { RowArrows } from './row-arrows';
+import { useDragScroll } from './use-drag-scroll';
 
 const items = [
   { href: '/', label: 'ראשי' },
@@ -13,19 +15,22 @@ const items = [
 ];
 
 const linkClass = (active: boolean) =>
-  `block whitespace-nowrap border-b-4 px-2.5 pb-2.5 pt-3 text-[15px] outline-offset-[-3px] ${
+  `block whitespace-nowrap border-b-4 px-2.5 pb-2 pt-2.5 text-[15px] outline-offset-[-3px] md:pb-2.5 md:pt-3 ${
     active ? 'border-brand font-extrabold text-ink' : 'border-transparent font-bold text-brand hover:border-brand/30 hover:text-brand-deep'
   }`;
 
 /**
  * Section links in brand red; the current section in ink with a red underline.
- * Phones scroll the row sideways; wider screens show what fits and move the rest into "עוד".
+ * Phones and tablets scroll the row sideways (a swipe, a mouse drag or the arrows at its ends);
+ * wider screens show what fits and move the rest into "עוד".
  */
 export function SectionNav() {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
   const navRef = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLUListElement>(null);
+  const rowRef = useRef<HTMLUListElement>(null);
+  const edges = useDragScroll(rowRef);
   const [fit, setFit] = useState(items.length);
   const [open, setOpen] = useState(false);
   const [desktop, setDesktop] = useState(false);
@@ -96,10 +101,10 @@ export function SectionNav() {
         </li>
       </ul>
 
-      <ul className={`flex items-stretch ${desktop ? '' : 'scrollbar-none overflow-x-auto'}`}>
+      <ul ref={rowRef} className={`flex items-stretch ${desktop ? '' : 'scrollbar-none overflow-x-auto overscroll-x-contain'}`}>
         {shown.map((item) => (
           <li key={item.href} className="shrink-0">
-            <Link href={item.href} aria-current={isActive(item.href) ? 'page' : undefined} className={linkClass(isActive(item.href))}>
+            <Link href={item.href} draggable={false} aria-current={isActive(item.href) ? 'page' : undefined} className={linkClass(isActive(item.href))}>
               {item.label}
             </Link>
           </li>
@@ -127,6 +132,7 @@ export function SectionNav() {
           </li>
         ) : null}
       </ul>
+      {desktop ? null : <RowArrows track={rowRef} atStart={edges.atStart} atEnd={edges.atEnd} name="מדורים" />}
     </nav>
   );
 }

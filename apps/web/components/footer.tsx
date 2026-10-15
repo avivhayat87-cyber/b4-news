@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSite } from '@/lib/api';
 import { CATEGORIES, SITE, categoryHref, socialLinks } from '@/lib/site';
 import { ManageConsentButton } from './consent-banner';
+import { NewsletterDialogButton } from './newsletter-dialog';
 import { NewsletterForm } from './newsletter-form';
 import { SocialLinks } from './sidebar';
 import { NewWindowHint, wrap } from './ui';
@@ -58,9 +59,7 @@ export async function SiteFooter() {
               </a>
             ) : null}
             {!appLink && !links.telegram && !links.whatsapp ? (
-              <a href="#newsletter" className="inline-flex h-12 items-center rounded-full bg-white px-[22px] text-[15px] font-extrabold text-ink hover:bg-brand-soft">
-                הרשמה לניוזלטר
-              </a>
+              <NewsletterDialogButton className="inline-flex h-12 cursor-pointer items-center rounded-full bg-white px-[22px] text-[15px] font-extrabold text-ink hover:bg-brand-soft" />
             ) : null}
           </div>
         </div>

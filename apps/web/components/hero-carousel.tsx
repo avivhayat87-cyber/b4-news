@@ -156,7 +156,9 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setKeyboardFocus(false);
       }}
     >
-      <div ref={track} className="scrollbar-none flex h-[460px] cursor-grab snap-x snap-mandatory overflow-x-auto overscroll-x-contain md:h-[560px]">
+      {/* 380px on phones: with the header and the tickers above it, the whole card (headline included)
+          fits a phone's first screen (measured at 390x664, Safari with its bars). */}
+      <div ref={track} className="scrollbar-none flex h-[380px] cursor-grab snap-x snap-mandatory overflow-x-auto overscroll-x-contain sm:h-[460px] md:h-[560px]">
         {articles.map((a, i) => {
           const active = i === index;
           return (
@@ -192,11 +194,11 @@ export function HeroCarousel({ articles }: { articles: ArticleCard[] }) {
                 <CategoryTag name={a.category.name} className="absolute right-5 top-5 text-[13px]" />
                 <div className={`relative transition-all duration-700 ${active ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
                   {i === 0 ? (
-                    <h1 className="max-w-[20ch] text-balance text-[32px] font-extrabold leading-[1.08] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)] md:text-[50px]">
+                    <h1 className="max-w-[20ch] text-balance text-[28px] font-extrabold leading-[1.08] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)] sm:text-[32px] md:text-[50px]">
                       {a.title}
                     </h1>
                   ) : (
-                    <h2 className="max-w-[20ch] text-balance text-[32px] font-extrabold leading-[1.08] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)] md:text-[50px]">
+                    <h2 className="max-w-[20ch] text-balance text-[28px] font-extrabold leading-[1.08] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)] sm:text-[32px] md:text-[50px]">
                       {a.title}
                     </h2>
                   )}

@@ -18,7 +18,8 @@ export async function SiteHeader() {
       <UtilityBar markets={markets.slice(0, 3)} pages={pages} />
       {/* White header: large seal logo with the section links beside it (owner's design) */}
       <header className="border-b border-line bg-white">
-        <div className={`${wrap} flex flex-col gap-1 py-3 lg:flex-row lg:items-center lg:gap-6 lg:py-4`}>
+        {/* Tighter on phones, so the main story's headline is on the first screen. */}
+        <div className={`${wrap} flex flex-col gap-1 py-2 md:py-3 lg:flex-row lg:items-center lg:gap-6 lg:py-4`}>
           <div className="flex items-center justify-between gap-4">
             <Link href="/" aria-label={`${SITE.name}, לדף הבית`} className="flex items-center gap-4">
               {/* eslint-disable-next-line @next/next/no-img-element -- static SVG logo */}
@@ -27,7 +28,7 @@ export async function SiteHeader() {
                 alt={SITE.name}
                 width={300}
                 height={111}
-                className="block h-auto w-[150px] md:w-[210px] xl:w-[250px]"
+                className="block h-auto w-[128px] sm:w-[150px] md:w-[210px] xl:w-[250px]"
               />
               <span className="hidden border-s border-line ps-4 text-[13px] font-bold leading-snug text-muted xl:block">
                 חדשות. כלכלה.

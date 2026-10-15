@@ -17,7 +17,7 @@ export function Hero({ articles, latest }: { articles: ArticleCard[]; latest: Ar
   const rotating = [lead, ...rest.slice(2, 6)];
 
   return (
-    <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-5`}>
+    <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-3 md:pt-5`}>
       <BreakingTicker items={latest} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-6">
@@ -78,7 +78,7 @@ function BreakingTicker({ items }: { items: ArticleCard[] }) {
     ));
 
   return (
-    <div className="mb-5 flex items-center gap-4 border-b border-line pb-3">
+    <div className="mb-3 flex items-center gap-4 border-b border-line pb-2.5 md:mb-5 md:pb-3">
       <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-brand py-[5px] pe-3.5 ps-3 text-[13px] font-extrabold text-white">
         <span aria-hidden="true" className="h-2 w-2 rounded-full bg-white" />
         מבזקים
