@@ -2,6 +2,7 @@
 import type { DashboardDto, SavedEdits } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { ReadsCard } from '@/components/reads-card';
 import { Badge, Card, ColorDot, ErrorBox, LinkButton, Loading, PageHeader } from '@/components/ui';
 import { admin } from '@/lib/api';
 import { useStaff } from '@/lib/auth';
@@ -31,7 +32,7 @@ export default function Dashboard() {
     <>
       <PageHeader
         title={`שלום, ${staff.fullName.split(' ')[0]}`}
-        subtitle="מה קורה במערכת העלאות עכשיו"
+        subtitle="מה קורה בדסק עכשיו"
         actions={
           <>
             <LinkButton href="/manual">העלאה ידנית</LinkButton>
@@ -55,6 +56,10 @@ export default function Dashboard() {
         <Stat label="מוכנות לפרסום" value={d.drafts.ready} href="/saved" tone={d.drafts.ready ? 'brand' : undefined} />
         <Stat label="פורסמו היום" value={d.publishedToday} />
         <Stat label="מגזינים פתוחים" value={d.magazinesOpen} href="/saved" />
+      </div>
+
+      <div className="mt-6">
+        <ReadsCard reads={d.reads} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

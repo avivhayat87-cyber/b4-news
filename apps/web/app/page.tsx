@@ -28,7 +28,7 @@ export default async function HomePage() {
       <section aria-label="מדדים מובילים" className="border-b border-line">
         <MarketTicker />
       </section>
-      <Hero articles={home.main} breaking={home.breaking.length ? home.breaking : home.latest} />
+      <Hero articles={home.main} breaking={home.breaking} latest={home.latest} />
       <TrendingCarousel articles={home.trending} />
       <AdSlot slot="home_top" fallback="billboard" className={`${wrap} pt-10`} />
 

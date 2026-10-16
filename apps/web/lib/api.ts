@@ -77,6 +77,7 @@ const EMPTY_SITE: PublicSite = {
   pages: [],
   consent: { version: LEGAL_VERSION_DEFAULT, adsCookies: false },
   ads: { googleClient: null },
+  analytics: { cloudflareToken: null },
 };
 
 /** Links, contact details and info-page titles from the CMS ("site" tag). Never takes the page down. */
@@ -94,4 +95,9 @@ export function getPage(slug: string): Promise<PublicPage | null> {
 
 export async function listRecentForSitemap(): Promise<ArticleCard[]> {
   return (await getJson<Page<ArticleCard>>('/public/feed?limit=500', { tags: ['home'], revalidate: 900 }))?.items ?? [];
+}
+
+/** The newest articles for the RSS feed and Google's news sitemap; refreshed with the home page. */
+export async function listLatest(limit = 50): Promise<ArticleCard[]> {
+  return (await getJson<Page<ArticleCard>>(`/public/feed?limit=${limit}`, { tags: ['home'], revalidate: 300 }))?.items ?? [];
 }

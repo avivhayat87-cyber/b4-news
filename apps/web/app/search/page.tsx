@@ -8,6 +8,12 @@ export const metadata: Metadata = { title: 'חיפוש', robots: { index: false 
 
 type Props = { searchParams: Promise<{ q?: string }> };
 
+/** "תוצאה אחת", "7 תוצאות", or "יותר מ-20 תוצאות" when only the first page is shown. */
+function resultCount(n: number, more: boolean): string {
+  if (more) return `יותר מ-${n} תוצאות`;
+  return n === 1 ? 'תוצאה אחת' : `${n} תוצאות`;
+}
+
 export default async function SearchPage({ searchParams }: Props) {
   const q = ((await searchParams).q ?? '').trim().slice(0, 120);
   const results = q ? await searchArticles(q) : { items: [], nextCursor: null };
@@ -34,7 +40,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
       {q ? (
         <p className="mb-4 text-sm text-muted" role="status">
-          {results.items.length === 0 ? `לא נמצאו כתבות עבור ״${q}״. נסו מילה אחרת או קצרה יותר.` : `${results.items.length} תוצאות עבור ״${q}״`}
+          {results.items.length === 0 ? `לא נמצאו כתבות עבור ״${q}״. נסו מילה אחרת או קצרה יותר.` : `${resultCount(results.items.length, Boolean(results.nextCursor))} עבור ״${q}״`}
         </p>
       ) : null}
 

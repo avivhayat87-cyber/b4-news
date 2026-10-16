@@ -10,7 +10,7 @@ Cookie-authenticated writes must send an allowed `Origin`.
 
 | Method | Path | Returns |
 | --- | --- | --- |
-| GET | `/public/home` | `HomeData`: 7 main, 14 trending, latest, `breaking` (the ticker: the newest 12 marked, or the latest until any is), sections, podcasts |
+| GET | `/public/home` | `HomeData`: 7 main, 14 trending, latest, `breaking` (the ticker: the newest 12 marked, or the latest until any is; only from the last 24 hours), sections, podcasts |
 | GET | `/public/categories` | `CategoryRef[]` |
 | GET | `/public/categories/:slug?cursor=` | `CategoryPage` (keyset pagination) |
 | GET | `/public/articles/:slug` | `ArticleFull` (body HTML, tags, editor, source, comment count) |
@@ -19,7 +19,7 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | GET | `/public/feed?cursor=&limit=` | `Page<ArticleCard>` (the app's endless feed) |
 | GET | `/public/search?q=&cursor=` | `Page<ArticleCard>` |
 | GET | `/public/markets` | `MarketQuote[]`: Bank of Israel representative rates (empty when unavailable) |
-| GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles, `consent` (terms version to accept) |
+| GET | `/public/site` | `PublicSite`: links (empty ones omitted), contact, info-page titles, `consent` (terms version to accept), `analytics.cloudflareToken` (Cloudflare Web Analytics, null until set) |
 | GET | `/public/pages/:slug` | `PublicPage`: about, contact, advertise, accessibility, privacy, terms, comment-rules (company details filled in) |
 | POST | `/public/newsletter` · `/public/newsletter/confirm` | `NewsletterSignupInput` (terms checkbox required, recorded in `consents`); double opt-in. `confirm` answers `{ id, token }` so the page can offer the personal issue right away |
 | GET / PUT | `/public/newsletter/preferences/:id/:token` | `DigestPrefs` of a subscriber without an account (the signed link in every issue): topics in order, the hour, daily or weekly; always by mail |
@@ -27,6 +27,7 @@ Cookie-authenticated writes must send an allowed `Origin`.
 | POST | `/public/newsletter/unsubscribe/:id/:token` | one-click unsubscribe from the mail client (RFC 8058, the `List-Unsubscribe` header) |
 | POST | `/public/consent` | `VisitorConsentInput`: the consent banner (site) or welcome screen (app); 409 `terms_changed` for an old version |
 | POST | `/public/takedown` | `TakedownInput`: a content-removal request from anyone; 5/hour; mails a confirmation |
+| POST | `/public/reads` | `ArticleReadInput` `{ articleId, from }` → 204: one read for the newsroom's count (60 a minute per address); an article not on the site is ignored. Nothing about the reader is sent or kept |
 | POST/DELETE | `/public/devices` · `/public/devices/:pushToken` | push registration (app); with the reader's bearer token the device is linked to them (replies and likes reach it), without it the link is cleared |
 | POST | `/public/notifications/mail-off/:id/:token` | one-click stop of the mails about replies and likes (the List-Unsubscribe header of those mails) |
 | POST | `/public/digest/mail-off/:id/:token` | one-click stop of a reader's personal issue by mail (the List-Unsubscribe header of that mail) |
@@ -72,7 +73,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 
 | Method | Path | Role | |
 | --- | --- | --- | --- |
-| GET | `/admin/dashboard` | any | `DashboardDto` (with `review.waiting`: articles the legal review stopped) |
+| GET | `/admin/dashboard` | any | `DashboardDto` (with `review.waiting`: articles the legal review stopped, and `reads`: today, the last 7 days, today's sources and most read) |
 | GET | `/admin/learning` | any | `LearningOverview` |
 | POST | `/admin/learning/distill` | editor | learn now from pending corrections |
 | POST | `/admin/learning/profiles/:id/activate` | admin | roll back / forward the style rules |
@@ -81,7 +82,7 @@ Roles: **viewer** reads only · **editor** content work · **developer** site tr
 | GET/POST | `/admin/social-accounts` | any / admin | `SocialAccountDto`, `CreateSocialAccountInput` |
 | PATCH | `/admin/social-accounts/:id` | admin | `{ isActive }` |
 | GET/POST | `/admin/users` | admin | `StaffUserDto`; POST returns a one-time temporary password |
-| PATCH | `/admin/users/:id` | admin | `UpdateStaffInput` (can't demote or disable yourself) |
+| PATCH | `/admin/users/:id` | admin | `UpdateStaffInput` (can't demote or disable yourself); `bylineName`: the name under articles they approve, empty for none |
 | POST | `/admin/users/:id/reset-password` | admin | one-time temporary password; signs the user out |
 | POST | `/admin/me/password` | any | `ChangePasswordInput`; signs out other sessions |
 | GET | `/admin/me/2fa` | any | `TwoFactorStatus` (on since, recovery codes left, required by the newsroom) |

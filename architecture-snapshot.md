@@ -89,6 +89,10 @@ The **CMS menu was merged** on 2026-10-15 with the owner's approval (15 items we
 screens keep their own folders and addresses (links in emails keep working) and become tabs of one
 menu item; the menu item lights up on each of them and sums their red counts.
 
+`services/reads.ts` (the table `article_reads`) was added on 2026-10-16 with the owner's approval:
+before launch the newsroom must know who reads what, counted by itself with numbers only (no reader
+is identified), while Cloudflare Web Analytics counts visits to the whole site.
+
 `services/front-page.ts` and `services/public-photos.ts` were added on 2026-10-15 with the
 owner's approval: the chief editor places every written batch on the site, and a public figure's
 photo comes only from a source whose license allows it; both are their own concerns, apart from the
@@ -142,6 +146,7 @@ src/
                         package, network adapters, the social page, branded designs, reels
     newsletter.ts · digest.ts (the personal issue) · feed.ts (the reader's feed) · consent.ts ·
       translate.ts · learning.ts · classify.ts
+    reads.ts          The newsroom's own count of reads: per day, article and kind of arrival; numbers only
     article-transfer.ts · workshop-copy.ts   Moving articles, and a safe copy of the live data, between environments
     data-move.ts      The computer's live data to the cloud, once (the database as SQL, the media into the bucket)
     settings.ts · site-settings.ts · legal-pages.ts · connection-tests.ts
@@ -165,7 +170,9 @@ assets/fonts/       Fonts for server-side image rendering (with their licenses)
 app/              Routes (App Router): home, article/[slug], category/[slug], search, markets,
                     account, my (the reader's feed), newsletter/*, report, [page] (info pages), a/[id] (short links),
                     partner/[key] (an advertiser's private report), advertise (the page that sells ad space),
-                    api/revalidate (cache refresh after publishing), sitemap.ts, robots.ts
+                    api/revalidate (cache refresh after publishing), sitemap.ts, robots.ts,
+                    news-sitemap.xml and rss.xml (route handlers), manifest.ts; opengraph-image.jpg and
+                    apple-icon.png are rendered by brand/scripts/render-web-icons.mjs
 components/       Flat, one file per piece of UI: header, footer, hero, carousels, comments,
                     sidebar, share, ad-slot (an ad place)…; primitives in ui.tsx; hooks named use-*.ts
 lib/              api.ts (server-only reads with cache tags) · client-api.ts (browser calls: comments,
@@ -230,7 +237,7 @@ db/drizzle/       Generated SQL migrations + meta/ (journal, snapshots). Append-
 | **Distribution** (הפצה) | `services/social*.ts`, `newsletter.ts`, `digest.ts` (the personal issue at the reader's hour, a self-rescheduling job), push in `publish.ts`, `routes/admin/social.ts`, `routes/audience.ts` | `social/`, `components/social/`, `editor/social-panel.tsx` | newsletter pages (incl. preferences), "העיתון שלי" in account, app `lib/push.ts` | `social_*` (incl. `social_plans`), `article_share*`, `newsletter_subscribers`, `devices`, `push_notifications` |
 | **Advertising** (פרסום) | `services/ads/*` (campaigns, serving and counting, leads and the advertiser's page, banners), `services/agent/ads.ts` (the ads agent), `routes/admin/ads.ts`, `routes/ads.ts` (public: the ads, views, clicks, leads, inquiries, `/public/partners/:key`), `lib/images.ts` (`ingestAdImage`) | `ads/` (admins only; the occupancy board is `components/ads/occupancy.tsx`), `components/ads/`, the "סוכן הפרסום" card in `settings/` | `components/ad-slot.tsx` (with the `?adspots=1` preview), `google-ad.tsx` (an AdSense unit; a stand-in in development), `app/ads.txt`, `HouseBillboard` and `HousePromo` in `ui.tsx`, `advertise/` (+ `advertise-form.tsx`, `advertise-visuals.tsx`), `partner/[key]`; app `components/ad-card.tsx`, `lib/ads.ts` | `advertisers`, `ad_campaigns`, `ad_creatives`, `ad_stats`, `ad_leads`, `ad_agent_tasks` |
 | **Reader content** | `routes/content.ts`, `routes/site.ts`, `lib/cards.ts` | | `apps/web/app`, `apps/mobile/src/app` | `articles`, `categories`, `authors`, `tags` |
-| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `lib/expo-push.ts` | `audience/` ("מנויים וגולשים"), `comments/`, `takedowns/` (one menu item, tabs) | comments, the bell, account (notification settings), `my/` (the feed), report; app comments, account and the "הפיד שלי" tab | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers` |
+| **Audience and community** | `routes/comments.ts`, `reader-auth.ts`, `admin-comments.ts`, `takedowns.ts`, `routes/admin/audience.ts`, `services/consent.ts`, `audience.ts` (readers and subscribers for the CMS), `reader-signin.ts` (the code and the one-click link), `comments.ts` (threads, likes, the editors' pick), `notifications.ts` (the bell, phone pushes, the hourly mail), `feed.ts` (the reader's feed), `reads.ts` (the count of reads, `POST /public/reads` in `routes/audience.ts`), `lib/expo-push.ts` | `audience/` ("מנויים וגולשים"), `comments/`, `takedowns/` (one menu item, tabs), the readers card on the dashboard (`components/reads-card.tsx`) | comments, the bell, account (notification settings), `my/` (the feed), report, `components/read-counter.tsx`, Cloudflare Web Analytics in `app/layout.tsx`; app comments, account, the "הפיד שלי" tab and a read per article | `readers`, `comments`, `comment_reports`, `comment_likes`, `reader_notifications`, `consents`, `takedown_requests`, `newsletter_subscribers`, `article_reads` |
 | **Settings and integrations** | `services/settings.ts`, `site-settings.ts`, `legal-pages.ts`, `connection-tests.ts`, `routes/admin/settings.ts` | `settings/`, `components/settings/` | info pages, footer | `app_settings`, `secrets`, `social_accounts` |
 | **Platform** | `lib/*`, `plugins/*`, `config.ts`, `server.ts`, `worker.ts`, `cli/*`, `services/workshop-copy.ts` (a safe copy of the live data for the workshop), `services/data-move.ts`, `services/two-factor.ts` + `lib/totp.ts` (staff two-step sign-in), `routes/staff-auth.ts`, `routes/admin/security.ts`, `scripts/*`, `deploy/cloud/*` | `components/shell.tsx`, `lib/api.ts`, `lib/auth.tsx` | `lib/api.ts` in each app | `users`, `sessions`, `jobs`, `audit_log` |
 
@@ -592,8 +599,6 @@ code.
 
 - `apps/api/src/server.ts` reads `SHUTDOWN_TOKEN` straight from `process.env` (it belongs in
   `config.ts`).
-- `apps/mobile/src/app/article/[slug].tsx` builds its own `SITE_URL` from
-  `EXPO_PUBLIC_SITE_URL` instead of importing it from `lib/api.ts`.
 - `brand/` and the `public/brand/` copies in the apps are kept in sync by hand.
 - The rewrite still asks Claude for an English `image_prompt` (`article_drafts.image_prompt`),
   which nothing uses since the visual agent writes the descriptions. Drop it with the next

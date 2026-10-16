@@ -72,7 +72,15 @@ function StaffCard() {
     },
     onError,
   });
-  const update = useMutation({ mutationFn: ({ id, ...body }: { id: string; role?: StaffRole; isActive?: boolean }) => admin.patch(`/users/${id}`, body), onSuccess: refresh, onError });
+  const update = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; role?: StaffRole; isActive?: boolean; bylineName?: string }) => admin.patch(`/users/${id}`, body),
+    onSuccess: refresh,
+    onError,
+  });
+  const saveByline = (u: StaffUserDto, value: string) => {
+    if (value.trim() === (u.bylineName ?? '')) return;
+    update.mutate({ id: u.id, bylineName: value.trim() }, { onSuccess: () => toast(value.trim() ? `מעכשיו מתחת לכתבות ש${u.fullName} אישר/ה יופיע "עריכה: ${value.trim()}".` : 'השם לא יופיע מתחת לכתבות.') });
+  };
   const reset = useMutation({
     mutationFn: (u: StaffUserDto) => admin.post<{ temporaryPassword: string }>(`/users/${u.id}/reset-password`).then((r) => ({ who: u.email, password: r.temporaryPassword })),
     onSuccess: setSecret,
@@ -90,6 +98,9 @@ function StaffCard() {
   return (
     <Card title="צוות המערכת">
       <SecurityCard />
+      <p className="mb-3 text-sm text-ink-2">
+        &quot;השם בכתבות&quot; הוא השם שהקוראים רואים מתחת לכתבה שהעורך/ת אישר/ה (&quot;עריכה: …&quot;). השאירו ריק כדי שלא יוצג שם, למשל לחשבון מערכת.
+      </p>
       {secret && (
         <div className="mb-4 rounded-lg bg-warn-soft p-4 text-warn" role="alert">
           <p className="font-bold">סיסמה זמנית ל-{secret.who} (מוצגת פעם אחת בלבד):</p>
@@ -109,6 +120,9 @@ function StaffCard() {
           <thead className="text-ink-2">
             <tr>
               <th className="py-2">שם</th>
+              <th className="py-2" title='מופיע לקוראים מתחת לכתבות שהעורך/ת אישר/ה, כ"עריכה: …". ריק: לא מוצג שם.'>
+                השם בכתבות
+              </th>
               <th className="py-2">מייל</th>
               <th className="py-2">תפקיד</th>
               <th className="py-2">אימות דו-שלבי</th>
@@ -120,6 +134,18 @@ function StaffCard() {
             {users.data?.map((u) => (
               <tr key={u.id} className={u.isActive ? '' : 'opacity-50'}>
                 <td className="py-2 font-semibold">{u.fullName}</td>
+                <td className="py-2">
+                  <input
+                    key={u.bylineName ?? ''}
+                    defaultValue={u.bylineName ?? ''}
+                    maxLength={80}
+                    placeholder="לא מוצג"
+                    onBlur={(e) => saveByline(u, e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    className={inputClass}
+                    aria-label={`השם של ${u.fullName} מתחת לכתבות`}
+                  />
+                </td>
                 <td className="py-2" dir="ltr">
                   {u.email}
                 </td>

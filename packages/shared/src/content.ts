@@ -44,7 +44,10 @@ export const ArticleFull = ArticleCard.extend({
   subtitle: z.string(),
   bodyHtml: z.string(),
   tags: z.array(TagRef),
+  /** The editor who approved it, by the name they chose to show on articles (absent when they chose none). */
   editor: z.object({ name: z.string() }).nullable().optional(),
+  /** The picture for link previews (WhatsApp, Facebook): 1200x630 JPEG, which every app shows. */
+  shareImage: z.object({ url: z.string(), width: z.number().int(), height: z.number().int() }).nullable().optional(),
   updatedAt: z.string(),
   readingMinutes: z.number().int(),
   source: z.object({ name: z.string(), url: z.string() }).nullable().optional(),
@@ -73,7 +76,10 @@ export const HomeData = z.object({
   main: z.array(ArticleCard),
   trending: z.array(ArticleCard),
   latest: z.array(ArticleCard),
-  /** The breaking-news ticker: the newest articles marked for it (up to 12); the latest ones until any is marked. */
+  /**
+   * The breaking-news ticker: the newest articles marked for it (up to 12), the latest ones when none
+   * is marked; only from the last 24 hours, so nothing old reads as breaking (empty: no ticker).
+   */
   breaking: z.array(ArticleCard).default([]),
   sections: z.array(HomeSection),
   podcasts: z.array(Podcast),
@@ -99,3 +105,13 @@ export const CategoryPage = z.object({
   page: pageOf(ArticleCard),
 });
 export type CategoryPage = z.infer<typeof CategoryPage>;
+
+// Reads: the newsroom's own count of who reads what. Only numbers per day, article and kind of
+// arrival; no reader, address, device or cookie is kept.
+/** Where a read came from: the site's referrer sorted into a few kinds (the address itself is never sent), or the app. */
+export const READ_SOURCES = ['direct', 'search', 'social', 'internal', 'other', 'app'] as const;
+export type ReadSource = (typeof READ_SOURCES)[number];
+
+/** One read of an article (the site counts a browser once a day per article, the app once a session). */
+export const ArticleReadInput = z.object({ articleId: z.number().int().positive(), from: z.enum(READ_SOURCES) });
+export type ArticleReadInput = z.infer<typeof ArticleReadInput>;

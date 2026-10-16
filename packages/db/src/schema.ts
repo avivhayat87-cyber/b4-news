@@ -24,7 +24,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { COMMENT_STATUSES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type DigestPrefs, type ReelIdea, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
+import { COMMENT_STATUSES, READ_SOURCES, REPORT_REASONS, STAFF_ROLES, TAKEDOWN_KINDS, TAKEDOWN_STATUSES, type DigestPrefs, type ReelIdea, type ReelPlan, type SelectorConfig, type VisualFeedbackDetail } from '@b4/shared';
 
 const tstz = () => timestamp({ withTimezone: true });
 const createdAt = () => tstz().notNull().defaultNow();
@@ -96,6 +96,7 @@ export const consentSubject = pgEnum('consent_subject', ['reader', 'subscriber',
 export const consentChannel = pgEnum('consent_channel', ['web', 'app']);
 export const takedownKind = pgEnum('takedown_kind', TAKEDOWN_KINDS);
 export const takedownStatus = pgEnum('takedown_status', TAKEDOWN_STATUSES);
+export const readSource = pgEnum('read_source', READ_SOURCES);
 
 // ---------------------------------------------------------------------------
 // People & sessions
@@ -105,6 +106,8 @@ export const users = pgTable('users', {
   id: uuid().primaryKey().defaultRandom(),
   email: text().notNull().unique(),
   fullName: text().notNull(),
+  /** The name readers see under articles this person approved ("עריכה: …"); null: none is shown. */
+  bylineName: text(),
   role: userRole().notNull().default('editor'),
   passwordHash: text(),
   isActive: boolean().notNull().default(true),
@@ -878,6 +881,24 @@ export const articleTags = pgTable(
       .references(() => tags.id, { onDelete: 'cascade' }),
   },
   (t) => [primaryKey({ columns: [t.articleId, t.tagId] }), index('article_tags_tag_idx').on(t.tagId)],
+);
+
+/**
+ * Reads per Israel day, article and kind of arrival: the newsroom's own count. Only numbers: no
+ * reader, address, device or cookie is kept (the site counts a browser once a day per article).
+ */
+export const articleReads = pgTable(
+  'article_reads',
+  {
+    /** YYYY-MM-DD, Israel time. */
+    day: text().notNull(),
+    articleId: bigint({ mode: 'number' })
+      .notNull()
+      .references(() => articles.id, { onDelete: 'cascade' }),
+    source: readSource().notNull(),
+    reads: integer().notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.articleId, t.source] }), index('article_reads_article_idx').on(t.articleId)],
 );
 
 /** Homepage zones: exactly 7 "main" slots and up to 14 "trending" slots. */

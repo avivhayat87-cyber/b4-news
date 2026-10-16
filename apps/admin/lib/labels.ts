@@ -18,6 +18,7 @@ import {
   type ClaimLabel,
   type Divergence,
   type DraftColor,
+  type ReadSource,
   type DraftStatus,
   type MissingKey,
   type Placement,
@@ -479,6 +480,16 @@ export const AD_VERDICT: Record<AdReviewDto['verdict'], { label: string; tone: T
 export const ctr = (clicks: number, views: number) => (views ? `${((clicks / views) * 100).toFixed(2)}%` : '—');
 
 export const ROLE: Record<string, string> = { admin: 'מנהל/ת', editor: 'עורך/ת', developer: 'מפתח/ת', viewer: 'צפייה בלבד' };
+
+/** Where a read came from (the dashboard's "מאיפה הגיעו"). */
+export const READ_SOURCE: Record<ReadSource, string> = {
+  direct: 'כניסה ישירה',
+  search: 'מנועי חיפוש',
+  social: 'רשתות ושיתופים',
+  internal: 'מתוך האתר',
+  other: 'אתרים אחרים',
+  app: 'האפליקציה',
+};
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'ink';
 

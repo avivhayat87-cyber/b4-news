@@ -19,6 +19,9 @@ const google = [
   'https://*.google.co.il',
   'https://*.gstatic.com',
 ].join(' ');
+// Cloudflare Web Analytics (app/layout.tsx): its beacon script and where it reports. Loaded only once
+// its token is set in the CMS.
+const cloudflareInsights = { script: 'https://static.cloudflareinsights.com', report: 'https://cloudflareinsights.com' };
 // Where uploaded and AI images are served (the API in development, a CDN in production).
 const media = new URL(process.env.NEXT_PUBLIC_MEDIA_URL ?? `${apiOrigin}/media`);
 
@@ -55,12 +58,12 @@ const nextConfig = {
               "default-src 'self'",
               // Next.js inlines its bootstrap scripts and styles. TradingView: the market widgets'
               // loader script, and the iframes it creates (with s.tradingview.com as its fallback).
-              `script-src 'self' 'unsafe-inline' https://s3.tradingview.com ${google}` + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
+              `script-src 'self' 'unsafe-inline' https://s3.tradingview.com ${cloudflareInsights.script} ${google}` + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
               "style-src 'self' 'unsafe-inline'",
               `frame-src https://www.tradingview-widget.com https://s.tradingview.com ${google}`,
               `img-src 'self' data: blob: ${media.origin} ${imageHosts.map((h) => `https://${h}`).join(' ')} ${google}`.trim(),
               "font-src 'self'",
-              `connect-src 'self' ${apiOrigin} ${google}`,
+              `connect-src 'self' ${apiOrigin} ${cloudflareInsights.report} ${google}`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

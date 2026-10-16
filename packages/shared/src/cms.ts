@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { PROMPT_AUTHORS } from './agent';
 import { STAFF_ROLES } from './auth';
 import { CATEGORY_SLUGS, type CategorySlug } from './categories';
+import { READ_SOURCES, type ReadSource } from './content';
 
 const id = z.string().uuid();
 const iso = z.string();
@@ -721,6 +722,17 @@ export type LearningOverview = z.infer<typeof LearningOverview>;
 // ---------------------------------------------------------------------------
 // Dashboard and staff
 // ---------------------------------------------------------------------------
+/** Reads of articles (the newsroom's own count), by Israel day: today so far, the last 7 days, where today's came from, and today's most read. */
+export const ReadsOverview = z.object({
+  today: z.number().int(),
+  yesterday: z.number().int(),
+  /** The last 7 days, oldest first, today last (a day without reads is 0). */
+  week: z.array(z.object({ day: z.string(), reads: z.number().int() })),
+  from: z.object(Object.fromEntries(READ_SOURCES.map((k) => [k, z.number().int()])) as Record<ReadSource, z.ZodNumber>),
+  top: z.array(z.object({ id: z.number().int(), slug: z.string(), title: z.string(), reads: z.number().int() })),
+});
+export type ReadsOverview = z.infer<typeof ReadsOverview>;
+
 export const DashboardDto = z.object({
   drafts: z.object({ working: z.number().int(), ready: z.number().int(), aiFailed: z.number().int() }),
   magazinesOpen: z.number().int(),
@@ -736,6 +748,7 @@ export const DashboardDto = z.object({
   ads: z.object({ newLeads: z.number().int(), newInquiries: z.number().int() }),
   failedJobs: z.number().int(),
   ai: z.object({ text: z.string(), image: z.string(), live: z.boolean() }),
+  reads: ReadsOverview,
 });
 export type DashboardDto = z.infer<typeof DashboardDto>;
 
@@ -826,6 +839,8 @@ export const StaffUserDto = z.object({
   createdAt: iso,
   /** Signs in with a code from an authenticator app as well. */
   twoFactor: z.boolean(),
+  /** The name readers see under articles this person approved ("עריכה: …"); null: none is shown. */
+  bylineName: z.string().nullable(),
 });
 export type StaffUserDto = z.infer<typeof StaffUserDto>;
 
@@ -839,6 +854,14 @@ export const UpdateStaffInput = z.object({
   role: z.enum(STAFF_ROLES).optional(),
   isActive: z.boolean().optional(),
   fullName: z.string().trim().min(2).max(80).optional(),
+  /** Empty: no name under articles. */
+  bylineName: z
+    .string()
+    .trim()
+    .max(80)
+    .transform((v) => v || null)
+    .nullable()
+    .optional(),
 });
 
 export const ChangePasswordInput = z.object({

@@ -88,6 +88,8 @@ export const api = {
   related: (slug: string) => call<ArticleCard[]>(`/public/articles/${enc(slug)}/related`),
   search: (q: string, cursor?: string | null) => call<Page<ArticleCard>>(withCursor(`/public/search?q=${enc(q)}`, cursor)),
   resolveId: (id: string) => call<{ slug: string }>(`/public/a/${enc(id)}`),
+  /** One read for the newsroom's count (numbers only); a lost one is never an error on screen. */
+  read: (articleId: number) => call<void>('/public/reads', { method: 'POST', body: json({ articleId, from: 'app' }) }).catch(() => undefined),
 
   me: async (): Promise<ReaderDto | null> => (await getToken() ? (await call<{ reader: ReaderDto | null }>('/auth/reader/session')).reader : null),
   requestCode: (email: string, opts: { acceptTerms: boolean }) => call<void>('/auth/reader/request-code', { method: 'POST', body: json({ email, ...opts }) }),

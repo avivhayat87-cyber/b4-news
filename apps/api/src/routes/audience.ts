@@ -1,6 +1,6 @@
 // Newsletter sign-up (double opt-in, with the terms accepted) and unsubscribe,
-// the consent banner's answer, and push-notification devices: /api/v1/public/*
-import { DigestPrefs, NewsletterSignupInput, UnsubscribeInput, VisitorConsentInput } from '@b4/shared';
+// the consent banner's answer, push-notification devices, and the count of reads: /api/v1/public/*
+import { ArticleReadInput, DigestPrefs, NewsletterSignupInput, UnsubscribeInput, VisitorConsentInput } from '@b4/shared';
 import { and, devices, eq, isNull, newsletterSubscribers, sql } from '@b4/db';
 import type { FastifyPluginAsyncZod, ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -11,10 +11,17 @@ import type { Services } from '../services/context';
 import { saveSubscriberDigest, stopReaderDigestMail, subscriberDigest } from '../services/digest';
 import { unsubscribeToken, validUnsubscribeToken } from '../services/newsletter';
 import { stopMails } from '../services/notifications';
+import { recordRead } from '../services/reads';
 import { legalVersion } from '../services/site-settings';
 
 export const audienceRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app, { s }) => {
   const { db, config, mailer } = s;
+
+  // One read of an article (services/reads.ts): numbers only, nothing about the reader.
+  app.post('/reads', { schema: { body: ArticleReadInput }, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    await recordRead(s, req.body.articleId, req.body.from);
+    return reply.header('cache-control', 'no-store').status(204).send();
+  });
 
   app.post(
     '/newsletter',

@@ -6,6 +6,7 @@ import { Comments } from '@/components/comments';
 import { PersonIcon } from '@/components/icons';
 import { ShareBar } from '@/components/share';
 import { AdSlot } from '@/components/ad-slot';
+import { ReadCounter } from '@/components/read-counter';
 import { ArticleImage, NewWindowHint, RankBadge, SectionHeader, wrap } from '@/components/ui';
 import { getArticle, getHome, getRelated, getSite } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
@@ -27,6 +28,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const article = await getArticle(safeDecode((await params).slug));
   if (!article) return {};
   const description = article.subtitle || article.excerpt || SITE.description;
+  // Link previews get the 1200x630 JPEG every app shows; the page's own picture is WebP.
+  const share = article.shareImage ?? article.image;
   return {
     title: article.title,
     description,
@@ -40,7 +43,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       modifiedTime: article.updatedAt,
       section: article.category.name,
       tags: article.tags.map((t) => t.name),
-      images: article.image ? [{ url: article.image.url, width: article.image.width, height: article.image.height, alt: article.image.alt }] : undefined,
+      images: share ? [{ url: share.url, width: share.width, height: share.height, alt: article.image?.alt ?? article.title }] : undefined,
     },
     twitter: { card: 'summary_large_image' },
   };
@@ -63,8 +66,11 @@ export default async function ArticlePage({ params }: Props) {
     articleSection: article.category.name,
     inLanguage: 'he-IL',
     mainEntityOfPage: url,
-    image: article.image ? [article.image.url] : undefined,
-    author: article.author ? [{ '@type': 'Person', name: article.author.name }] : undefined,
+    image: article.image ? [article.image.url, ...(article.shareImage ? [article.shareImage.url] : [])] : undefined,
+    // Unsigned articles are the newsroom's: Google expects an author on every news article.
+    author: article.author
+      ? [{ '@type': 'Person', name: article.author.name }]
+      : [{ '@type': 'Organization', name: `מערכת ${SITE.short}`, url: new URL('/about', SITE.url).toString() }],
     publisher: {
       '@type': 'Organization',
       name: SITE.name,
@@ -75,6 +81,7 @@ export default async function ArticlePage({ params }: Props) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
+      <ReadCounter articleId={article.id} />
 
       <div className={`${wrap} flex flex-wrap gap-12 pb-6 pt-8`}>
         <article className="min-w-0 flex-[999_1_640px]">
@@ -98,6 +105,8 @@ export default async function ArticlePage({ params }: Props) {
                 <span>
                   <strong className="font-extrabold">{article.author?.name ?? 'מערכת B4'}</strong>
                   {article.editor ? <span className="text-muted"> · עריכה: {article.editor.name}</span> : null}
+                  {/* The original report, credited by the byline as the big sites do (the link is at the end). */}
+                  {article.source ? <span className="text-muted"> · על בסיס {article.source.name}</span> : null}
                 </span>
                 <span className="text-muted">
                   <time dateTime={article.publishedAt} className="font-mono">{formatDateTime(article.publishedAt)}</time>

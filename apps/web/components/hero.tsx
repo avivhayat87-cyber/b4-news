@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { formatTickerTime } from '@/lib/format';
 import type { ArticleCard } from '@/lib/types';
 import { articleHref, toneBackground } from '@/lib/site';
 import { HeroCarousel } from './hero-carousel';
@@ -9,28 +10,59 @@ import { CategoryTag, PublishedTime, wrap } from './ui';
 /**
  * The 7 main articles, opened by the breaking-news ticker (the articles the newsroom marked for it,
  * newest first): one big image that rotates through the lead story and stories 4-7, and stories 2-3
- * fixed beside it.
+ * fixed beside it. On a wide screen, when fewer than two are fixed, the latest updates fill the
+ * rest of the column, so it is never left empty.
  */
-export function Hero({ articles, breaking }: { articles: ArticleCard[]; breaking: ArticleCard[] }) {
+export function Hero({ articles, breaking, latest }: { articles: ArticleCard[]; breaking: ArticleCard[]; latest: ArticleCard[] }) {
   const [lead, ...rest] = articles;
   if (!lead) return null;
   const fixed = rest.slice(0, 2);
   const rotating = [lead, ...rest.slice(2, 6)];
+  const shown = new Set([...rotating, ...fixed].map((a) => a.id));
+  const updates = fixed.length < 2 ? latest.filter((a) => !shown.has(a.id)).slice(0, fixed.length ? 3 : 6) : [];
+  const side = fixed.length > 0 || updates.length > 0;
 
   return (
     <section aria-label="כתבות ראשיות" className={`${wrap} pb-2 pt-3 md:pt-5`}>
       <BreakingTicker items={breaking} />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-6">
+      <div className={`grid gap-5 lg:gap-6 ${side ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]' : ''}`}>
         <HeroCarousel articles={rotating} />
-        {fixed.length > 0 ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 lg:gap-6">
+        {side ? (
+          <div className={`${fixed.length ? 'grid' : 'hidden lg:grid'} gap-5 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 lg:gap-6`}>
             {fixed.map((a) => (
               <FeatureCard key={a.id} article={a} />
             ))}
+            {updates.length > 0 ? <LatestUpdates items={updates} tall={fixed.length === 0} /> : null}
           </div>
         ) : null}
       </div>
+    </section>
+  );
+}
+
+/** The newest articles with their time, beside the main story on a wide screen (phones have the ticker). */
+function LatestUpdates({ items, tall }: { items: ArticleCard[]; tall: boolean }) {
+  return (
+    <section aria-labelledby="latest-updates" className={`hidden flex-col rounded-xl border border-line bg-white px-5 py-4 lg:flex ${tall ? 'lg:row-span-2' : ''}`}>
+      <h2 id="latest-updates" className="flex items-center gap-2 text-[17px] font-extrabold">
+        <span aria-hidden="true" className="h-2 w-2 rounded-full bg-brand" />
+        עדכונים אחרונים
+      </h2>
+      <ol className="mt-2 flex flex-col">
+        {items.map((a) => (
+          <li key={a.id} className="border-t border-line first:border-t-0">
+            <Link href={articleHref(a)} className="group flex flex-col gap-1 py-3">
+              <span className="text-[13px] text-muted">
+                <time dateTime={a.publishedAt} className="font-mono text-brand">{formatTickerTime(a.publishedAt)}</time>
+                {' · '}
+                {a.category.name}
+              </span>
+              <span className="text-[15px] font-bold leading-snug group-hover:text-brand">{a.title}</span>
+            </Link>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -71,7 +103,9 @@ function BreakingTicker({ items }: { items: ArticleCard[] }) {
         aria-hidden={hidden || undefined}
         className="inline-flex items-baseline gap-2.5 whitespace-nowrap text-sm"
       >
-        <PublishedTime iso={a.publishedAt} className="text-[13px] text-brand" />
+        <time dateTime={a.publishedAt} className="font-mono text-[13px] text-brand">
+          {formatTickerTime(a.publishedAt)}
+        </time>
         <Link href={articleHref(a)} tabIndex={hidden ? -1 : undefined} className="font-semibold hover:text-brand">
           {a.title}
         </Link>

@@ -89,6 +89,31 @@ export function SiteDetails({ canEdit }: { canEdit: boolean }) {
         </div>
       </Card>
 
+      <Card title="מדידת כניסות לאתר (Cloudflare Web Analytics)">
+        <div className="max-w-3xl space-y-2 text-sm text-ink-2">
+          <p>
+            הקריאות של כל כתבה נספרות תמיד במערכת עצמה, ומופיעות בלוח הבקרה. Cloudflare מוסיף את התמונה של האתר כולו: כמה ביקורים, באילו דפים, מאיזה מכשיר ומאיזו מדינה.
+            הוא לא שומר עוגיות ולא מזהה גולשים, ולכן לא צריך לבקש עליו הסכמה.
+          </p>
+          <p>
+            איך מחברים: בחשבון Cloudflare נכנסים ל-Web Analytics, מוסיפים את האתר, ומעתיקים לכאן את ה-token מתוך קטע הקוד שמוצג (רק האותיות והמספרים שאחרי &quot;token&quot;). ריק: לא נטען.
+          </p>
+        </div>
+        <div className="mt-4 max-w-md">
+          <Field label="Token של Cloudflare Web Analytics" htmlFor="cf-token">
+            <input
+              id="cf-token"
+              dir="ltr"
+              autoComplete="off"
+              spellCheck={false}
+              value={form.analytics.cloudflareToken}
+              onChange={(e) => setForm({ ...form, analytics: { cloudflareToken: e.target.value.trim() } })}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+      </Card>
+
       <Card title="פרטי החברה (לתנאי השימוש, למדיניות הפרטיות ולהצהרת הנגישות)">
         <p className="mb-4 text-sm text-ink-2">
           הפרטים נכנסים אוטומטית לעמודי המידע במקום הסימונים {TOKENS.slice(0, 3).join(', ')} ודומיהם. שדה ריק יופיע באתר כ&quot;[להשלמה: …]&quot;. מייל ריק מוחלף במייל המערכת.

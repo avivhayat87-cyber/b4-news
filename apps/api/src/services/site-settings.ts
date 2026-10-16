@@ -107,6 +107,7 @@ export async function publicSite(s: Services): Promise<PublicSite> {
     pages: PAGE_SLUGS.map((slug) => ({ slug, title: site.pages[slug].title })),
     consent: { version: site.legal.version, adsCookies: google !== null },
     ads: { googleClient: google },
+    analytics: { cloudflareToken: site.analytics.cloudflareToken || null },
   };
 }
 

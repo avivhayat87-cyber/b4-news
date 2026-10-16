@@ -1,8 +1,8 @@
 import { INVESTMENT_NOTICE, needsInvestmentNotice, type ArticleFull } from '@b4/shared';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { ArticleAd } from '@/components/ad-card';
@@ -10,12 +10,13 @@ import { ArticleBody } from '@/components/article-body';
 import { Comments } from '@/components/comments';
 import { IconButton, TopBar } from '@/components/top-bar';
 import { ArticleImage, ArticleRow, CenterMessage, Loading, Pill, SectionHeader } from '@/components/ui';
-import { api } from '@/lib/api';
+import { SITE_URL, api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { getSavedArticle, toggleSaved, useSaved } from '@/lib/saved';
 import { colors, fonts, space } from '@/lib/theme';
 
-const SITE_URL = (process.env.EXPO_PUBLIC_SITE_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+/** Articles already counted as read in this run of the app (the newsroom counts one read per visit). */
+const counted = new Set<number>();
 
 export default function ArticleScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -39,6 +40,13 @@ export default function ArticleScreen() {
   const saved = isSaved(slug);
   // Where the reader is in the article: the ad after it counts a view only once really seen.
   const [scroll, setScroll] = useState({ y: 0, height: 0 });
+
+  const articleId = a?.id;
+  useEffect(() => {
+    if (!articleId || counted.has(articleId)) return;
+    counted.add(articleId);
+    void api.read(articleId);
+  }, [articleId]);
 
   const actions = a ? (
     <>
@@ -80,6 +88,12 @@ export default function ArticleScreen() {
               {a.author ? `${a.author.name} · ` : ''}
               {formatDateTime(a.publishedAt)} · {a.readingMinutes} דק׳ קריאה
             </Text>
+            {/* The original report, as on the site: one short line under the byline; a tap opens it. */}
+            {a.source ? (
+              <Text style={styles.meta} accessibilityRole="link" onPress={() => void Linking.openURL(a.source!.url)}>
+                על בסיס דיווח ב-<Text style={styles.sourceName}>{a.source.name}</Text>
+              </Text>
+            ) : null}
           </View>
 
           <ArticleImage article={a} priority style={styles.hero} />
@@ -139,6 +153,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.display, fontSize: 28, lineHeight: 34, color: colors.ink },
   subtitle: { fontFamily: fonts.text, fontSize: 18, lineHeight: 27, color: colors.ink2 },
   meta: { fontFamily: fonts.text, fontSize: 13, color: colors.muted },
+  sourceName: { textDecorationLine: 'underline' },
   hero: { marginTop: space.lg, marginHorizontal: space.lg, aspectRatio: 16 / 9, borderRadius: 12 },
   credit: { fontFamily: fonts.text, fontSize: 12, color: colors.muted, paddingHorizontal: space.lg, paddingTop: 6 },
   body: { paddingHorizontal: space.lg, paddingTop: space.lg },

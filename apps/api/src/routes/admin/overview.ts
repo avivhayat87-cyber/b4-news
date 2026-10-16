@@ -34,6 +34,7 @@ import { waitingLeads } from '../../services/ads/leads';
 import type { Services } from '../../services/context';
 import { activateProfile, learningOverview, queueDistill, saveRules } from '../../services/learning';
 import { waitingCount } from '../../services/legal-review';
+import { readsOverview } from '../../services/reads';
 
 const params = z.object({ id: z.string().uuid() });
 const count = sql<number>`count(*)::int`;
@@ -88,6 +89,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
       ads: req.staff?.role === 'admin' ? await waitingLeads(s.db) : { newLeads: 0, newInquiries: 0 },
       failedJobs: failed?.n ?? 0,
       ai: await s.ai.status(),
+      reads: await readsOverview(s),
     };
   });
 
@@ -128,6 +130,7 @@ export const overviewRoutes: FastifyPluginAsyncZod<{ s: Services }> = async (app
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
     twoFactor: Boolean(u.totpEnabledAt),
+    bylineName: u.bylineName,
   });
 
   app.get('/users', { schema: { response: { 200: z.array(StaffUserDto) } } }, async (req) => {

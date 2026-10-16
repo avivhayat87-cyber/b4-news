@@ -1,6 +1,6 @@
 // Browser-side calls for reader features (sign-in, comments, ads). The API session
 // cookie is httpOnly, so it is sent with `credentials: 'include'` and never read here.
-import type { AdInquiryInput, AdLeadInput, AdSlot, DigestPrefs, FeedMode, FeedPage, PartnerReportDto, PublicAdSlot, ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
+import type { AdInquiryInput, AdLeadInput, AdSlot, ArticleReadInput, DigestPrefs, FeedMode, FeedPage, PartnerReportDto, PublicAdSlot, ReaderNotificationList, ReaderPrefs, TakedownInput } from '@b4/shared';
 import type { CommentDto, CommentList, ReaderDto, ReaderSession } from './types';
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/+$/, '');
@@ -33,6 +33,17 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 const json = (body: unknown) => JSON.stringify(body);
+
+/** The newsroom's count of reads: fire and forget, sent even when the reader leaves the page. */
+export function recordRead(input: ArticleReadInput): void {
+  void fetch(`${BASE}/public/reads`, {
+    method: 'POST',
+    keepalive: true,
+    credentials: 'omit',
+    headers: { 'content-type': 'application/json' },
+    body: json(input),
+  }).catch(() => undefined);
+}
 
 export const readerApi = {
   async me(): Promise<ReaderDto | null> {

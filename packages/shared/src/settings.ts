@@ -245,6 +245,13 @@ export const SiteSettings = z.object({
   }),
   pages: z.object(Object.fromEntries(PAGE_SLUGS.map((s) => [s, SitePage])) as Record<PageSlug, typeof SitePage>),
   company: CompanyDetails.default({}),
+  /**
+   * Cloudflare Web Analytics: the site's token from the Cloudflare dashboard (public: it is printed
+   * in every page). Empty: the beacon is not loaded. Cookie-free, so it needs no consent.
+   */
+  analytics: z
+    .object({ cloudflareToken: z.string().trim().max(64).regex(/^[A-Za-z0-9]*$/, 'הטוקן מכיל רק אותיות באנגלית ומספרים').default('') })
+    .default({ cloudflareToken: '' }),
   /** Set by "publish a new version" in the CMS; a PUT of the whole settings never changes it. */
   legal: z.object({ version: LegalVersion }).default({ version: LEGAL_VERSION_DEFAULT }),
 });
@@ -263,6 +270,8 @@ export const PublicSite = z.object({
   }),
   /** Google AdSense's publisher id while Google ads are on (for ads.txt), else null. */
   ads: z.object({ googleClient: z.string().nullable() }).default({ googleClient: null }),
+  /** Cloudflare Web Analytics' token when set in the CMS, else null (no beacon). */
+  analytics: z.object({ cloudflareToken: z.string().nullable() }).default({ cloudflareToken: null }),
 });
 export type PublicSite = z.infer<typeof PublicSite>;
 

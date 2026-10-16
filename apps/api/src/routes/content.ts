@@ -20,6 +20,7 @@ import {
   comments,
   desc,
   eq,
+  gte,
   homepageSlots,
   ilike,
   isNotNull,
@@ -39,11 +40,13 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Config } from '../config';
 import { errors } from '../errors';
-import { cardColumns, cardsQuery, decodeCursor, encodeCursor, isLive, olderThan, toCard } from '../lib/cards';
+import { cardColumns, cardsQuery, decodeCursor, encodeCursor, isLive, mediaUrl, olderThan, toCard } from '../lib/cards';
+import { RENDITIONS } from '../lib/images';
 import { marketQuotes } from '../lib/markets';
 
 const PAGE_SIZE = 20;
 const SECTION_SIZE = 6;
+const TICKER_MAX_AGE_MS = 24 * 3_600_000;
 
 function publicCache(reply: FastifyReply, seconds = 60) {
   reply.header('cache-control', `public, max-age=${Math.min(seconds, 30)}, s-maxage=${seconds}, stale-while-revalidate=300`);
@@ -71,13 +74,15 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       .where(eq(categories.isActive, true))
       .orderBy(asc(categories.sortOrder));
 
+    // The ticker is breaking news: nothing published more than a day ago (a quiet day has no ticker).
+    const dayAgo = new Date(Date.now() - TICKER_MAX_AGE_MS);
     const [main, trending, latest, ticker, podcasts, ...sections] = await Promise.all([
       zoneCards('main', HOMEPAGE_LIMITS.main),
       zoneCards('trending', HOMEPAGE_LIMITS.trending),
       cardsQuery(db).where(isLive).orderBy(desc(articles.publishedAt)).limit(8),
       // The ticker: the newest articles marked for it; the oldest drops off as a new one comes.
       cardsQuery(db)
-        .where(and(isLive, isNotNull(articles.tickerAt)))
+        .where(and(isLive, isNotNull(articles.tickerAt), gte(articles.publishedAt, dayAgo)))
         .orderBy(desc(articles.tickerAt))
         .limit(TICKER_SIZE),
       db.select().from(podcastEpisodes).orderBy(desc(podcastEpisodes.publishedAt)).limit(3),
@@ -95,8 +100,8 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       main: main.map((row) => toCard(row, config.mediaBaseUrl, 'hero')),
       trending: trending.map(card),
       latest: latest.map(card),
-      // Until any article is marked for it, the ticker runs the latest ones, as it always did.
-      breaking: (ticker.length ? ticker : latest).map(card),
+      // Until any article is marked for it, the ticker runs the latest ones (of the last day too).
+      breaking: (ticker.length ? ticker : latest.filter((row) => row.publishedAt >= dayAgo)).map(card),
       sections: cats
         .map((c, i) => ({ category: { slug: c.slug, name: c.name }, items: (sections[i] ?? []).map(card) }))
         .filter((s) => s.items.length > 0),
@@ -165,7 +170,8 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           disclosure: articles.disclosure,
           sourceUrl: articles.sourceUrl,
           sourceName: sources.name,
-          editorName: users.fullName,
+          // Only the name the editor chose to show readers; an account's name ("מנהל מערכת") never is.
+          editorName: users.bylineName,
         })
         .from(articles)
         .innerJoin(categories, eq(articles.categoryId, categories.id))
@@ -196,6 +202,7 @@ export const contentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         bodyHtml: row.bodyHtml,
         tags: tagRows,
         editor: row.editorName ? { name: row.editorName } : null,
+        shareImage: row.imageVariants?.og ? { url: mediaUrl(config.mediaBaseUrl, row.imageVariants.og), width: RENDITIONS.og[0], height: RENDITIONS.og[1] } : null,
         updatedAt: row.updatedAt.toISOString(),
         readingMinutes: row.readingMinutes,
         source: row.sourceName && row.sourceUrl ? { name: row.sourceName, url: row.sourceUrl } : null,
